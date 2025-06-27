@@ -1,0 +1,78 @@
+BCM > ClimateWaterDeficit > 1981_2010
+Accessed from Monarda on 6/16/2025
+
+Driver: GTiff/GeoTIFF
+Files: /var/www/html/commonsmap/rasteroutput/cwd1981_2010_ave_HST_1611022074.tif
+Size is 4031, 4581
+Coordinate System is:
+PROJCS["NAD83 / California Albers",
+    GEOGCS["NAD83",
+        DATUM["North_American_Datum_1983",
+            SPHEROID["GRS 1980",6378137,298.257222101,
+                AUTHORITY["EPSG","7019"]],
+            TOWGS84[0,0,0,0,0,0,0],
+            AUTHORITY["EPSG","6269"]],
+        PRIMEM["Greenwich",0,
+            AUTHORITY["EPSG","8901"]],
+        UNIT["degree",0.0174532925199433,
+            AUTHORITY["EPSG","9122"]],
+        AUTHORITY["EPSG","4269"]],
+    PROJECTION["Albers_Conic_Equal_Area"],
+    PARAMETER["standard_parallel_1",34],
+    PARAMETER["standard_parallel_2",40.5],
+    PARAMETER["latitude_of_center",0],
+    PARAMETER["longitude_of_center",-120],
+    PARAMETER["false_easting",0],
+    PARAMETER["false_northing",-4000000],
+    UNIT["metre",1,
+        AUTHORITY["EPSG","9001"]],
+    AXIS["X",EAST],
+    AXIS["Y",NORTH],
+    AUTHORITY["EPSG","3310"]]
+Origin = (-433625.836354000028223,613426.665811000042595)
+Pixel Size = (270.000000000000000,-270.000000000000000)
+Metadata:
+  albers_conical_equal_area#false_easting=0
+  albers_conical_equal_area#false_northing=-4000000
+  albers_conical_equal_area#GeoTransform=-374495.836354 270 0 592636.665811 0 -270 
+  albers_conical_equal_area#grid_mapping_name=albers_conical_equal_area
+  albers_conical_equal_area#inverse_flattening=298.257222101
+  albers_conical_equal_area#latitude_of_projection_origin=0
+  albers_conical_equal_area#longitude_of_central_meridian=-120
+  albers_conical_equal_area#longitude_of_prime_meridian=0
+  albers_conical_equal_area#semi_major_axis=6378137
+  albers_conical_equal_area#spatial_ref=PROJCS["NAD83 / California Albers",GEOGCS["NAD83",DATUM["North_American_Datum_1983",SPHEROID["GRS 1980",6378137,298.257222101,AUTHORITY["EPSG","7019"]],TOWGS84[0,0,0,0,0,0,0],AUTHORITY["EPSG","6269"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4269"]],PROJECTION["Albers_Conic_Equal_Area"],PARAMETER["standard_parallel_1",34],PARAMETER["standard_parallel_2",40.5],PARAMETER["latitude_of_center",0],PARAMETER["longitude_of_center",-120],PARAMETER["false_easting",0],PARAMETER["false_northing",-4000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["X",EAST],AXIS["Y",NORTH],AUTHORITY["EPSG","3310"]]
+  albers_conical_equal_area#standard_parallel={34,40.5}
+  AREA_OR_POINT=Area
+  cwd#grid_mapping=albers_conical_equal_area
+  cwd#long_name=climate water deficit
+  cwd#units=mm.
+  cwd#_FillValue=-9999
+  NC_GLOBAL#Conventions=CF-1.5
+  NC_GLOBAL#GDAL=GDAL 1.10.0, released 2013/04/24
+  NC_GLOBAL#history=Thu Sep 11 15:49:16 2014: ncks -4 -L 9 HST/ave/cwd1981_2010_ave_HST.nc HST/ave/cwd1981_2010_ave_HST.deflated.nc
+Tue Apr 08 18:08:03 2014: GDAL CreateCopy( /home/dmoody/BCM2014/HST/cwd1981_2010_ave_HST.nc, ... )
+  NC_GLOBAL#NCO=4.4.2
+  x#long_name=x coordinate of projection
+  x#standard_name=projection_x_coordinate
+  x#units=m
+  y#long_name=y coordinate of projection
+  y#standard_name=projection_y_coordinate
+  y#units=m
+Image Structure Metadata:
+  COMPRESSION=DEFLATE
+  INTERLEAVE=BAND
+Corner Coordinates:
+Upper Left  ( -433625.836,  613426.666) (125d20' 2.46"W, 43d26' 2.62"N)
+Lower Left  ( -433625.836, -623443.334) (124d35'49.10"W, 32d18'18.73"N)
+Upper Right (  654744.164,  613426.666) (111d57'24.69"W, 43d17'35.26"N)
+Lower Right (  654744.164, -623443.334) (113d 3'57.04"W, 32d11' 1.52"N)
+Center      (  110559.164,   -5008.334) (118d44'23.56"W, 37d57'52.93"N)
+Band 1 Block=4031x1 Type=Float32, ColorInterp=Gray
+  NoData Value=-9999
+  Metadata:
+    grid_mapping=albers_conical_equal_area
+    long_name=climate water deficit
+    NETCDF_VARNAME=cwd
+    units=mm.
+    _FillValue=-9999
