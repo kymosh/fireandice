@@ -11,6 +11,24 @@ lapply(packages, library, character.only = TRUE)
 creek_dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'DEM_creek.tif'))
 castle_dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'DEM_castle.tif'))
 
+# need to clip and mask using study extents
+# Read study extents
+castle.extent <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_castle_32611.shp'))
+creek.extent  <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_creek_32611.shp'))
+
+# reproject dem to match study extent
+crs(creek.extent, describe = T)$code 
+crs(creek_dem, describe = T)$code
+
+creek_dem_32611 <- project(creek_dem, crs(creek.extent))
+castle_dem_32611 <- project(castle_dem, crs(castle.extent))
+
+# crop and mask
+creek_dem_32611_crop <- crop(creek_dem_32611, creek.extent)
+creek_dem <- mask(creek_dem_32611_crop, creek.extent)
+castle_dem_32611_crop <- crop(castle_dem_32611, castle.extent)
+castle_dem <- mask(castle_dem_32611_crop, castle.extent)
+
 # calculate slope and aspect
 creek_slope <- terrain(creek_dem, v = 'slope', unit = 'radians')
 castle_slope <- terrain(castle_dem, v = 'slope', unit = 'radians')
