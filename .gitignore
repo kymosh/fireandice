@@ -64,3 +64,6 @@ Temporary Items
 *.tmp
 *.bak
 *.lock
+
+# Ignore image files
+*.img
