@@ -8,26 +8,8 @@ lapply(packages, library, character.only = TRUE)
 
 
 # load in DEMs
-creek_dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'DEM_creek.tif'))
-castle_dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'DEM_castle.tif'))
-
-# need to clip and mask using study extents
-# Read study extents
-castle.extent <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_castle_32611.shp'))
-creek.extent  <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_creek_32611.shp'))
-
-# reproject dem to match study extent
-crs(creek.extent, describe = T)$code 
-crs(creek_dem, describe = T)$code
-
-creek_dem_32611 <- project(creek_dem, crs(creek.extent))
-castle_dem_32611 <- project(castle_dem, crs(castle.extent))
-
-# crop and mask
-creek_dem_32611_crop <- crop(creek_dem_32611, creek.extent)
-creek_dem <- mask(creek_dem_32611_crop, creek.extent)
-castle_dem_32611_crop <- crop(castle_dem_32611, castle.extent)
-castle_dem <- mask(castle_dem_32611_crop, castle.extent)
+creek_dem <- rast(here('data', 'processed', 'processed', 'tif', 'dem_creek_32611.tif'))
+castle_dem <- rast(here('data', 'processed', 'processed', 'tif', 'dem_castle_32611.tif'))
 
 # calculate slope and aspect
 creek_slope <- terrain(creek_dem, v = 'slope', unit = 'radians')
@@ -59,5 +41,5 @@ castle_hli_rescaled <- (castle_hli - castle_hli_min) / (castle_hli_max - castle_
 plot(castle_hli_rescaled)
 
 # save 
-writeRaster(creek_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_creek.tif'), overwrite = TRUE)
-writeRaster(castle_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_castle.tif'), overwrite = TRUE)
+writeRaster(creek_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_creek_36211.tif'), overwrite = TRUE)
+writeRaster(castle_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_castle_36211.tif'), overwrite = TRUE)

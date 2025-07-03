@@ -4,6 +4,7 @@ packages <- c( 'here', 'exactextractr', 'raster', 'sf', 'terra', 'geodata',
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
+# ASO
 # Directory with input TIFs
 tif.dir <- here('data', 'processed', 'processed', 'tif')
 
@@ -27,3 +28,60 @@ file_info <- tibble(fname = basename(creek.tifs)) %>%
 # remove report tifs/superswe tifs
 file_info <- file_info[-c(1, 2, 18), ]
 
+
+
+##################### Creek Fire terrain variable stack
+# create list of all creek variable files
+# variable base names
+var.names <- c('tpi_130', 'tpi_510', 'tpi_2010', 'slope', 'hli', 'dem')
+# build full paths
+creek.variables <- here('data', 'processed', 'processed', 'tif', paste0(var.names, '_creek_32611.tif'))
+
+
+###### check CRS of all variables
+unique(sapply(creek.variables, function(p) crs(rast(p), describe = TRUE)$code))
+# all 32611, g2g
+
+
+###### check resolution of all variables
+unique(sapply(creek.variables, function(p) paste(res(rast(p)), collapse = 'x')))
+
+# choose smallest res (10m) raster as reference raster
+ref <- rast(creek.variables[which.min(sapply(creek.variables, function(p) prod(res(rast(p)))))])
+# resample rasters to match
+creek.variables.resampled <- lapply(creek.variables, function(p) {
+  r <- rast(p)
+  resample(r, ref, method = 'bilinear') 
+})
+
+unique(sapply(creek.variables.resampled, function(p) paste(res(rast(p)), collapse = 'x')))
+# all 10m, g2g
+
+
+###### check extents for all variables
+names(creek.variables.resampled) <- var.names
+for (name in names(creek.variables.resampled)) {
+  r <- creek.variables.resampled[[name]]
+  cat(name, '\n')
+  print(ext(r))
+  cat('\n')
+}
+# g2g
+
+creek.stack <- rast(creek.variables.resampled)
+creek.terrain.df <- as.data.frame(creek.stack, xy = TRUE, na.rm = TRUE)
+
+
+
+
+######### re-scale variables to 0-1
+# copy for safety
+creek.terrain.scaled.df <- creek.terrain.df
+
+# Get variable names to rescale (excluding x, y, and hli)- hli is already rescaled
+vars.to.scale <- setdiff(names(creek.scaled.df), c('x', 'y', 'hli'))
+
+# re-scale selected variables
+creek.scaled.df[vars.to.scale] <- lapply(creek.scaled.df[vars.to.scale], function(x) {
+  (x - min(x)) / (max(x) - min(x))
+})
