@@ -41,5 +41,9 @@ castle_hli_rescaled <- (castle_hli - castle_hli_min) / (castle_hli_max - castle_
 plot(castle_hli_rescaled)
 
 # save 
-writeRaster(creek_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_creek_36211.tif'), overwrite = TRUE)
-writeRaster(castle_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_castle_36211.tif'), overwrite = TRUE)
+names(creek_hli_rescaled) <- 'hli'
+writeRaster(creek_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_creek_32611.tif'), overwrite = TRUE)
+
+names(castle_hli_rescaled) <- 'hli'
+writeRaster(castle_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_castle_32611.tif'), overwrite = TRUE)
+
