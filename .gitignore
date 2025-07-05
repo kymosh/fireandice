@@ -69,3 +69,7 @@ Temporary Items
 
 # Ignore image files
 *.img
+
+# Ignore intermediate data files
+*.csv
+*.rds

@@ -12,7 +12,17 @@ names(creek.scaled.df)[names(creek.scaled.df) == 'dem'] <- 'elev'
 terrain.matrix <- creek.scaled.df %>%
   dplyr::select(tpi_130, tpi_510, tpi_2010, slope, hli, elev) %>%
   as.matrix()
+saveRDS(terrain.matrix, here::here('data', 'processed', 'dataframes', 'creek_terrain_matrix.rds'))
 
-# run fuzzy c cluster, starting with n = 6 clusters
-fcm.result <- cmeans(terrain.matrix, centers = 6, m = 2, iter.max = 100, verbose = TRUE, method = 'cmeans')
 
+
+# create subset of matrix to run 
+
+set.seed(42)  # for reproducibility
+
+# Sample size 0.0005%
+sample.size <- round(nrow(terrain.matrix) * 0.0005)
+sample.size1 <- round(nrow(terrain.matrix) * 0.0005)
+
+sample.rows <- sample(nrow(terrain.matrix), sample.size)
+terrain.sample <- terrain.matrix[sample.rows, ]
