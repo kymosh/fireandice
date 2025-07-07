@@ -39,7 +39,8 @@ names(creek.stack) <- var.names  # reassign names after stacking
 
 # create df from stacked rasters
 creek.df <- as.data.frame(creek.stack, xy = TRUE, na.rm = TRUE)
-
+# save
+saveRDS(creek.raw.df, here('data', 'processed', 'dataframes', 'creek_terrain_raw.rds'))
 # check summary
 #summary(creek.df)
 .
