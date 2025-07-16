@@ -120,11 +120,11 @@ for (f in castle.tifs) {
 
 
 # check example
-tifx <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_Mosaic_2021Mar31-Apr1_swe_50m_clipped.tif'))
-tify <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kaweah_2024Feb11_swe_50m_clipped.tif'))
-
-plot(tifx)
-plot(tify)
+creek.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_Mosaic_2021Mar31-Apr1_swe_50m_clipped.tif'))
+castle.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kaweah_2024Feb11_swe_50m_clipped.tif'))
+# 
+# plot(creek.tif)
+# plot(castle.tif)
 ####################
 # img topography files
 
@@ -139,7 +139,7 @@ dir.create(out.dir.tif, recursive = TRUE, showWarnings = FALSE)
 img.files <- list.files(img.dir, pattern = '\\.img$', full.names = TRUE)
 
 # Helper function to clip and save rasters
-clip.and.save <- function(file.path, extent.sf, fire, out.dir.tif) {
+clip.and.save <- function(file.path, extent.sf, fire, out.dir.tif, dem.masked, template.raster) {
   message('Processing: ', basename(file.path))
   
   # Load raster
@@ -152,23 +152,56 @@ clip.and.save <- function(file.path, extent.sf, fire, out.dir.tif) {
   r.crop <- crop(r, vect(extent.sf))
   r.mask <- mask(r.crop, vect(extent.sf))
   
+  # Reproject elevation mask to match CRS
+  if (!crs(dem.masked) == crs(r.mask)) {
+    dem.masked <- project(dem.masked, r.mask)
+  }
+  
+  # Then check geometry and resample if needed
+  if (!compareGeom(r.mask, dem.masked, stopOnError = FALSE)) {
+    dem.masked <- resample(dem.masked, r.mask, method = 'near')
+  }
+  
+  # Mask to >5000ft
+  r.elev.masked <- mask(r.mask, dem.masked, maskvalue = NA)
+  
+  # Reproject and resample to SWE template
+  if (crs(r.elev.masked) != crs(template.raster)) {
+    r.elev.masked <- project(r.elev.masked, template.raster)
+  }
+  
+  r.aligned <- resample(r.elev.masked, template.raster, method = 'bilinear')
+  
   # Create output filename
   base.name <- file_path_sans_ext(basename(file.path))
   out.name <- paste0(base.name, '_', fire, '.tif')
   out.path <- file.path(out.dir.tif, out.name)
   
   # Save
-  writeRaster(r.mask, out.path, overwrite = TRUE)
+  writeRaster(r.aligned, out.path, overwrite = TRUE)
 }
 
 # Loop over all .img files and clip to creek extent
 lapply(img.files, clip.and.save,
        extent.sf = creek.extent,
        fire = 'creek',
-       out.dir.tif = out.dir.tif)
+       out.dir.tif = out.dir.tif,
+       dem.masked = dem.creek.5000,
+       template.raster = creek.tif)
+
 
 # same for castle fire
 lapply(img.files, clip.and.save,
        extent.sf = castle.extent,
        fire = 'castle',
-       out.dir.tif = out.dir.tif)
+       out.dir.tif = out.dir.tif,
+       dem.masked = dem.castle.5000,
+       template.raster = castle.tif)
+
+# check
+slope.creek <- rast(here('data', 'processed', 'processed', 'tif', 'slope_creek.tif'))
+plot(slope.creek)
+slope.castle <- rast(here('data', 'processed', 'processed', 'tif', 'slope_castle.tif'))
+plot(slope.castle)
+aspect.castle <- rast(here('data', 'processed', 'processed', 'tif', 'aspect_castle.tif'))
+plot(aspect.castle)
