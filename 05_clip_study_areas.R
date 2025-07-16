@@ -205,3 +205,7 @@ slope.castle <- rast(here('data', 'processed', 'processed', 'tif', 'slope_castle
 plot(slope.castle)
 aspect.castle <- rast(here('data', 'processed', 'processed', 'tif', 'aspect_castle.tif'))
 plot(aspect.castle)
+
+############### 7/16
+# need to create a combined kern/kaweah tif to clip img files to to match the extents
+# figure out if need to/how to combine my ASO tifs when they're split within watersheds and split between kern and kaweah. 
