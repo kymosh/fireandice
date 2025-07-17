@@ -293,3 +293,56 @@ for (old.name in tif.files) {
   # Rename the file
   file.rename(old.name, new.name)
 }
+
+####### change date format 
+library(stringr)
+
+# Folder with your tif files
+tif.dir <- here('data', 'processed', 'processed', 'tif')
+
+# List all .tif files with a date pattern like YYYYMonDD or YYYYMonDD-DD
+tif.files <- list.files(tif.dir, pattern = '\\.tif$', full.names = TRUE)
+
+# Function to convert date string to desired format
+convert_date <- function(name) {
+  # Extract the date part: YYYYMonDD or YYYYMonDD-DD
+  # Example: 2023Apr23-24 or 2023Jan27
+  date_part <- str_extract(name, '\\d{4}[A-Za-z]{3}\\d{1,2}(-\\d{1,2})?')
+  if (is.na(date_part)) return(NA)
+  
+  # Remove day range if exists, keep first day only
+  date_part <- sub('-\\d{1,2}', '', date_part)
+  
+  # Extract year, month abbreviation, day
+  year <- str_sub(date_part, 1, 4)
+  mon_abbr <- str_sub(date_part, 5, 7)
+  day <- str_sub(date_part, 8, 9)
+  day <- str_pad(day, 2, pad = '0')  # pad day with leading zero if needed
+  
+  # Convert month abbreviation to numeric month
+  month_num <- match(tolower(mon_abbr), tolower(month.abb))
+  month_str <- sprintf('%02d', month_num)
+  
+  # Construct new date string
+  new_date <- paste0(year, '_', month_str, day)
+  return(new_date)
+}
+
+for (old_path in tif.files) {
+  old_name <- basename(old_path)
+  
+  new_date <- convert_date(old_name)
+  if (is.na(new_date)) next  # skip if no date found
+  
+  # Replace old date string with new date string
+  # Find old date substring first
+  old_date_str <- str_extract(old_name, '\\d{4}[A-Za-z]{3}\\d{1,2}(-\\d{1,2})?')
+  
+  new_name <- sub(old_date_str, new_date, old_name)
+  
+  # Build full path for new name
+  new_path <- file.path(tif.dir, new_name)
+  
+  # Rename file
+  file.rename(old_path, new_path)
+}
