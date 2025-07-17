@@ -277,3 +277,19 @@ for (old_file in target_files) {
     cat("Failed to rename:", basename(old_file), "\n")
   }
 }
+
+################# 7/17/25 remove "mosaic" from processed file names
+# Define the directory
+tif.dir <- here('data', 'processed', 'processed', 'tif')
+
+# List all .tif files that contain "_Mosaic"
+tif.files <- list.files(tif.dir, pattern = '_Mosaic.*\\.tif$', full.names = TRUE)
+
+# Loop over and rename each file
+for (old.name in tif.files) {
+  # Create new name by removing "_Mosaic"
+  new.name <- sub('_Mosaic', '', old.name)
+  
+  # Rename the file
+  file.rename(old.name, new.name)
+}
