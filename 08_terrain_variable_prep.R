@@ -10,7 +10,8 @@ creek.extent  <- st_read(here('data', 'processed', 'processed', 'shp', 'study_ex
 # Define input/output
 out.dir <- here('data', 'processed', 'processed', 'tif')
 
-dem.creek.32611 <- rast(rast(here('data', 'processed', 'processed', 'tif', 'dem_creek_32611.tif')))
+dem.creek.32611 <- rast(here('data', 'processed', 'processed', 'tif', 'dem_creek_32611.tif'))
+dem.castle.32611 <- rast(here('data', 'processed', 'processed', 'tif', 'dem_castle_32611.tif'))
 
 # Your named list of rasters
 rasters <- list(
