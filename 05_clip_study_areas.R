@@ -204,13 +204,86 @@ lapply(img.files, clip.and.save,
        dem.masked = dem.creek.5000,
        template.raster = creek.tif)
 
-# test on just slope 
-clip.and.save(file.path =  here('data', 'raw', 'background_variables', 'img', 'slope.img'),
+
+
+####### New clip.and.save -> trying this but don't want to erase previous one yet. 
+# using first to just test on a small subset of my aspect.img data
+clip.and.save.2 <- function(file.path, extent.sf, fire, out.dir.tif, dem.masked, template.raster) {
+  base.name <- file_path_sans_ext(basename(file.path))
+  out.name <- paste0(base.name, '_', fire, '.tif')
+  out.path <- file.path(out.dir.tif, out.name)
+  
+  message('Processing: ', basename(file.path))
+  
+  # Load raster
+  r <- rast(file.path)
+  
+  # Reproject raster if needed
+  if (!compareGeom(r, vect(extent.sf, stopOnError = FALSE))) {
+    r <- project(r, crs(extent.sf))
+  }
+  
+  # Clip and mask to extent
+  r.crop <- crop(r, vect(extent.sf))
+  r.mask <- mask(r.crop, vect(extent.sf))
+  
+  # Reproject elevation mask if needed
+  if (!compareGeom(r.mask, dem.masked, stopOnError = FALSE)) {
+    dem.masked <- project(dem.masked, crs(r.mask))
+    dem.masked <- resample(dem.masked, r.mask, method = 'near')
+  }
+  
+  # Mask to elevation >5000 ft
+  r.elev.masked <- mask(r.mask, dem.masked, maskvalue = NA)
+  
+  # Align with SWE raster
+  if (!compareGeom(r.elev.masked, template.raster, stopOnError = FALSE)) {
+    r.elev.masked <- project(r.elev.masked, crs(template.raster))
+    r.elev.masked <- resample(r.elev.masked, template.raster, method = 'bilinear')
+  }
+  
+  # Write result
+  writeRaster(r.elev.masked, out.path, overwrite = TRUE)
+}
+
+
+
+# test on small subset
+aspect <- rast(here('data', 'raw', 'background_variables', 'img', 'aspect.img'))
+nrows <- nrow(aspect)
+ncols <- ncol(aspect)
+# Calculate center start row/col
+start_row <- floor(nrows / 2) - 50
+start_col <- floor(ncols / 2) - 50
+# Get coordinates of top-left and bottom-right of 100×100 window
+ul.xy <- xyFromCell(aspect, cellFromRowCol(slope, start_row, start_col))
+lr.xy <- xyFromCell(aspect, cellFromRowCol(slope, start_row + 99, start_col + 99))
+# Define extent from those coordinates (xmin, xmax, ymin, ymax)
+ext.test <- ext(ul.xy[1], lr.xy[1], lr.xy[2], ul.xy[2])
+# Crop the raster
+aspect.test <- crop(aspect, ext.test)
+plot(aspect.test)
+
+writeRaster(slope.test,
+            filename = here('data', 'raw', 'background_variables', 'img', 'aspect_test.img'),
+            overwrite = TRUE)
+
+# test on just aspect 
+clip.and.save.2(file.path = here('data', 'raw', 'background_variables', 'img', 'aspect_test.img'),
               extent.sf = castle.extent,
-              fire = 'castle_kaweah',
+              fire = 'castle_kaweah_test',
               out.dir.tif = out.dir.tif,
               dem.masked = dem.castle.5000,
               template.raster = castle.kaweah.tif)
+
+
+
+
+
+
+
+
+
 
 
 # Run function for Kaweah
@@ -244,9 +317,6 @@ plot(slope.castle.kaweah)
 aspect.castle.kaweah <- rast(here('data', 'processed', 'processed', 'tif', 'aspect_castle_kaweah.tif'))
 plot(aspect.castle.kaweah)
 
-############### 7/16
-# need to create a combined kern/kaweah tif to clip img files to to match the extents
-# figure out if need to/how to combine my ASO tifs when they're split within watersheds and split between kern and kaweah. 
 
 
 
