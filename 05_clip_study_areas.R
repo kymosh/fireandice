@@ -41,7 +41,7 @@ dem.castle <- rast(here('data', 'processed', 'processed', 'tif', 'dem_castle_326
 dem.creek <- rast(here('data', 'processed', 'processed', 'tif', 'dem_creek_32611.tif'))
 
 # Load sample ASO SWE raster
-tif <- rast(here('data', 'raw', 'ASO', 'tif', 'ASO_SanJoaquin_2023Jan21-24_swe_50m.tif'))
+tif <- rast(here('data', 'raw', 'ASO', 'tif', 'ASO_SanJoaquin_2023_0121_swe_50m.tif'))
 
 # make sure tifs match extents and dem CRS
 crs(dem.castle, describe = T)$code == crs(tif, describe = T)$code
@@ -57,6 +57,13 @@ dem.creek.5000 <- mask(dem.creek, creek.mask, maskvalue = 0)
 dem.castle.5000 <- mask(dem.castle, castle.mask, maskvalue = 0)
 plot(dem.castle.5000)
 plot(dem.creek.5000)
+
+
+
+
+
+
+
 
 ######################
 # ASO tifs
@@ -118,13 +125,20 @@ for (f in castle.tifs) {
   clip.and.save(f, castle.extent, out.dir.tif, dem.castle.5000)
 }
 
-
-# check example
-creek.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_Mosaic_2021Mar31-Apr1_swe_50m_clipped.tif'))
-castle.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kaweah_2024Feb11_swe_50m_clipped.tif'))
+# template tifs
+creek.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_2021_0331_swe_50m_clipped.tif'))
+castle.kaweah.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kaweah_2024_0211_swe_50m_clipped.tif'))
+castle.kern.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kern_2024_0508_swe_50m_clipped.tif'))
 # 
 # plot(creek.tif)
 # plot(castle.tif)
+
+
+
+
+
+
+
 ####################
 # img topography files
 
@@ -138,15 +152,21 @@ dir.create(out.dir.tif, recursive = TRUE, showWarnings = FALSE)
 # List all .img files (ignore .ige, .aux, etc.)
 img.files <- list.files(img.dir, pattern = '\\.img$', full.names = TRUE)
 
-# Helper function to clip and save rasters
+# Helper function to clip and save rasters... this works well for the creek fire only
 clip.and.save <- function(file.path, extent.sf, fire, out.dir.tif, dem.masked, template.raster) {
+  base.name <- file_path_sans_ext(basename(file.path))
+  out.name <- paste0(base.name, '_', fire, '.tif')
+  out.path <- file.path(out.dir.tif, out.name)
+
   message('Processing: ', basename(file.path))
   
   # Load raster
   r <- rast(file.path)
   
-  # Reproject extent to match raster CRS
-  extent.sf <- st_transform(extent.sf, crs(r))
+  # Reproject raster to match study extent/template CRS (EPSG:32611)
+  if (crs(r) != crs(extent.sf)) {
+    r <- project(r, crs(extent.sf))
+  }
   
   # Clip and mask
   r.crop <- crop(r, vect(extent.sf))
@@ -172,13 +192,8 @@ clip.and.save <- function(file.path, extent.sf, fire, out.dir.tif, dem.masked, t
   
   r.aligned <- resample(r.elev.masked, template.raster, method = 'bilinear')
   
-  # Create output filename
-  base.name <- file_path_sans_ext(basename(file.path))
-  out.name <- paste0(base.name, '_', fire, '.tif')
-  out.path <- file.path(out.dir.tif, out.name)
-  
   # Save
-  writeRaster(r.aligned, out.path, overwrite = TRUE)
+  writeRaster(r.aligned, out.path, overwrite = T)
 }
 
 # Loop over all .img files and clip to creek extent
@@ -189,23 +204,62 @@ lapply(img.files, clip.and.save,
        dem.masked = dem.creek.5000,
        template.raster = creek.tif)
 
+# test on just slope 
+clip.and.save(file.path =  here('data', 'raw', 'background_variables', 'img', 'slope.img'),
+              extent.sf = castle.extent,
+              fire = 'castle_kaweah',
+              out.dir.tif = out.dir.tif,
+              dem.masked = dem.castle.5000,
+              template.raster = castle.kaweah.tif)
 
-# same for castle fire
-lapply(img.files, clip.and.save,
-       extent.sf = castle.extent,
-       fire = 'castle',
-       out.dir.tif = out.dir.tif,
-       dem.masked = dem.castle.5000,
-       template.raster = castle.tif)
+
+# Run function for Kaweah
+for (f in img.files) {
+  clip.and.save(file.path = f,
+                extent.sf = castle.extent,
+                fire = 'castle_kaweah',
+                out.dir.tif = out.dir.tif,
+                dem.masked = dem.castle.5000,
+                template.raster = castle.kaweah.tif)
+}
+
+# Run function for Kern
+for (f in img.files) {
+  clip.and.save(file.path = f,
+                extent.sf = castle.extent,
+                fire = 'castle_kern',
+                out.dir.tif = out.dir.tif,
+                dem.masked = dem.castle.5000,
+                template.raster = castle.kern.tif)
+}
 
 # check
 slope.creek <- rast(here('data', 'processed', 'processed', 'tif', 'slope_creek.tif'))
 plot(slope.creek)
-slope.castle <- rast(here('data', 'processed', 'processed', 'tif', 'slope_castle.tif'))
-plot(slope.castle)
-aspect.castle <- rast(here('data', 'processed', 'processed', 'tif', 'aspect_castle.tif'))
-plot(aspect.castle)
+aspect.creek <- rast(here('data', 'processed', 'processed', 'tif', 'aspect_creek.tif'))
+plot(aspect.creek)
+
+slope.castle.kaweah <- rast(here('data', 'processed', 'processed', 'tif', 'slope_castle_kaweah.tif'))
+plot(slope.castle.kaweah)
+aspect.castle.kaweah <- rast(here('data', 'processed', 'processed', 'tif', 'aspect_castle_kaweah.tif'))
+plot(aspect.castle.kaweah)
 
 ############### 7/16
 # need to create a combined kern/kaweah tif to clip img files to to match the extents
 # figure out if need to/how to combine my ASO tifs when they're split within watersheds and split between kern and kaweah. 
+
+
+
+
+# original raster example
+slope <- rast(here('data', 'raw', 'background_variables', 'img', 'slope.img'))
+
+###### check CRS of kaweah data...
+# template tif
+crs(castle.kaweah.tif)
+# extent
+crs(castle.extent)
+# mask
+crs(dem.creek.5000)
+# original raster
+crs(slope)
