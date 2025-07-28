@@ -41,22 +41,23 @@ dem.castle <- rast(here('data', 'processed', 'processed', 'tif', 'dem_castle_326
 dem.creek <- rast(here('data', 'processed', 'processed', 'tif', 'dem_creek_32611.tif'))
 
 # Load sample ASO SWE raster
-tif <- rast(here('data', 'raw', 'ASO', 'tif', 'ASO_SanJoaquin_2023_0121_swe_50m.tif'))
+tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kaweah_2021_0504_swe_50m_clipped.tif'))
 
 # make sure tifs match extents and dem CRS
 crs(dem.castle, describe = T)$code == crs(tif, describe = T)$code
 crs(tif, describe = T)$code == crs(castle.extent, describe = T)$code
 
 ######################
-# create mask to limit elevations to >5000ft (1524m)
-creek.mask <- dem.creek > 1524
-castle.mask <- dem.castle > 1524
-
-# use mask to filter DEM
-dem.creek.5000 <- mask(dem.creek, creek.mask, maskvalue = 0)
-dem.castle.5000 <- mask(dem.castle, castle.mask, maskvalue = 0)
-plot(dem.castle.5000)
-plot(dem.creek.5000)
+#### delete this later, once new code actually works
+# # create mask to limit elevations to >5000ft (1524m)
+# creek.mask <- dem.creek > 1524
+# castle.mask <- dem.castle > 1524
+# 
+# # use mask to filter DEM
+# dem.creek.5000 <- mask(dem.creek, creek.mask, maskvalue = 0)
+# dem.castle.5000 <- mask(dem.castle, castle.mask, maskvalue = 0)
+# plot(dem.castle.5000)
+# plot(dem.creek.5000)
 
 
 
@@ -152,6 +153,23 @@ dir.create(out.dir.tif, recursive = TRUE, showWarnings = FALSE)
 # List all .img files (ignore .ige, .aux, etc.)
 img.files <- list.files(img.dir, pattern = '\\.img$', full.names = TRUE)
 
+#let's just do aspect for now
+
+# reproject to 32611 and resave
+aspect.32611 <- project(aspect, 'EPSG:32611', method = 'bilinear')
+writeRaster(aspect.32611, here('data', 'processed', 'processed', 'tif', 'aspect_32611.tif'), overwrite = TRUE)
+
+# crop and mask to castle extent
+aspect.castle.32611 <- crop(aspect.32611, vect(castle.extent)) %>%
+  mask(vect(castle.extent))
+
+# mask to elevations >5000ft (1524m)
+castle.elev.mask <- dem.castle > 1524
+castle.elev.mask <- resample(castle.elev.mask, aspect.castle.32611, method = 'near')
+aspect.castle.5000 <- mask(aspect.castle.32611, castle.elev.mask, maskvalue = FALSE)
+
+plot(aspect.castle.5000)
+
 # Helper function to clip and save rasters... this works well for the creek fire only
 clip.and.save <- function(file.path, extent.sf, fire, out.dir.tif, dem.masked, template.raster) {
   base.name <- file_path_sans_ext(basename(file.path))
@@ -208,47 +226,58 @@ lapply(img.files, clip.and.save,
 
 ####### New clip.and.save -> trying this but don't want to erase previous one yet. 
 # using first to just test on a small subset of my aspect.img data
-clip.and.save.2 <- function(file.path, extent.sf, fire, out.dir.tif, dem.masked, template.raster) {
-  base.name <- file_path_sans_ext(basename(file.path))
-  out.name <- paste0(base.name, '_', fire, '.tif')
-  out.path <- file.path(out.dir.tif, out.name)
-  
-  message('Processing: ', basename(file.path))
-  
-  # Load raster
-  r <- rast(file.path)
-  
-  # Reproject raster if needed
-  if (!compareGeom(r, vect(extent.sf, stopOnError = FALSE))) {
-    r <- project(r, crs(extent.sf))
-  }
-  
-  # Clip and mask to extent
-  r.crop <- crop(r, vect(extent.sf))
-  r.mask <- mask(r.crop, vect(extent.sf))
-  
-  # Reproject elevation mask if needed
-  if (!compareGeom(r.mask, dem.masked, stopOnError = FALSE)) {
-    dem.masked <- project(dem.masked, crs(r.mask))
-    dem.masked <- resample(dem.masked, r.mask, method = 'near')
-  }
-  
-  # Mask to elevation >5000 ft
-  r.elev.masked <- mask(r.mask, dem.masked, maskvalue = NA)
-  
-  # Align with SWE raster
-  if (!compareGeom(r.elev.masked, template.raster, stopOnError = FALSE)) {
-    r.elev.masked <- project(r.elev.masked, crs(template.raster))
-    r.elev.masked <- resample(r.elev.masked, template.raster, method = 'bilinear')
-  }
-  
-  # Write result
-  writeRaster(r.elev.masked, out.path, overwrite = TRUE)
-}
+# clip.and.save.2 <- function(file.path, extent.sf, fire, out.dir.tif, dem.masked, template.raster) {
+#   base.name <- file_path_sans_ext(basename(file.path))
+#   out.name <- paste0(base.name, '_', fire, '.tif')
+#   out.path <- file.path(out.dir.tif, out.name)
+#   
+#   message('Processing: ', basename(file.path))
+#   
+#   # Load raster
+#   r <- rast(file.path)
+#   
+#   # Reproject raster if needed
+#   if (!crs(r) == crs(extent.sf)) {
+#     r <- project(r, crs(extent.sf))
+#   }
+#   
+#   
+#   # Clip and mask to extent
+#   r.crop <- crop(r, vect(extent.sf))
+#   r.mask <- mask(r.crop, vect(extent.sf))
+#   
+#   # Reproject elevation mask if needed
+#   if (!crs(r.mask) == crs(dem.masked)) {
+#     dem.masked <- project(dem.masked, crs(r.mask))
+#     dem.masked <- resample(dem.masked, r.mask, method = 'near')
+#   }
+#   
+#   
+#   # Mask to elevation >5000 ft
+#   r.elev.masked <- mask(r.mask, dem.masked, maskvalue = NA)
+#   
+#   # Align with SWE raster
+#   if (!crs(r.elev.masked) == crs(template.raster)) {
+#     r.elev.masked <- project(r.elev.masked, crs(template.raster))
+#     r.elev.masked <- resample(r.elev.masked, template.raster, method = 'bilinear')
+#   }
+#   
+#   
+#   # Write result
+#   writeRaster(r.elev.masked, out.path, overwrite = TRUE)
+# }
 
 
+###### 07/27 let's start over with a new clip and save function
+crs(dem.castle) == crs(aspect.test)
+# Crop DEM to aspect extent
+dem.crop <- crop(dem.castle, aspect.test)
+any(values(dem.crop) > 1524, na.rm = TRUE)
+dem.mask <- mask(dem.crop, dem.crop > 1524)
+sum(!is.na(values(dem.mask)))
 
-# test on small subset
+
+# test on small subset#aspect.test test on small subset
 aspect <- rast(here('data', 'raw', 'background_variables', 'img', 'aspect.img'))
 nrows <- nrow(aspect)
 ncols <- ncol(aspect)
@@ -256,32 +285,25 @@ ncols <- ncol(aspect)
 start_row <- floor(nrows / 2) - 50
 start_col <- floor(ncols / 2) - 50
 # Get coordinates of top-left and bottom-right of 100×100 window
-ul.xy <- xyFromCell(aspect, cellFromRowCol(slope, start_row, start_col))
-lr.xy <- xyFromCell(aspect, cellFromRowCol(slope, start_row + 99, start_col + 99))
+ul.xy <- xyFromCell(aspect, cellFromRowCol(aspect, start_row, start_col))
+lr.xy <- xyFromCell(aspect, cellFromRowCol(aspect, start_row + 99, start_col + 99))
 # Define extent from those coordinates (xmin, xmax, ymin, ymax)
 ext.test <- ext(ul.xy[1], lr.xy[1], lr.xy[2], ul.xy[2])
 # Crop the raster
 aspect.test <- crop(aspect, ext.test)
 plot(aspect.test)
 
-writeRaster(slope.test,
-            filename = here('data', 'raw', 'background_variables', 'img', 'aspect_test.img'),
+writeRaster(aspect.test,
+            filename = here('data', 'processed', 'processed', 'tif', 'aspect_test.tif'),
             overwrite = TRUE)
 
 # test on just aspect 
-clip.and.save.2(file.path = here('data', 'raw', 'background_variables', 'img', 'aspect_test.img'),
+clip.and.save.2(file.path = here('data', 'processed', 'processed', 'tif', 'aspect_test.tif'),
               extent.sf = castle.extent,
               fire = 'castle_kaweah_test',
               out.dir.tif = out.dir.tif,
               dem.masked = dem.castle.5000,
               template.raster = castle.kaweah.tif)
-
-
-
-
-
-
-
 
 
 
