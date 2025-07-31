@@ -3,6 +3,18 @@ packages <- c( 'here', 'terra', 'sf', 'ggplot2', 'ggspatial', 'rnaturalearth', '
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
+# use US base map
+us <- ne_states(country = 'United States of America', returnclass = 'sf')
+us <- us[!us$postal %in% c('AK', 'HI', 'PR'), ]
+# reproject
+us <- st_transform(us, crs = 5070)
+
+# western states
+western.states <- c('WA', 'OR', 'CA', 'NV', 'ID', 'MT', 'WY', 'UT', 'CO', 'AZ', 'NM')
+us.west <- us[us$postal %in% western.states, ]
+
+
+
 # Load the GeoPackage that contains lidar data
 wesm <- st_read(here('data', 'raw', 'other', 'WESM.gpkg'))
 
@@ -10,7 +22,8 @@ wesm <- st_read(here('data', 'raw', 'other', 'WESM.gpkg'))
 wesm.ql1 <- wesm[wesm$ql == 'QL 1', ]
 # reproject
 wesm.ql1 <- st_transform(wesm.ql1, crs = 5070)
-
+# Crop QL1 to western states
+wesm.ql1.west <- st_intersection(wesm.ql1, us.west)
 
 
 # bring in all files of aso data from all basins
@@ -27,20 +40,8 @@ aso.extents <- lapply(tif.files, function(f) {
 aso.extents <- do.call(rbind, aso.extents)
 aso.extents.sf <- st_as_sf(aso.extents)
 
-  
-
-# use US base map
-us <- ne_states(country = 'United States of America', returnclass = 'sf')
-us <- us[!us$postal %in% c('AK', 'HI', 'PR'), ]
-# reproject
-us <- st_transform(us, crs = 5070)
-
-# western states
-western.states <- c('WA', 'OR', 'CA', 'NV', 'ID', 'MT', 'WY', 'UT', 'CO', 'AZ', 'NM')
-us.west <- us[us$postal %in% western.states, ]
-
-# Crop QL1 to western states
-wesm.ql1.west <- st_intersection(wesm.ql1, us.west)
+# calculate overlap
+aso.ql1 <- sf::st_intersection(aso.extents.sf, wesm.ql1.west)
 
 
 
@@ -48,8 +49,10 @@ ggplot() +
   geom_sf(data = us.west, fill = 'grey95', color = 'grey70') +
   geom_sf(data = wesm.ql1.west, fill = 'palegreen3', color = NA) +
   geom_sf(data = aso.extents.sf, fill = '#2c7fb8', color = NA, alpha = 0.5) +
+  geom_sf(data = aso.ql1, fill = 'purple', color = NA, alpha = 0.6) +
+  coord_sf(expand = FALSE) +
   theme_minimal() + 
   labs(title = 'ASO Basin Coverage & QL1 LiDAR Extents',
-       subtitle = 'Blue = ASO footprints, Green = QL1 LiDAR polygons')
+       subtitle = 'Blue = ASO data, Green = QL1 Lidar, \nPurple = ASO & QL1 overlap')
 
   
