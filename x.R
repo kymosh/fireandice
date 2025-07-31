@@ -80,3 +80,5 @@ iwalk(slope_rasters, function(r, name) {
     message('Skipping (already 32611): ', name)
   }
 })
+
+#testtest
