@@ -73,3 +73,9 @@ Temporary Items
 # Ignore intermediate data files
 *.csv
 *.rds
+
+# Ignore large data files
+*.gpkg
+
+# Arcmap folder
+arcmap/
