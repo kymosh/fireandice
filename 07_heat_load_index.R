@@ -38,12 +38,25 @@ castle_hli_min <- minmax(castle_hli)[1]
 castle_hli_max <- minmax(castle_hli)[2]
 castle_hli_rescaled <- (castle_hli - castle_hli_min) / (castle_hli_max - castle_hli_min)
 
-plot(castle_hli_rescaled)
+# Create elevation mask for >1524m
+creek_mask <- creek_dem >= 1524
+castle_mask <- castle_dem >= 1524
 
-# save 
-names(creek_hli_rescaled) <- 'hli'
-writeRaster(creek_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_creek_32611.tif'), overwrite = TRUE)
+# Apply elevation mask to HLI rasters
+creek_hli_5000 <- mask(creek_hli_rescaled, creek_mask, maskvalue = FALSE)
+castle_hli_5000 <- mask(castle_hli_rescaled, castle_mask, maskvalue = FALSE)
 
-names(castle_hli_rescaled) <- 'hli'
-writeRaster(castle_hli_rescaled, filename = here('data', 'processed', 'processed', 'tif', 'hli_castle_32611.tif'), overwrite = TRUE)
+# Save masked rasters
+writeRaster(creek_hli_5000, filename = here('data', 'processed', 'processed', 'tif', 'hli_creek_32611_5000.tif'), overwrite = TRUE)
+writeRaster(castle_hli_5000, filename = here('data', 'processed', 'processed', 'tif', 'hli_castle_32611_5000.tif'), overwrite = TRUE)
 
+# reference swe tifs to resample to
+creek.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_2021_0331_swe_50m_clipped.tif'))
+castle.kaweah.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kaweah_2024_0211_swe_50m_clipped.tif'))
+
+# resample to swe tifs
+creek_hli_5000_50.0001m <- resample(creek_hli_5000, creek.tif, method = 'bilinear')
+castle_hli_5000_50m <- resample(castle_hli_5000, castle.kaweah.tif, method = 'bilinear')
+
+writeRaster(creek_hli_5000_50.0001m, filename = here('data', 'processed', 'processed', 'tif', 'hli_creek_5000_50.0001m.tif'), overwrite = TRUE)
+writeRaster(castle_hli_5000_50m, filename = here('data', 'processed', 'processed', 'tif', 'hli_castle_5000_50m.tif'), overwrite = TRUE)
