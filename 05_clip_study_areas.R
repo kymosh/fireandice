@@ -46,16 +46,19 @@ tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kaweah_2021_0504_
 # make sure tifs match extents and dem CRS
 crs(dem.castle, describe = T)$code == crs(tif, describe = T)$code
 crs(tif, describe = T)$code == crs(castle.extent, describe = T)$code
+crs(dem.creek, describe = T)$code == crs(tif, describe = T)$code
+crs(tif, describe = T)$code == crs(creek.extent, describe = T)$code
+
 
 ######################
-#### delete this later, once new code actually works
-# # create mask to limit elevations to >5000ft (1524m)
-# creek.mask <- dem.creek > 1524
-# castle.mask <- dem.castle > 1524
-# 
-# # use mask to filter DEM
-# dem.creek.5000 <- mask(dem.creek, creek.mask, maskvalue = 0)
-# dem.castle.5000 <- mask(dem.castle, castle.mask, maskvalue = 0)
+
+# create mask to limit elevations to >5000ft (1524m)
+creek.mask <- dem.creek > 1524
+castle.mask <- dem.castle > 1524
+
+# use mask to filter DEM
+dem.creek.5000 <- mask(dem.creek, creek.mask, maskvalue = 0)
+dem.castle.5000 <- mask(dem.castle, castle.mask, maskvalue = 0)
 # plot(dem.castle.5000)
 # plot(dem.creek.5000)
 
@@ -121,6 +124,14 @@ for (f in creek.tifs) {
   clip.and.save(f, creek.extent, out.dir.tif, dem.creek.5000)
 }
 
+# one more time to file that had been missing
+clip.and.save(
+  file.path = 'G:/Fire_Snow_Dynamics/data/raw/ASO/tif/ASO_SanJoaquin_2024Apr29-May01_swe_50m.tif',
+  extent.sf = creek.extent,
+  out.dir.tif = out.dir.tif,
+  dem.masked = dem.creek.5000
+)
+
 # Clip Kern and Kaweah files to castle.extent
 for (f in castle.tifs) {
   clip.and.save(f, castle.extent, out.dir.tif, dem.castle.5000)
@@ -130,12 +141,11 @@ for (f in castle.tifs) {
 creek.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_2021_0331_swe_50m_clipped.tif'))
 castle.kaweah.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kaweah_2024_0211_swe_50m_clipped.tif'))
 castle.kern.tif <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_Kern_2024_0508_swe_50m_clipped.tif'))
-# 
+
+plot(creek.tif)
+plot(castle.kaweah.tif)
 # plot(creek.tif)
 # plot(castle.tif)
-
-
-
 
 
 
@@ -165,42 +175,89 @@ aspect.castle.5000 <- mask(aspect.castle.32611, castle.elev.mask, maskvalue = FA
 writeRaster(aspect.castle.5000, here('data', 'processed', 'processed', 'tif', 'aspect_castle_5000.tif'), overwrite = TRUE)
 
 
+
+
+
+
+
+# create elevation mask >5000ft (1524m)
+castle.elev.mask <- dem.castle > 1524
+
+creek.elev.mask <- dem.creek > 1524
+
+
 # now loop through all img files
 # Input and output paths
 img.dir <- here('data', 'raw', 'background_variables', 'img')
 out.dir.tif <- here('data', 'processed', 'processed', 'tif')
-dir.create(out.dir.tif, recursive = TRUE, showWarnings = FALSE)
 
 # Input directory containing .img files
 img.files <- list.files(img.dir, pattern = '\\.img$', full.names = TRUE)
-# skip aspect, already done
-img.files <- img.files[!grepl('aspect', img.files)]
 
 for (img.path in img.files) {
   
-  # Load .img raster
-  r <- rast(img.path)
+  # Construct base name and intermediate reprojection path
+  base.name <- tools::file_path_sans_ext(basename(img.path))
+  r32611.path <- file.path(out.dir.tif, paste0(base.name, '_32611.tif'))
   
-  # Reproject to EPSG:32611
-  r.32611 <- project(r, 'EPSG:32611', method = 'bilinear')
+  # Check if reprojected raster already exists
+  if (file.exists(r32611.path)) {
+    r.32611 <- rast(r32611.path)
+  } else {
+    # Load .img raster
+    r <- rast(img.path)
+    
+    # Reproject to EPSG:32611
+    r.32611 <- project(r, 'EPSG:32611', method = 'bilinear')
+    
+    # Save reprojected raster
+    writeRaster(r.32611, r32611.path, overwrite = TRUE)
+  }
   
-  # Crop and mask to castle extent
-  r.castle <- crop(r.32611, vect(castle.extent)) %>%
-    mask(vect(castle.extent))
+  # Crop and mask to creek extent
+  r.creek <- crop(r.32611, vect(creek.extent)) %>%
+    mask(vect(creek.extent))
   
   # Resample elevation mask to match resolution and extent
-  elev.mask.resampled <- resample(castle.elev.mask, r.castle, method = 'near')
+  elev.mask.resampled <- resample(creek.elev.mask, r.creek, method = 'near')
   
   # Apply elevation mask
-  r.final <- mask(r.castle, elev.mask.resampled, maskvalue = FALSE)
+  r.final <- mask(r.creek, elev.mask.resampled, maskvalue = FALSE)
   
-  # Construct output filename
-  base.name <- tools::file_path_sans_ext(basename(img.path))
-  out.path <- file.path(out.dir.tif, paste0(base.name, '_clipped_5000ft.tif'))
+  # Construct output filename for final clipped raster
+  out.path <- file.path(out.dir.tif, paste0(base.name, 'creek_5000.tif'))
   
-  # Save
+  # Save final clipped raster
   writeRaster(r.final, out.path, overwrite = TRUE)
 }
+
+
+# this is good good that works, but modifying it to save intermediate reprojected variable with code above
+# for (img.path in img.files) {
+#   
+#   # Load .img raster
+#   r <- rast(img.path)
+#   
+#   # Reproject to EPSG:32611
+#   r.32611 <- project(r, 'EPSG:32611', method = 'bilinear')
+#   
+#   # Crop and mask to castle extent
+#   r.castle <- crop(r.32611, vect(castle.extent)) %>%
+#     mask(vect(castle.extent))
+#   
+#   # Resample elevation mask to match resolution and extent
+#   elev.mask.resampled <- resample(castle.elev.mask, r.castle, method = 'near')
+#   
+#   # Apply elevation mask
+#   r.final <- mask(r.castle, elev.mask.resampled, maskvalue = FALSE)
+#   
+#   # Construct output filename
+#   base.name <- tools::file_path_sans_ext(basename(img.path))
+#   out.path <- file.path(out.dir.tif, paste0(base.name, '_clipped_5000ft.tif'))
+#   
+#   # Save
+#   writeRaster(r.final, out.path, overwrite = TRUE)
+# }
 
 
 # # Helper function to clip and save rasters... this works well for the creek fire only
@@ -257,48 +314,7 @@ for (img.path in img.files) {
 
 
 
-####### New clip.and.save -> trying this but don't want to erase previous one yet. 
-# using first to just test on a small subset of my aspect.img data
-# clip.and.save.2 <- function(file.path, extent.sf, fire, out.dir.tif, dem.masked, template.raster) {
-#   base.name <- file_path_sans_ext(basename(file.path))
-#   out.name <- paste0(base.name, '_', fire, '.tif')
-#   out.path <- file.path(out.dir.tif, out.name)
-#   
-#   message('Processing: ', basename(file.path))
-#   
-#   # Load raster
-#   r <- rast(file.path)
-#   
-#   # Reproject raster if needed
-#   if (!crs(r) == crs(extent.sf)) {
-#     r <- project(r, crs(extent.sf))
-#   }
-#   
-#   
-#   # Clip and mask to extent
-#   r.crop <- crop(r, vect(extent.sf))
-#   r.mask <- mask(r.crop, vect(extent.sf))
-#   
-#   # Reproject elevation mask if needed
-#   if (!crs(r.mask) == crs(dem.masked)) {
-#     dem.masked <- project(dem.masked, crs(r.mask))
-#     dem.masked <- resample(dem.masked, r.mask, method = 'near')
-#   }
-#   
-#   
-#   # Mask to elevation >5000 ft
-#   r.elev.masked <- mask(r.mask, dem.masked, maskvalue = NA)
-#   
-#   # Align with SWE raster
-#   if (!crs(r.elev.masked) == crs(template.raster)) {
-#     r.elev.masked <- project(r.elev.masked, crs(template.raster))
-#     r.elev.masked <- resample(r.elev.masked, template.raster, method = 'bilinear')
-#   }
-#   
-#   
-#   # Write result
-#   writeRaster(r.elev.masked, out.path, overwrite = TRUE)
-# }
+
 
 
 ###### 07/27 let's start over with a new clip and save function
