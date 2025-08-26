@@ -4,14 +4,14 @@ install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
 # use US base map
-# us <- ne_states(country = 'United States of America', returnclass = 'sf')
-# us <- us[!us$postal %in% c('AK', 'HI', 'PR'), ]
-# # reproject
-# us <- st_transform(us, crs = 5070)
-# 
-# # western states
-# western.states <- c('WA', 'OR', 'CA', 'NV', 'ID', 'MT', 'WY', 'UT', 'CO', 'AZ', 'NM')
-# us.west <- us[us$postal %in% western.states, ]
+us <- ne_states(country = 'United States of America', returnclass = 'sf')
+us <- us[!us$postal %in% c('AK', 'HI', 'PR'), ]
+# reproject
+us <- st_transform(us, crs = 5070)
+
+# western states
+western.states <- c('WA', 'OR', 'CA', 'NV', 'ID', 'MT', 'WY', 'UT', 'CO', 'AZ', 'NM')
+us.west <- us[us$postal %in% western.states, ]
 # 
 # 
 # 
@@ -56,8 +56,8 @@ st_write(aso.ql1, here('data', 'processed', 'processed', 'shp', 'aso_ql1_overlap
 
 ggplot() +
   geom_sf(data = us.west, fill = 'grey95', color = 'grey70') +
-  geom_sf(data = wesm.ql1.west, fill = 'palegreen3', color = NA) +
-  geom_sf(data = aso.extents.sf, fill = '#2c7fb8', color = NA, alpha = 0.5) +
+  #geom_sf(data = wesm.ql1.west, fill = 'palegreen3', color = NA) +
+  #geom_sf(data = aso.extents.sf, fill = '#2c7fb8', color = NA, alpha = 0.5) +
   geom_sf(data = aso.ql1, fill = 'purple', color = NA, alpha = 0.6) +
   coord_sf(expand = FALSE) +
   theme_minimal() + 
