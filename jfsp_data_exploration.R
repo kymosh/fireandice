@@ -43,6 +43,8 @@ aso.extents.sf <- st_as_sf(aso.extents)
 # calculate overlap
 aso.ql1 <- sf::st_intersection(aso.extents.sf, wesm.ql1.west)
 
+st_write(aso.ql1, here('data', 'processed', 'processed', 'shp', 'aso_ql1_overlap.shp'), delete_layer = T)
+st_write(aso.ql1, here('data', 'processed', 'processed', 'gpkg', 'aso_ql1_overlap.gpkg'), delete_layer = T)
 
 
 ggplot() +
@@ -55,4 +57,4 @@ ggplot() +
   labs(title = 'ASO Basin Coverage & QL1 LiDAR Extents',
        subtitle = 'Blue = ASO data, Green = QL1 Lidar, \nPurple = ASO & QL1 overlap')
 
-  
+
