@@ -78,5 +78,7 @@ Temporary Items
 *.gpkg
 *.geojson
 
+*.lpk
+
 # Arcmap folder
 arcmap/
