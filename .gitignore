@@ -76,6 +76,7 @@ Temporary Items
 
 # Ignore large data files
 *.gpkg
+*.geojson
 
 # Arcmap folder
 arcmap/
