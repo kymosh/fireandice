@@ -78,5 +78,8 @@ Temporary Items
 *.gpkg
 *.geojson
 
+# ignore lpl
+*.lpk
+
 # Arcmap folder
 arcmap/
