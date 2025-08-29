@@ -60,7 +60,7 @@ aso.ql1.simple <- aso.ql1 %>%
   st_cast("MULTIPOLYGON") 
 
 
-st_write(aso.ql1.simple, here('data', 'processed', 'processed', 'shp', 'aso_ql1'), delete_layer = T)
+# st_write(aso.ql1.simple, here('data', 'processed', 'processed', 'shp', 'aso_ql1'), delete_layer = T)
 
 
 ggplot() +
@@ -77,9 +77,16 @@ ggplot() +
 ###############################
 # Used GEE to get MTBS fire data for the aso.ql1.simple shapefile
 
-fires <- st_read(here('data', 'raw', 'fire_info', 'shp', 'MTBS_within_ASO_and_QL1.shp'))
+fires <- st_read(here('data', 'raw', 'fire_info', 'geojson', 'MTBS_within_ASO_and_QL1.geojson'))
 
-ggplot
+fires.after2017 <- fires %>%
+  mutate(
+    ig_date = as.Date(as.POSIXct(Ig_Date/1000, origin = '1970-01-01', tz = 'UTC')),
+    ig_year = as.integer(format(ig_date, '%Y'))
+  ) %>%
+  filter(ig_year > 2017) %>%
+  select(Incid_Name, Incid_Type, ig_date, ql, cllct_s, cllct_n, workunt, geometry)
+
 
 ggplot() +
   geom_sf(data = us.west, fill = 'grey95', color = 'grey70') +
