@@ -84,3 +84,7 @@ Temporary Items
 
 # Arcmap folder
 arcmap/
+
+# Dataframes folder
+data/processed/dataframes/
+
