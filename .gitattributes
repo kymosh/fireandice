@@ -7,6 +7,7 @@
 *.Rmd text eol=lf
 *.rmd text eol=lf
 
+
 # Common text/code files
 *.txt text eol=lf
 *.csv text eol=lf
