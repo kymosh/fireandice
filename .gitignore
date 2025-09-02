@@ -13,7 +13,7 @@ Icon
 # R history
 .Rhistory
 .RData
-.Rproj.user/
+.Rproj
 
 # Thumbnails
 ._*
@@ -73,7 +73,6 @@ Temporary Items
 *.img
 
 # Ignore intermediate data files
-*.csv
 *.rds
 
 # Ignore large data files
