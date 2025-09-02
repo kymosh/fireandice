@@ -6,6 +6,7 @@
 *.r text eol=lf
 *.Rmd text eol=lf
 *.rmd text eol=lf
+*.Rproj text eol=lf
 
 
 # Common text/code files
