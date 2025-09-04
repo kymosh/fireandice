@@ -5,28 +5,25 @@ lapply(packages, library, character.only = TRUE)
 
 # use US base map
 us <- ne_states(country = 'United States of America', returnclass = 'sf')
-us <- us[!us$postal %in% c('AK', 'HI', 'PR'), ]
+# us <- us[!us$postal %in% c('AK', 'HI', 'PR'), ]
 # reproject
 us <- st_transform(us, crs = 5070)
 
 # western states
-western.states <- c('OR', 'CA', 'NV', 'UT', 'AZ', 'CO')
+western.states <- c('OR', 'CA', 'NV', 'UT', 'AZ', 'CO', 'MT', 'NM', 'WA', 'ID', 'WY')
 us.west <- us[us$postal %in% western.states, ]
 # get rid of unnecessary columns
 us.west <- us.west %>%
-  select(name)
-us.west <- st_transform(us.west, crs = 4326)
-# crs(us.west, describe = T)$code
-# crs(aso.ql1, describe = T)$code
+  select(name) %>%
+  st_transform(crs = 4326)
 
-
-# # Load the GeoPackage that contains lidar data
-# wesm <- st_read(here('data', 'raw', 'other', 'WESM.gpkg'))
-# 
-# # Filter to only rows where ql == 'QL 1'
-# wesm.ql1 <- wesm[wesm$ql == 'QL 1', ]
-# # reproject
-# wesm.ql1 <- st_transform(wesm.ql1, crs = 5070)
+# Load the GeoPackage that contains lidar data (where lidar is available)
+wesm <- st_read(here('data', 'raw', 'ALS', 'gpkg', 'WESM_2.gpkg'))
+ 
+# Filter to only rows where ql == 'QL 1'
+wesm.ql1 <- wesm[wesm$ql == 'QL 1', ]
+# reproject
+wesm.ql1 <- st_transform(wesm.ql1, crs = 5070)
 # # Crop QL1 to western states
 # wesm.ql1.west <- st_intersection(wesm.ql1, us.west)
 # 
@@ -64,6 +61,9 @@ us.west <- st_transform(us.west, crs = 4326)
 # st_write(aso.ql1.simple, here('data', 'processed', 'processed', 'shp', 'aso_ql1'), delete_layer = T)
 aso.ql1 <- st_read(here('data', 'processed', 'processed', 'shp', 'aso_ql1.shp'))
 
+# crs(us.west, describe = T)$code
+# crs(aso.ql1, describe = T)$code
+
 ggplot() +
   geom_sf(data = us.west, fill = 'grey95', color = 'grey70') +
   #geom_sf(data = wesm.ql1.west, fill = 'palegreen3', color = NA) +
@@ -79,6 +79,7 @@ ggplot() +
 # Used GEE to get MTBS fire data for the aso.ql1.simple shapefile
 
 fires <- st_read(here('data', 'raw', 'fire_info', 'geojson', 'MTBS_within_ASO_and_QL1.geojson'))
+crs(fires.after2012, describe = T)$code
 
 fires.after2012 <- fires %>%
   mutate(
@@ -86,7 +87,7 @@ fires.after2012 <- fires %>%
     ig_year = as.integer(format(ig_date, '%Y'))
   ) %>%
   filter(ig_year > 2012) %>% # only years 2012 and on
-  select(Incid_Name, Incid_Type, ig_date) %>% # cut unnecessary columns
+  select(Incid_Name, Incid_Type, ig_date, dNBR_offst, geometry) %>% # cut unnecessary columns
   # Expand collections to create a line per polygon
   st_cast("GEOMETRYCOLLECTION", warn = FALSE) %>%
   # Extract only polygons from those
@@ -100,7 +101,7 @@ fires.after2012 <- fires %>%
 
 
 st_write(fires.after2012,
-         here("data", "processed", "processed", "shp", "fires_after2012_overlap.shp"),
+         here("data", "processed", "processed", "shp", "jfsp_fires_after2012_overlap.shp"),
          delete_layer = TRUE)
 
 # make sure CRS 
@@ -110,7 +111,7 @@ ggplot() +
   geom_sf(data = us.west, fill = 'grey95', color = 'grey70') +
   #geom_sf(data = wesm.ql1.west, fill = 'palegreen3', color = NA) +
   #geom_sf(data = aso.extents.sf, fill = '#2c7fb8', color = NA, alpha = 0.5) +
-  geom_sf(data = aso.ql1, fill = 'purple', color = NA, alpha = 0.6) +
+  #geom_sf(data = aso.ql1, fill = 'purple', color = NA, alpha = 0.6) +
   geom_sf(data = fires.after2012, fill = 'red', color = NA, alpha = 0.6) +
   coord_sf(expand = FALSE) +
   theme_minimal() + 
@@ -162,4 +163,4 @@ ggplot() +
   )
 
 
-#test
+
