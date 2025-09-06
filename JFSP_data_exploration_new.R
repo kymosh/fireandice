@@ -174,7 +174,7 @@ fires.within5.ql1collect <- readRDS(here('data', 'processed', 'processed', 'rds'
 ######### plot
 
 # CA boundary
-ca_bbox <- c(left = -125, bottom = 34, right = -115, top = 45)
+ca_bbox <- c(left = -125, bottom = 33, right = -115, top = 45)
 
 register_stadiamaps("8f6524a2-2d27-429a-aeb1-287b33588230", write = FALSE)
 
@@ -237,21 +237,14 @@ ggmap(ca_map) +
   
 
 
-
-library(sf)
-library(ggplot2)
-library(rnaturalearth)
-library(rnaturalearthdata)
-
 # get US states
 us.states <- ne_states(country = "united states of america", returnclass = "sf")
 
 ca_bbox <- c(xmin = -125, ymin = 35, xmax = -116, ymax = 44)
-ca_bbox_sf <- st_as_sfc(st_bbox(ca_bbox, crs = 4326))
 
-# keep only CA & OR
+# keep only CA & OR & NV
 ca.or <- us.states %>%
-  dplyr::filter(name %in% c("California", "Oregon"))
+  dplyr::filter(name %in% c("California", "Oregon", "Nevada"))
 
 ql1.west$layer <- "QL1 Lidar Availability"
 aso.extents$layer <- "ASO Extents"
@@ -268,11 +261,38 @@ ggplot() +
   scale_fill_manual(name = "Layers", 
                     values = c("ASO Extents" = "deepskyblue3", 
                                "QL1 Lidar Availability" = "purple3", 
-                               "Fires within 5 Years prior of Lidar Collection" = "red")) +
+                               "Fires within 5 Years prior of Lidar Collection" = "red"),
+                    labels = c("ASO Extents",
+                               "QL1 Lidar Availability",
+                               "Fires within 5 Years\nprior of Lidar Collection")) +
   labs(title = "California and Oregon Potential Study Areas") +
-  theme_minimal()
+  theme_minimal() +
+  theme(legend.position = "bottom")
 
-          
+
+
+
+ut_bbox <- c(xmin = -114, ymin = 37, xmax = -109, ymax = 42)
+
+# keep only UT
+ut <- us.states %>%
+  dplyr::filter(name %in% c("Utah", 'Colorado', "Arizona", 'New Mexico', 'Wyoming', 'Idaho'))
+
+ql1.west$layer <- "QL1 Lidar Availability"
+aso.extents$layer <- "ASO Extents"
+fires.after2012$layer <- "Fires within 5 Years prior of Lidar Collection"
+
+# now plot with all
+ggplot() +
+  geom_sf(data = ut, fill = "grey95", color = "black") +
+  geom_sf(data = ql1.west, aes(fill = layer), color = NA, alpha = 0.3) +
+  geom_sf(data = aso.extents, aes(fill = layer), color = NA, alpha = 0.5) +
+  geom_sf(data = fires.after2012, aes(fill = layer), color = 'red', alpha = 0.15) +
+  coord_sf(xlim = c(ut_bbox["xmin"], ut_bbox["xmax"]),
+           ylim = c(ut_bbox["ymin"], ut_bbox["ymax"])) +
+  labs(title = "Utah Potential Study Area") +
+  theme_minimal() +
+  theme(legend.position = "bottom")          
 
 
 
