@@ -276,7 +276,7 @@ ut_bbox <- c(xmin = -114, ymin = 37, xmax = -109, ymax = 42)
 
 # keep only UT
 ut <- us.states %>%
-  dplyr::filter(name %in% c("Utah", 'Colorado', "Arizona", 'New Mexico', 'Wyoming', 'Idaho'))
+  dplyr::filter(name %in% c("Utah", 'Colorado', "Arizona", 'New Mexico', 'Wyoming', "Idaho"))
 
 ql1.west$layer <- "QL1 Lidar Availability"
 aso.extents$layer <- "ASO Extents"
@@ -290,11 +290,18 @@ ggplot() +
   geom_sf(data = fires.after2012, aes(fill = layer), color = 'red', alpha = 0.15) +
   coord_sf(xlim = c(ut_bbox["xmin"], ut_bbox["xmax"]),
            ylim = c(ut_bbox["ymin"], ut_bbox["ymax"])) +
+  scale_fill_manual(name = "Layers", 
+                    values = c("ASO Extents" = "deepskyblue3", 
+                               "QL1 Lidar Availability" = "purple3", 
+                               "Fires within 5 Years prior of Lidar Collection" = "red"),
+                    labels = c("ASO extents",
+                               "QL1 lidar availability",
+                               "Fires within 5 years\nprior of lidar collection")) +
   labs(title = "Utah Potential Study Area") +
   theme_minimal() +
   theme(legend.position = "bottom")          
 
 
-
-
+dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'DEM_creek.tif'))
+res(dem)
 

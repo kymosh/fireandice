@@ -45,7 +45,7 @@ expanded_bbox <- c(
   ymax = y_center + y_range
 )
 
-# Plot
+# zoomed-out plot of all of California
 ggplot() +
   geom_sf(data = california.32611, fill = 'gray95', color = 'gray70') +
   geom_sf(data = creek.hucs, fill = adjustcolor('deepskyblue3', alpha.f = 0.3), color = 'deepskyblue4', size = 0.3) +
@@ -66,3 +66,98 @@ ggplot() +
     panel.grid = element_line(color = 'gray90')
   )
 
+# zoomed-in version around Creek Fire
+# Bounding box around HUCs, with padding
+huc.bbox <- st_bbox(creek.hucs)
+zoom.bbox <- c(
+  xmin = huc.bbox['xmin'] - 5000,
+  xmax = huc.bbox['xmax'] + 5000,
+  ymin = huc.bbox['ymin'] - 5000,
+  ymax = huc.bbox['ymax'] + 5000
+)
+
+# Zoomed-in map without CA background
+ggplot() +
+  geom_sf(data = creek.hucs,
+          fill = adjustcolor('deepskyblue3', alpha.f = 0.3),
+          color = 'deepskyblue4', size = 0.3) +
+  geom_sf(data = creek.fire.32611,
+          fill = adjustcolor('red3', alpha.f = 0.4),
+          color = 'red3', size = 0.4) +
+  coord_sf(
+    xlim = c(zoom.bbox['xmin'], zoom.bbox['xmax']),
+    ylim = c(zoom.bbox['ymin'], zoom.bbox['ymax']),
+    expand = T
+  ) +
+  theme_minimal() +
+  labs(
+    title = 'Creek Fire Perimeter and Intersecting HUCs',
+    caption = 'Data sources: USGS, CalFire, HUC12 boundaries'
+  ) +
+  theme(
+    plot.title = element_text(size = 14, face = 'bold'),
+    panel.background = element_rect(fill = 'white'),
+    panel.grid = element_line(color = 'gray90')
+  )
+
+
+# Get bbox of creek.hucs and buffer it
+huc.bbox <- st_bbox(creek.hucs)
+
+zoom.bbox <- st_bbox(c(
+  xmin = huc.bbox['xmin'] - 5000,
+  xmax = huc.bbox['xmax'] + 5000,
+  ymin = huc.bbox['ymin'] - 5000,
+  ymax = huc.bbox['ymax'] + 5000
+), crs = st_crs(creek.hucs))
+
+# Now make polygon from bbox
+zoom.window <- st_as_sfc(zoom.bbox)
+
+# Clip hucs to zoom window
+hucs.zoom <- st_intersection(hucs, zoom.window)
+
+
+# Layer for legend
+hucs$layer <- 'All HUCs'
+creek.hucs$layer <- 'Intersecting HUCs'
+creek.fire.32611$layer <- 'Creek Fire'
+
+ggplot() +
+  # background HUCs (all of CA)
+  geom_sf(data = hucs, aes(fill = layer),
+          color = 'gray70', size = 0.2, alpha = 0.2) +
+  # highlighted intersecting HUCs
+  geom_sf(data = creek.hucs, aes(fill = layer),
+          color = 'deepskyblue4', size = 0.3, alpha = 0.4) +
+  # fire perimeter
+  geom_sf(data = creek.fire.32611, aes(fill = layer),
+          color = 'red3', size = 0.4, alpha = 0.4) +
+  # colors for legend
+  scale_fill_manual(
+    name = 'Layer',
+    values = c(
+      'All HUCs' = 'gray80',
+      'Intersecting HUCs' = 'deepskyblue3',
+      'Creek Fire' = 'red3'
+    )
+  ) +
+  # zoom to creek.hucs extent
+  coord_sf(
+    xlim = c(zoom.bbox['xmin'], zoom.bbox['xmax']),
+    ylim = c(zoom.bbox['ymin'], zoom.bbox['ymax']),
+    expand = FALSE
+  ) +
+  theme_minimal() +
+  labs(
+    title = 'Creek Fire and Surrounding HUCs',
+    caption = 'Data sources: USGS, CalFire, HUC12 boundaries'
+  ) +
+  theme(
+    plot.title = element_text(size = 14, face = 'bold'),
+    panel.background = element_rect(fill = 'white'),
+    panel.grid = element_line(color = 'gray90'),
+    legend.position = 'right'
+  )
+
+  
