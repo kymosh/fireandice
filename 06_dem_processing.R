@@ -32,9 +32,12 @@ castle.dem.32611 <- mask(castle.dem.32611.crop, castle.extent)
 
 creek.dem.32611.crop <- crop(creek.dem.32611, creek.extent)
 creek.dem.32611 <- mask(creek.dem.32611.crop, creek.extent)
+creek.dem.nasadem.crop <- crop(creek.dem.nasadem, creek.extent)
+creek.nasadem <- mask(creek.dem.nasadem.crop, creek.extent)
 
 out.dir <- here('data', 'processed', 'processed', 'tif')
 
 # Write new DEM files
 writeRaster(creek.dem.32611, filename = file.path(out.dir, 'dem_creek_32611.tif'), overwrite = TRUE)
 writeRaster(castle.dem.32611, filename = file.path(out.dir, 'dem_castle_32611.tif'), overwrite = TRUE)
+writeRaster(creek.nasadem, filename = file.path(out.dir, 'nasadem_creek.tif'), overwrite = TRUE)
