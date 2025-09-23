@@ -14,8 +14,8 @@
 Icon
 
 # R history
-.Rhistory
-.RData
+*.Rhistory
+*.RData
 *.Rproj
 
 # Thumbnails
