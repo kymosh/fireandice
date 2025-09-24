@@ -3,12 +3,9 @@ packages <- c( 'here', 'terra',
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
-# load in DEMs
-creek.dem.strm <- rast(here('data', 'raw', 'background_variables', 'tif', 'DEM_creek.tif'))
-castle.dem.strm <- rast(here('data', 'raw', 'background_variables', 'tif', 'DEM_castle.tif'))
 
+# load in DEM
 creek.dem.nasadem <- rast(here('data', 'raw', 'background_variables', 'tif', 'dem_NASADEM_creek.tif'))
-creek.dem.glo30 <- rast(here('data', 'raw', 'background_variables', 'tif', 'dem_GLO30_creek.tif'))
 
 # need to clip and mask using study extents
 # Read study extents
@@ -17,27 +14,16 @@ creek.extent  <- st_read(here('data', 'processed', 'processed', 'shp', 'study_ex
 
 # check CRS
 crs(creek.extent, describe = T)$code # 32611
-crs(creek.dem.strm, describe = T)$code 
-crs(creek.dem.glo30, describe = T)$code # 32611
 crs(creek.dem.nasadem, describe = T)$code # 32611
 
-creek.dem.32611 <- project(creek.dem.strm, crs(creek.extent))
-castle.dem.32611 <- project(castle.dem.strm, crs(castle.extent))
 
 # crop and mask
-creek.dem.32611.crop <- crop(creek.dem.32611, creek.extent)
-creek.dem.32611 <- mask(creek.dem.32611.crop, creek.extent)
-castle.dem.32611.crop <- crop(castle.dem.32611, castle.extent)
-castle.dem.32611 <- mask(castle.dem.32611.crop, castle.extent)
-
-creek.dem.32611.crop <- crop(creek.dem.32611, creek.extent)
-creek.dem.32611 <- mask(creek.dem.32611.crop, creek.extent)
 creek.dem.nasadem.crop <- crop(creek.dem.nasadem, creek.extent)
 creek.nasadem <- mask(creek.dem.nasadem.crop, creek.extent)
 
 out.dir <- here('data', 'processed', 'processed', 'tif')
 
-# Write new DEM files
-writeRaster(creek.dem.32611, filename = file.path(out.dir, 'dem_creek_32611.tif'), overwrite = TRUE)
-writeRaster(castle.dem.32611, filename = file.path(out.dir, 'dem_castle_32611.tif'), overwrite = TRUE)
+# Write new DEM file
 writeRaster(creek.nasadem, filename = file.path(out.dir, 'nasadem_creek.tif'), overwrite = TRUE)
+
+
