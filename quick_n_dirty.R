@@ -21,3 +21,7 @@ knp.32611 <- st_transform(knp, crs(kaweah))
 
 plot(kaweah)
 plot(st_geometry(knp.32611), add = TRUE, border = 'red')
+
+creek.study.area <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_creek_32611.shp'))
+creek.4326 <- st_transform(creek.study.area, 4326)
+st_bbox(creek.4326)
