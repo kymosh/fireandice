@@ -47,7 +47,11 @@ tpi2010.5000 <- mask(tpi2010, dem.5000)
 # write files
 out.dir <- here('data', 'processed', 'processed', 'tif')
 
+# tpi
 writeRaster(tpi150.5000, filename = file.path(out.dir, 'creek_tpi150.tif'), overwrite = TRUE)
 writeRaster(tpi510.5000, filename = file.path(out.dir, 'creek_tpi510.tif'), overwrite = TRUE)
 writeRaster(tpi1200.5000, filename = file.path(out.dir, 'creek_tpi1200.tif'), overwrite = TRUE)
 writeRaster(tpi2010.5000, filename = file.path(out.dir, 'creek_tpi2010.tif'), overwrite = TRUE)
+
+clim <- rast(here('data', 'raw', 'background_variables', 'tif', 'creek_terraclimate_2018_jan_jul.tif'))
+plot(clim)

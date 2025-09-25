@@ -1,0 +1,57 @@
+// -----------------------------
+// USER INPUT
+// -----------------------------
+
+// Study area from your asset
+var studyArea = ee.FeatureCollection('projects/ee-kyliecmosher/assets/study_extent_creek_32611');
+
+// Years and months to export
+var startYear = 2018;
+var endYear = 2025;
+var startMonth = 1;  // January
+var endMonth = 7;    // July
+
+// TerraClimate variables
+var variables = ['pr', 'tmmx', 'tmmn', 'srad', 'pet', 'def', 'swe', 'pdsi'];
+
+// -----------------------------
+// FUNCTION TO EXPORT ONE YEAR (Jan–July)
+// -----------------------------
+function exportYear(year) {
+  // Build start and end dates for Jan–July
+  var startDate = ee.Date.fromYMD(year, startMonth, 1);
+  var endDate = ee.Date.fromYMD(year, endMonth, 31);
+  
+  // Filter TerraClimate collection
+  var terraclimate = ee.ImageCollection("IDAHO_EPSCOR/TERRACLIMATE")
+                        .filterDate(startDate, endDate)
+                        .filterBounds(studyArea)
+                        .select(variables);
+  
+  // Sum precipitation and swe (water equivalent)
+  var prSum = terraclimate.select(['pr', 'swe']).sum();
+  
+  // Mean for other variables
+  var othersMean = terraclimate.select(['tmmx','tmmn','srad','pet','def','pdsi']).mean();
+  
+// Combine bands and clip, then convert to double
+var exportImage = prSum.addBands(othersMean).clip(studyArea).toDouble();
+  
+  // Export to Google Drive
+  Export.image.toDrive({
+    image: exportImage,
+    description: 'TerraClimate_' + year + '_Jan_Jul',
+    folder: 'GEE_exports', // change folder if needed
+    fileNamePrefix: 'creek_terraclimate_' + year + '_jan_jul',
+    scale: 4000,
+    region: studyArea.geometry(),
+    maxPixels: 1e13
+  });
+}
+
+// -----------------------------
+// LOOP OVER YEARS
+// -----------------------------
+for (var year = startYear; year <= endYear; year++) {
+  exportYear(year);
+}
