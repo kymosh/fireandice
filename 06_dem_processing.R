@@ -29,22 +29,22 @@ writeRaster(creek.nasadem, filename = file.path(out.dir, 'nasadem_creek.tif'), o
 
 
 
-
 # create DEM that is only >5000ft for (most) of analysis
 dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'nasadem_creek.tif'))
 
 # create elevation mask 
-mask.5000ft <- dem > 1524 #1524m = 5000ft
+mask.elev <- dem > 1524 & dem < 3100 #1524m = 5000ft
 
 # mask dem
-creek.nasadem.5000 <- mask(dem, mask.5000ft, maskvalue = 0)
+creek.nasadem.elev <- mask(dem, mask.elev, maskvalue = 0)
+plot(creek.nasadem.elev)
 
 # write new file
-writeRaster(creek.nasadem.5000, filename = file.path(out.dir, 'nasadem_creek_5000.tif'), overwrite = TRUE)
+writeRaster(creek.nasadem.elev, filename = file.path(out.dir, 'nasadem_creek_elev.tif'), overwrite = TRUE)
 
 
 # explore elevation distributions
-study.area <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_5000.tif'))
+study.area <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_elev.tif'))
 creek.perim <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'))
 
 # classify dem as burned or unburned
@@ -76,4 +76,4 @@ ggplot(elev.df, aes(x = elevation, fill = area)) +
        x = 'Elevation (m)',
        y = 'Count')
 
-max(burned.df$elevation)
+
