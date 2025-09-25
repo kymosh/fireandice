@@ -27,3 +27,18 @@ out.dir <- here('data', 'processed', 'processed', 'tif')
 writeRaster(creek.nasadem, filename = file.path(out.dir, 'nasadem_creek.tif'), overwrite = TRUE)
 
 
+
+
+
+
+# create DEM that is only >5000ft for (most) of analysis
+dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'nasadem_creek.tif'))
+
+# create elevation mask 
+mask.5000ft <- dem > 1524 #1524m = 5000ft
+
+# mask dem
+creek.nasadem.5000 <- mask(dem, mask.5000ft, maskvalue = 0)
+
+# write new file
+writeRaster(creek.nasadem.5000, filename = file.path(out.dir, 'nasadem_creek_5000.tif'), overwrite = TRUE)
