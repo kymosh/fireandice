@@ -1,5 +1,5 @@
 packages <- c( 'here', 'terra', 
-               'tidyverse', 'sf')
+               'tidyverse', 'sf', 'ggplot2')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
@@ -30,7 +30,6 @@ writeRaster(creek.nasadem, filename = file.path(out.dir, 'nasadem_creek.tif'), o
 
 
 
-
 # create DEM that is only >5000ft for (most) of analysis
 dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'nasadem_creek.tif'))
 
@@ -42,3 +41,39 @@ creek.nasadem.5000 <- mask(dem, mask.5000ft, maskvalue = 0)
 
 # write new file
 writeRaster(creek.nasadem.5000, filename = file.path(out.dir, 'nasadem_creek_5000.tif'), overwrite = TRUE)
+
+
+# explore elevation distributions
+study.area <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_5000.tif'))
+creek.perim <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'))
+
+# classify dem as burned or unburned
+burned <- mask(crop(study.area, creek.perim), creek.perim)
+unburned <- mask(study.area, creek.perim, inverse = T)
+
+# convert rasters to df
+burned.df <- as.data.frame(burned, xy = F, na.rm = T)
+unburned.df <- as.data.frame(unburned, xy = F, na.rm = T)
+
+burned.df$area <- 'burned'
+unburned.df$area <- 'unburned'
+names(unburned.df)[names(unburned.df) == 'layer'] <- 'elevation'
+
+# combine
+elev.df <- rbind(burned.df, unburned.df)
+
+ggplot(elev.df, aes(x = elevation, fill = area)) +
+  geom_density(alpha = 0.4) +
+  theme_minimal() +
+  labs(title = 'Elevation Distributions',
+       x = 'Elevation (m)',
+       y = 'Density')
+
+ggplot(elev.df, aes(x = elevation, fill = area)) +
+  geom_histogram(alpha = 0.5, position = 'identity', bins = 50) +
+  theme_minimal() +
+  labs(title = 'Elevation Histograms',
+       x = 'Elevation (m)',
+       y = 'Count')
+
+max(burned.df$elevation)

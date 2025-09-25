@@ -35,10 +35,40 @@ cbi.bc <- rast(here('data', 'raw', 'fire_info', 'tif', 'creek_cbibc.tif'))
 cbibc.creek.cropped <- crop(cbi.bc, creek.fire.32611)
 cbibc.final <- mask(cbibc.creek.cropped, creek.fire.32611)
 
+# write file
 out.dir <- here('data', 'processed', 'processed', 'tif')
-
 writeRaster(cbibc.final, filename = file.path(out.dir, 'creek_cbi_bc.tif'), overwrite = TRUE)
 
 
 
+
+############ extent CBI to whole study area (make unburned areas = 0)
+
+# read in study extent
+study.extent.shp <- st_read(here('data', 'processed', 'processed','shp', 'study_extent_creek_32611.shp'))
+
+# convert to raster
+study.extent <- raster(extent(study.extent.shp), 
+                       res = res(cbibc.final),
+                       crs = crs(cbibc.final))
+
+# expand cbi to raster extent
+cbibc.full <- extend(cbibc.final, study.extent)
+
+# fill in NAs with 0 (unburned)
+cbibc.full[is.na(cbibc.full)] <- 0
+plot(cbibc.full)
+
+# now recrop to study area and mask
+cbibc.crop <- crop(cbibc.full, study.extent.shp)
+cbibc.study.area <- mask(cbibc.crop, study.extent.shp)
+
+# mask to elevation
+# read in dem to mask cbi by elevation
+dem.5000 <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_5000.tif'))
+
+cbibc.5000 <- mask(cbibc.study.area, dem.5000)
+plot(cbibc.5000)
+
+writeRaster(cbibc.5000, filename = file.path(out.dir, 'creek_cbibc.tif'), overwrite = TRUE)
 

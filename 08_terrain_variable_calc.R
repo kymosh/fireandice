@@ -25,6 +25,13 @@ plot(slope.rad)
 plot(aspect.rad)
 plot(hli)
 
+# write files
+out.dir <- here('data', 'processed', 'processed', 'tif')
+
+writeRaster(slope.rad, filename = file.path(out.dir, 'creek_slope.tif'), overwrite = TRUE)
+writeRaster(hli, filename = file.path(out.dir, 'creek_hli.tif'), overwrite = TRUE)
+writeRaster(aspect.rad, filename = file.path(out.dir, 'creek_aspect.tif'), overwrite = TRUE)
+
 # TPI at 150, 510, and 2010
 
 # calculate scales from meters to pixels to calculate TPI
@@ -45,13 +52,9 @@ tpi1200.5000 <- mask(tpi1200, dem.5000)
 tpi2010.5000 <- mask(tpi2010, dem.5000)
 
 # write files
-out.dir <- here('data', 'processed', 'processed', 'tif')
-
-# tpi
 writeRaster(tpi150.5000, filename = file.path(out.dir, 'creek_tpi150.tif'), overwrite = TRUE)
 writeRaster(tpi510.5000, filename = file.path(out.dir, 'creek_tpi510.tif'), overwrite = TRUE)
 writeRaster(tpi1200.5000, filename = file.path(out.dir, 'creek_tpi1200.tif'), overwrite = TRUE)
 writeRaster(tpi2010.5000, filename = file.path(out.dir, 'creek_tpi2010.tif'), overwrite = TRUE)
 
-clim <- rast(here('data', 'raw', 'background_variables', 'tif', 'creek_terraclimate_2018_jan_jul.tif'))
-plot(clim)
+
