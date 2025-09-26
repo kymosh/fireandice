@@ -36,7 +36,7 @@ cbibc.creek.cropped <- crop(cbi.bc, creek.fire.32611)
 cbibc.final <- mask(cbibc.creek.cropped, creek.fire.32611)
 
 # write file
-out.dir <- here('data', 'processed', 'processed', 'tif')
+out.dir <- here('data', 'processed', 'processed', 'tif', '30m')
 writeRaster(cbibc.final, filename = file.path(out.dir, 'creek_cbi_bc.tif'), overwrite = TRUE)
 
 

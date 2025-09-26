@@ -26,11 +26,11 @@ plot(aspect.rad)
 plot(hli)
 
 # write files
-out.dir <- here('data', 'processed', 'processed', 'tif')
+out.dir <- here('data', 'processed', 'processed', 'tif', '30m')
 
-writeRaster(slope.rad, filename = file.path(out.dir, 'creek_slope.tif'), overwrite = TRUE)
-writeRaster(hli, filename = file.path(out.dir, 'creek_hli.tif'), overwrite = TRUE)
-writeRaster(aspect.rad, filename = file.path(out.dir, 'creek_aspect.tif'), overwrite = TRUE)
+writeRaster(slope.rad, filename = file.path(out.dir, 'creek_topo_slope.tif'), overwrite = TRUE)
+writeRaster(hli, filename = file.path(out.dir, 'creek_topo_hli.tif'), overwrite = TRUE)
+writeRaster(aspect.rad, filename = file.path(out.dir, 'creek_topo_aspect.tif'), overwrite = TRUE)
 
 # TPI at 150, 510, and 2010
 
@@ -52,9 +52,9 @@ tpi1200.5000 <- mask(tpi1200, dem.5000)
 tpi2010.5000 <- mask(tpi2010, dem.5000)
 
 # write files
-writeRaster(tpi150.5000, filename = file.path(out.dir, 'creek_tpi150.tif'), overwrite = TRUE)
-writeRaster(tpi510.5000, filename = file.path(out.dir, 'creek_tpi510.tif'), overwrite = TRUE)
-writeRaster(tpi1200.5000, filename = file.path(out.dir, 'creek_tpi1200.tif'), overwrite = TRUE)
-writeRaster(tpi2010.5000, filename = file.path(out.dir, 'creek_tpi2010.tif'), overwrite = TRUE)
+writeRaster(tpi150.5000, filename = file.path(out.dir, 'creek_topo_tpi150.tif'), overwrite = TRUE)
+writeRaster(tpi510.5000, filename = file.path(out.dir, 'creek_topo_tpi510.tif'), overwrite = TRUE)
+writeRaster(tpi1200.5000, filename = file.path(out.dir, 'creek_topo_tpi1200.tif'), overwrite = TRUE)
+writeRaster(tpi2010.5000, filename = file.path(out.dir, 'creek_topo_tpi2010.tif'), overwrite = TRUE)
 
 
