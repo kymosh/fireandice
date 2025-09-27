@@ -28,28 +28,28 @@ plot(swe.10.30.bl, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "50m to 10m to
 plot(swe.30.bl, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "50m to 30m, bilinear")
 
 
-
-#### picking bl for now just as a placeholder to build rest of code
-in.dir <- here('data', 'processed', 'processed', 'tif')
-out.dir <- here('data', 'processed', 'processed', 'tif')
-
-# create a list of all swe files to be resampled
-swe.files <- list.files(in.dir,
-                        pattern = '^ASO_SanJoaquin_2020.*\\.tif$', # get rid of 2020 when ready to run for all
-                        full.names = T)
-
-# loop though swe files and resample each, resaving the new result
-for (f in swe.files) {
-  r = rast(f)
-  r.30m <- resample(r, dem, method = 'near') # change method of necessary
-  
-  new.name <- basename(f)
-  new.name <- gsub('50m', '30m', new.name) # replace 50m with 30m 
-  new.name <- gsub('_clipped', '', new.name) # get rid of "clipped"
-  
-  out.name <- file.path(out.dir, new.name)
-  writeRaster(r.30m, out.name, overwrite = T)
-}
+# Don't need this code anymore because we're not resampling SWE
+# #### picking bl for now just as a placeholder to build rest of code
+# in.dir <- here('data', 'processed', 'processed', 'tif')
+# out.dir <- here('data', 'processed', 'processed', 'tif')
+# 
+# # create a list of all swe files to be resampled
+# swe.files <- list.files(in.dir,
+#                         pattern = '^ASO_SanJoaquin_2020.*\\.tif$', # get rid of 2020 when ready to run for all
+#                         full.names = T)
+# 
+# # loop though swe files and resample each, resaving the new result
+# for (f in swe.files) {
+#   r = rast(f)
+#   r.30m <- resample(r, dem, method = 'near') # change method of necessary
+#   
+#   new.name <- basename(f)
+#   new.name <- gsub('50m', '30m', new.name) # replace 50m with 30m 
+#   new.name <- gsub('_clipped', '', new.name) # get rid of "clipped"
+#   
+#   out.name <- file.path(out.dir, new.name)
+#   writeRaster(r.30m, out.name, overwrite = T)
+# }
 
 #### SDD ####
 par(mfrow = c(1,1))
