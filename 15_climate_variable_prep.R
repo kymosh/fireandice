@@ -11,6 +11,7 @@ sdd <- rast(here('data', 'processed', 'processed', 'tif', 'creek_sdd_wy2020_3261
 
 crs(swe, describe = T)$code
 crs(sdd, describe = T)$code
+crs(clim, describe = T)$code
 
 #### comparison of different sampling methods
 
@@ -36,6 +37,10 @@ out.dir.50 <- here('data', 'processed', 'processed', 'tif', '50m')
 out.dir.500 <- here('data', 'processed', 'processed', 'tif', '500m') 
 
 clim.files <- list.files(in.dir, pattern = '^creek_terraclimate.*\\.tif$', full.names = T)
+
+
+
+### probably have to redo this after I mask out the upper and lower elevations
 
 # resample to 50m
 for (f in clim.files) {
