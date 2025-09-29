@@ -76,4 +76,33 @@ ggplot(elev.df, aes(x = elevation, fill = area)) +
        x = 'Elevation (m)',
        y = 'Count')
 
+# calculate burned elevation percentiles
+burned.q <- quantile(burned.df$elevation,
+                     probs = c(0.95, 0.98, 0.99),
+                     na.rm = T)
+burned.q
 
+# density plot showing different percentiles
+ggplot(subset(elev.df, area == 'burned'),
+       aes(x = elevation)) +
+  geom_density(fill = 'firebrick', alpha = 0.4) +
+  geom_vline(xintercept = burned.q,
+             linetype = 'dashed',
+             color = 'black') +
+  theme_minimal() +
+  labs(title = 'Burned Area Elevation Distribution',
+       x = 'Elevation (m)',
+       y = 'Density')
+
+# same graph but with unburned density plot also
+ggplot(elev.df, aes(x = elevation, fill = area)) +
+  geom_density(alpha = 0.4) +
+  geom_vline(xintercept = burned.q,
+             linetype = 'dashed',
+             color = 'black') +
+  theme_minimal() +
+  labs(title = 'Elevation Distributions: Burned vs Unburned',
+       x = 'Elevation (m)',
+       y = 'Density')
+
+# use 98% percentile to clip upper elevations (2674m)
