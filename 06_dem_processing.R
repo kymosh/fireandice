@@ -33,7 +33,7 @@ writeRaster(creek.nasadem, filename = file.path(out.dir, 'nasadem_creek.tif'), o
 dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'nasadem_creek.tif'))
 
 # create elevation mask 
-mask.elev <- dem > 1524 & dem < 3100 #1524m = 5000ft
+mask.elev <- dem > 1524 & dem < 2674 #1524m = 5000ft, 2674 is 98% percentile of burned elevations
 
 # mask dem
 creek.nasadem.elev <- mask(dem, mask.elev, maskvalue = 0)
@@ -41,6 +41,11 @@ plot(creek.nasadem.elev)
 
 # write new file
 writeRaster(creek.nasadem.elev, filename = file.path(out.dir, 'nasadem_creek_elev.tif'), overwrite = TRUE)
+
+
+
+
+
 
 
 # explore elevation distributions

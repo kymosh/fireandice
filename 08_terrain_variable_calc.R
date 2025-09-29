@@ -11,15 +11,13 @@ plot(dem)
 hist(dem)
 plot(is.na(dem), main = 'NA cells in DEM')
 
-dem.5000 <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_5000.tif'))
-print(dem.5000)
-plot(dem.5000)
-hist(dem.5000)
+dem.elev <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_elev.tif'))
+
 
 # calculate variables
-slope.rad <- terrain(dem.5000, v = 'slope', unit = 'radians')
-aspect.rad <- terrain(dem.5000, v = 'aspect', unit = 'radians')
-hli <- hli(dem.5000) #uses McCune(2007) calculation for hli
+slope.rad <- terrain(dem.elev, v = 'slope', unit = 'radians')
+aspect.rad <- terrain(dem.elev, v = 'aspect', unit = 'radians')
+hli <- hli(dem.elev) #uses McCune(2007) calculation for hli
 
 plot(slope.rad)
 plot(aspect.rad)
@@ -46,15 +44,15 @@ plot(tpi1200)
 plot(tpi2010)
 
 # mask to only include above 5000ft
-tpi150.5000 <- mask(tpi150, dem.5000)
-tpi510.5000 <- mask(tpi510, dem.5000)
-tpi1200.5000 <- mask(tpi1200, dem.5000)
-tpi2010.5000 <- mask(tpi2010, dem.5000)
+tpi150.elev <- mask(tpi150, dem.elev)
+tpi510.elev <- mask(tpi510, dem.elev)
+tpi1200.elev <- mask(tpi1200, dem.elev)
+tpi2010.elev <- mask(tpi2010, dem.elev)
 
 # write files
-writeRaster(tpi150.5000, filename = file.path(out.dir, 'creek_topo_tpi150.tif'), overwrite = TRUE)
-writeRaster(tpi510.5000, filename = file.path(out.dir, 'creek_topo_tpi510.tif'), overwrite = TRUE)
-writeRaster(tpi1200.5000, filename = file.path(out.dir, 'creek_topo_tpi1200.tif'), overwrite = TRUE)
-writeRaster(tpi2010.5000, filename = file.path(out.dir, 'creek_topo_tpi2010.tif'), overwrite = TRUE)
+writeRaster(tpi150.elev, filename = file.path(out.dir, 'creek_topo_tpi150.tif'), overwrite = TRUE)
+writeRaster(tpi510.elev, filename = file.path(out.dir, 'creek_topo_tpi510.tif'), overwrite = TRUE)
+writeRaster(tpi1200.elev, filename = file.path(out.dir, 'creek_topo_tpi1200.tif'), overwrite = TRUE)
+writeRaster(tpi2010.elev, filename = file.path(out.dir, 'creek_topo_tpi2010.tif'), overwrite = TRUE)
 
 
