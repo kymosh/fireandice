@@ -43,6 +43,20 @@ plot(creek.nasadem.elev)
 writeRaster(creek.nasadem.elev, filename = file.path(out.dir, 'nasadem_creek_elev.tif'), overwrite = TRUE)
 
 
+# also create dem that has been resampled to 500m to crop sdd to 
+dem.for.sdd <- rast(here(out.dir, 'nasadem_creek_elev.tif'))
+dem.for.sdd <- dem.for.sdd * 1.0  
+plot(dem.for.sdd)
+
+# sdd to resample to
+sdd <- rast(here(out.dir, '500m', 'creek_terraclimate_wy2018_500m.tif'))
+plot(sdd)
+
+dem.500m <- resample(dem.for.sdd, sdd, method = 'average')
+plot(dem.500m)
+writeRaster(dem.500m, filename = file.path(out.dir, '500m', 'creek_dem_500m.tif'), overwrite = TRUE)
+
+
 
 
 
