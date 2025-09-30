@@ -4,28 +4,28 @@ install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
 # just checking to see status of SWE data
-swe <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_2020_0414_SUPERswe_50p0m_agg_clipped.tif'))
+swe <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_2020_0414_SUPERswe_50m_clipped.tif'))
 
-dem <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_5000.tif'))
+dem <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_elev.tif'))
 
-# 3 methods of resampling from 50m to 30m
-swe.30.bl <- resample(swe, dem, method = 'bilinear')
-swe.30.nn <- resample(swe, dem, method = 'near')
-swe.30.rms <- resample(swe, dem, method = 'rms')
-
-zoom.ext <- c(310000, 311500, 4120000, 4121500)
-
-par(mfrow = c(1,3)) 
-plot(swe.30.nn, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "nearest neighbor")
-plot(swe.30.rms, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "rms")
-plot(swe.30.bl, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "bilinear")
-
-# method of going to 10 first then 30m
-template.10m <- rast(ext(swe.50m), res=10, crs=crs(swe.50m))
-swe.10.bl <- resample(swe, template.10m, method = 'bilinear')
-swe.10.30.bl <- resample(swe.10.bl, dem, method = 'bilinear')
-plot(swe.10.30.bl, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "50m to 10m to 30m, bilinear")
-plot(swe.30.bl, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "50m to 30m, bilinear")
+# # 3 methods of resampling from 50m to 30m
+# swe.30.bl <- resample(swe, dem, method = 'bilinear')
+# swe.30.nn <- resample(swe, dem, method = 'near')
+# swe.30.rms <- resample(swe, dem, method = 'rms')
+# 
+# zoom.ext <- c(310000, 311500, 4120000, 4121500)
+# 
+# par(mfrow = c(1,3)) 
+# plot(swe.30.nn, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "nearest neighbor")
+# plot(swe.30.rms, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "rms")
+# plot(swe.30.bl, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "bilinear")
+# 
+# # method of going to 10 first then 30m
+# template.10m <- rast(ext(swe.50m), res=10, crs=crs(swe.50m))
+# swe.10.bl <- resample(swe, template.10m, method = 'bilinear')
+# swe.10.30.bl <- resample(swe.10.bl, dem, method = 'bilinear')
+# plot(swe.10.30.bl, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "50m to 10m to 30m, bilinear")
+# plot(swe.30.bl, xlim=zoom.ext[1:2], ylim=zoom.ext[3:4], main = "50m to 30m, bilinear")
 
 
 # Don't need this code anymore because we're not resampling SWE
@@ -59,9 +59,6 @@ crs(sdd, describe = T)$code
 sdd.32611 <- project(sdd, 'EPSG:32611')
 res(sdd.32611)
     
-    
-     
-      
     
 # reproject SDD to 32611
 
