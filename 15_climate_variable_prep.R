@@ -76,7 +76,7 @@ for (f in clim.files) {
   writeRaster(r.500m.elev, out.name, overwrite = T)
 }
 
-check <- rast(file.path(out.dir.500, 'creek_terraclimate_wy2018_500m.tif'))
+check <- rast(file.path(out.dir.500, 'creek_terraclimate_wy2018_500m_1524_2674.tif'))
 plot(check)
 
 

@@ -2,15 +2,17 @@ packages <- c('tidyverse', 'terra')
 install.packages(set.diff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
-# resample all data to SDD resolution
+# resample all data to SWE resolution
 
 in.dir <- here('data', 'processed', 'processed', 'tif')
-out.dir <- here(in.dir, '50m')
+out.dir.50 <- here(in.dir, '50m')
+out.dir.500 <- here(in.dir, '500m')
 
 topo.cbi <- list.files(here(in.dir, '30m'), full.names = T)
 
 # target resolution
 swe <- rast(here(in.dir, 'ASO_SanJoaquin_2024_0127_swe_50m_1524_2674.tif'))
+sdd <- rast(here(in.dir, 'creek_sdd_wy2020_32611_1524_2674.tif'))
 
 # check to make sure all are in crs 32611 and res is 30m
 for (f in topo.cbi) {
@@ -26,8 +28,8 @@ for (f in topo.cbi) {
 # test
 test.topo <- rast(here(in.dir, '30m', 'creek_topo_slope.tif'))
 plot(test.topo)
-test.topo.50m <- resample(test.topo, swe, method = 'average')
-plot(test.topo.50m)
+test.topo.500m <- resample(test.topo, sdd, method = 'average')
+plot(test.topo.500m)
 
 # resample to 50m to match swe
 for (f in topo.cbi) {
@@ -45,4 +47,18 @@ plot(test)
 res(test)
 
 
+# resample to 500m to match sdd
+for (f in topo.cbi) {
+  r <- rast(f)
+  r.500m <- resample(r, sdd, method = 'average')
+  
+  new.name <- sub('\\.tif$', '_500m_1524_2674.tif', basename(f))
+  new.path <- file.path(out.dir.500, new.name)
+  
+  writeRaster(r.500m, new.path, overwrite = T)
+}
+
+test <- rast(here(out.dir.500, 'creek_topo_hli_500m_1524_2674.tif'))
+plot(test)
+res(test)
 

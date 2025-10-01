@@ -21,7 +21,7 @@ creek.fire <- creek.fire.0 %>%
 crs(creek.fire, describe = T)$code
 creek.fire.32611 <- st_transform(creek.fire, 32611)
 
-# shapefile to be assed as asset in GEE  
+# shapefile to be used as asset in GEE  
 st_write(creek.fire.32611, here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'))
 
 
@@ -37,12 +37,13 @@ cbibc.final <- mask(cbibc.creek.cropped, creek.fire.32611)
 
 # write file
 out.dir <- here('data', 'processed', 'processed', 'tif', '30m')
-writeRaster(cbibc.final, filename = file.path(out.dir, 'creek_cbi_bc.tif'), overwrite = TRUE)
+writeRaster(cbibc.final, filename = file.path(out.dir, 'creek_cbi_bc_firescaronly.tif'), overwrite = TRUE)
 
 
 
 
-############ extent CBI to whole study area (make unburned areas = 0)
+############ extend CBI to whole study area (make unburned areas = 0)
+cbibc.final <- rast(here(out.dir, 'creek_cbi_bc_firescaronly.tif'))
 
 # read in study extent
 study.extent.shp <- st_read(here('data', 'processed', 'processed','shp', 'study_extent_creek_32611.shp'))
@@ -65,10 +66,10 @@ cbibc.study.area <- mask(cbibc.crop, study.extent.shp)
 
 # mask to elevation
 # read in dem to mask cbi by elevation
-dem.5000 <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_5000.tif'))
+dem.elev <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_elev.tif'))
 
-cbibc.5000 <- mask(cbibc.study.area, dem.5000)
-plot(cbibc.5000)
+cbibc.elev <- mask(cbibc.study.area, dem.elev)
+plot(cbibc.elev)
 
-writeRaster(cbibc.5000, filename = file.path(out.dir, 'creek_cbibc.tif'), overwrite = TRUE)
+writeRaster(cbibc.elev, filename = file.path(out.dir, 'creek_cbibc_30m_1524_2674.tif'), overwrite = TRUE)
 
