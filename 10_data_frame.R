@@ -93,3 +93,4 @@ swe.df <- as.data.frame(swe.stack, xy = T, na.rm = T)
 
 head(swe.df)
 
+saveRDS(swe.df, here('data', 'processed', 'dataframes', 'swe_dataframe_1524_2674.rds'))

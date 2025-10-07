@@ -4,7 +4,8 @@ install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
 # Read in full scaled Creek terrain dataframe
-creek.scaled.df <- readRDS(here('data', 'processed', 'dataframes', 'creek_terrain_scaled.rds'))
+#creek.scaled.df <- readRDS(here('data', 'processed', 'dataframes', 'creek_terrain_scaled.rds'))
+swe.df <- readRDS(here('data', 'processed', 'dataframes', 'swe_dataframe_1524_2674.rds'))
 
 # rename dem to elev (elevation)
 #names(creek.scaled.df)[names(creek.scaled.df) == 'dem'] <- 'elev'

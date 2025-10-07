@@ -62,3 +62,7 @@ test <- rast(here(out.dir.500, 'creek_topo_hli_500m_1524_2674.tif'))
 plot(test)
 res(test)
 
+
+
+##### experimenting with other resampling for SDD data - using points instead 
+

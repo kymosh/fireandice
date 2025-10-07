@@ -63,12 +63,15 @@ writeRaster(dem.500m, filename = file.path(out.dir, '500m', 'creek_dem_500m.tif'
 
 
 # explore elevation distributions
-study.area <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_elev.tif'))
+study.area <- rast(here('data', 'processed', 'processed', 'tif', 'creek_dem_500m_1524_2674.tif'))
+dem <- rast(here('data', 'processed', 'processed', 'tif', '30m', 'nasadem_creek_30m.tif'))
+
+
 creek.perim <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'))
 
 # classify dem as burned or unburned
-burned <- mask(crop(study.area, creek.perim), creek.perim)
-unburned <- mask(study.area, creek.perim, inverse = T)
+burned <- mask(crop(dem, creek.perim), creek.perim)
+unburned <- mask(dem, creek.perim, inverse = T)
 
 # convert rasters to df
 burned.df <- as.data.frame(burned, xy = F, na.rm = T)
