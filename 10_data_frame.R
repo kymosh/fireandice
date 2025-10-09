@@ -67,7 +67,8 @@ clean.names <- swe.files %>%
   gsub('terraclimate.', '', .) %>%
   gsub('topo.', '', .) %>%
   gsub('^\\.', '', .) %>%
-  gsub('^ASO.SanJoaquin.', '', .)
+  gsub('^ASO.SanJoaquin.', '', .) %>%
+  gsub('nasadem.creek', 'elev', .)
 
 
 clean.names

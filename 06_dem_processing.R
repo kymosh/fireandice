@@ -128,3 +128,10 @@ ggplot(elev.df, aes(x = elevation, fill = area)) +
        y = 'Density')
 
 # use 98% percentile to clip upper elevations (2674m)
+
+# create dem that is 50m resolution
+swe <-  rast(here('data', 'processed', 'processed', 'tif', '50m', 'ASO_SanJoaquin_2023_0317_swe_50m_1524_2674.tif')) 
+dem.30m <- rast(here('data', 'processed', 'processed', 'tif', '30m', 'nasadem_creek_elev_30m.tif'))
+dem50m <- resample(dem.30m, swe, method = 'average')
+
+writeRaster(dem50m, here('data', 'processed', 'processed', 'tif', '50m', 'nasadem_creek_50m_1524_2674.tif'))

@@ -1,22 +1,23 @@
-packages <- c( 'here', 'raster', 'sf', 'terra', 'geodata',
+packages <- c( 'here', 'dplyr', 'raster', 'sf', 'terra', 'geodata',
                'tidyverse', 'e1071')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
-# Read in full scaled Creek terrain dataframe
-#creek.scaled.df <- readRDS(here('data', 'processed', 'dataframes', 'creek_terrain_scaled.rds'))
+# Read in full dataframe
 swe.df <- readRDS(here('data', 'processed', 'dataframes', 'swe_dataframe_1524_2674.rds'))
+swe.df <- swe.df[, !duplicated(colnames(swe.df))]
 
-# rename dem to elev (elevation)
-#names(creek.scaled.df)[names(creek.scaled.df) == 'dem'] <- 'elev'
 
-# create matrix of just terrain variables, excluding x and y
-#terrain.matrix <- creek.scaled.df %>%
-  # dplyr::select(tpi_130, tpi_510, tpi_2010, slope, hli, elev) %>%
-  # as.matrix()
-#saveRDS(terrain.matrix, here('data', 'processed', 'dataframes', 'creek_terrain_matrix.rds'))
+# select only topographic variables and scale them to z scores
+terrain.scaled <- swe.df %>%
+  dplyr::select(tpi510, slope, aspect, hli, elev) %>%
+  scale()
+# save
+saveRDS(terrain.scaled, here('data', 'processed', 'dataframes', 'creek_terrain_matrix_scaled_1524_2674.rds'))
 
-terrain.matrix <- readRDS(here('data', 'processed', 'dataframes', 'creek_terrain_matrix.rds'))
+
+
+
 
 
 # create subset of matrix to run fuzzy c clustering on
@@ -24,12 +25,33 @@ terrain.matrix <- readRDS(here('data', 'processed', 'dataframes', 'creek_terrain
 set.seed(42)  # for reproducibility
 
 # sample size 0.0005%
-sample.size <- round(nrow(terrain.matrix) * 0.0005)
-sample.rows <- sample(nrow(terrain.matrix), sample.size)
-terrain.sample <- terrain.matrix[sample.rows, ]
+sample.size <- round(nrow(terrain.scaled) * 0.0005)
+sample.rows <- sample(nrow(terrain.scaled), sample.size)
+terrain.sample <- terrain.scaled[sample.rows, ]
+
+# fuzzy c clustering on subset - 5 clusters
+fcm.result <- cmeans(
+  terrain.sample,
+  centers = 5,         # should be between 4 and 8, we'll start with 6
+  m = 2,               # fuzziness parameter
+  iter.max = 100,      # max iterations
+  verbose = TRUE,
+  method = 'cmeans'    # default method
+)
+
+fcm.result$centers
+head(fcm.result$membership)
+head(fcm.result$cluster)
+
+terrain.sample.df <- as.data.frame(terrain.sample)
+terrain.sample.df$cluster <- as.factor(fcm.result$cluster)
+
+ggplot(terrain.sample.df, aes(x = tpi510, y = elev, color = cluster)) +
+  geom_point(alpha = 0.6) +
+  theme_minimal()
 
 # fuzzy c clustering on subset - 6 clusters
-fcm.result.6 <- cmeans(
+fcm.result <- cmeans(
   terrain.sample,
   centers = 6,         # should be between 4 and 8, we'll start with 6
   m = 2,               # fuzziness parameter
@@ -38,117 +60,96 @@ fcm.result.6 <- cmeans(
   method = 'cmeans'    # default method
 )
 
-# run PCA and plot just first 2 components
-pca.result <- prcomp(terrain.sample, center = TRUE, scale. = TRUE)
-pca.scores <- pca.result$x[, 1:2]  # just the first two components
+fcm.result$centers
+head(fcm.result$membership)
+head(fcm.result$cluster)
 
-# assign cluster results
-cluster.hard <- fcm.result.6$cluster
+terrain.sample.df <- as.data.frame(terrain.sample)
+terrain.sample.df$cluster <- as.factor(fcm.result$cluster)
 
-# max membership value (how confident the algorithm was)
-max.membership <- apply(fcm.result.6$membership, 1, max)
-
-# combine for plotting
-cluster.df <- data.frame(
-  PC1 = pca.scores[, 1],
-  PC2 = pca.scores[, 2],
-  cluster = factor(cluster.hard),
-  membership = max.membership
-)
-
-# plot results
-ggplot(cluster.df, aes(x = PC1, y = PC2, color = cluster, alpha = membership)) +
-  geom_point(size = 1.5) +
-  scale_alpha(range = c(0.4, 1)) +
-  labs(title = 'Fuzzy C-Means Clustering in PCA Space',
-       color = 'Cluster', alpha = 'Max Membership') +
+ggplot(terrain.sample.df, aes(x = tpi510, y = elev, color = cluster)) +
+  geom_point(alpha = 0.6) +
   theme_minimal()
 
 
-
-
-
-
-
-
-# 4 clusters
-fcm.result.4 <- cmeans(
+# fuzzy c clustering on subset - 8 clusters
+fcm.result <- cmeans(
   terrain.sample,
-  centers = 4,         # should be between 4 and 8, we'll start with 6
+  centers = 8,         # should be between 4 and 8, we'll start with 6
   m = 2,               # fuzziness parameter
   iter.max = 100,      # max iterations
   verbose = TRUE,
   method = 'cmeans'    # default method
 )
 
-# assign cluster results
-cluster.hard <- fcm.result.4$cluster
+fcm.result$centers
+head(fcm.result$membership)
+head(fcm.result$cluster)
 
-# max membership value (how confident the algorithm was)
-max.membership <- apply(fcm.result.4$membership, 1, max)
+terrain.sample.df <- as.data.frame(terrain.sample)
+terrain.sample.df$cluster <- as.factor(fcm.result$cluster)
 
-# combine for plotting
-cluster.df <- data.frame(
-  PC1 = pca.scores[, 1],
-  PC2 = pca.scores[, 2],
-  cluster = factor(cluster.hard),
-  membership = max.membership
-)
-
-# plot results
-ggplot(cluster.df, aes(x = PC1, y = PC2, color = cluster, alpha = membership)) +
-  geom_point(size = 1.5) +
-  scale_alpha(range = c(0.4, 1)) +
-  labs(title = 'Fuzzy C-Means Clustering in PCA Space',
-       color = 'Cluster', alpha = 'Max Membership') +
+ggplot(terrain.sample.df, aes(x = tpi510, y = elev, color = cluster)) +
+  geom_point(alpha = 0.6) +
   theme_minimal()
 
-# calculate centroids
-centroids <- fcm.result$centers 
 
-# distance calculation (Euclidean)
-compute_euclidean <- function(mat, centers) {
-  n <- nrow(mat)
-  k <- nrow(centers)
-  dist.mat <- matrix(NA, n, k)
-  
-  for (j in 1:k) {
-    # For each cluster center, compute distances for all rows
-    center <- centers[j, ]
-    dist.mat[, j] <- sqrt(rowSums((mat - matrix(center, n, ncol(mat), byrow = TRUE))^2))
-  }
-  
-  return(dist.mat)
-}
 
-# Run it
-dist.mat.4 <- compute_euclidean(terrain.matrix, centroids)
 
-# compute fuzzy memberships from distances
-m <- 2  # fuzziness parameter
 
-inv.dist <- 1 / (dist.mat.4 + 1e-10)  # prevent divide-by-zero
-power <- 2 / (m - 1)
 
-membership.full <- inv.dist^power
-membership.full <- membership.full / rowSums(membership.full)
 
-# assign hard clusters
-hard.cluster.full <- apply(membership.full, 1, which.max)
 
-#### map results back to raster
-# add cluster assignment to original dataframe
-creek.scaled.df$cluster <- hard.cluster.full
+### use PCA results to cluster
+pca <- prcomp(terrain.scaled, center = FALSE, scale. = FALSE) 
+pc.mat <- pca$x[, 1:3] # uce PC1-PC3
 
-# Create raster from data frame
-creek.fuzzy.4 <- rast(
-  creek.scaled.df[, c('x', 'y', 'cluster')],
-  type = 'xyz',
-  crs = 'EPSG:32611'  
-)
+set.seed(14)
+terrain.clust <- cmeans(pc.mat, centers = 6, m = 2, iter.max = 200, verbose = 2)
 
-# Save to file
+# create new df for plotting
+pca.df <- as.data.frame(pc.mat) %>%
+  mutate(cluster = as.factor(terrain.clust$cluster))
 
-writeRaster(creek.fuzzy.4, filename = here('data', 'processed', 'processed', 'tif', 'creek_fuzzy_4.tif'), overwrite = TRUE)
+# plot of clusters plotted against PC1 and PC2
+ggplot(pca.df, aes(x = PC1, y = PC2, color = cluster)) +
+  geom_point(alpha = 0.5, size = 0.8) +
+  scale_color_brewer(palette = 'Dark2') +
+  theme_minimal(base_size = 14) +
+  labs(title = 'Fuzzy C-Means Clusters (PC1 vs PC2)',
+       x = 'Principal Component 1',
+       y = 'Principal Component 2')
 
-plot(creek.fuzzy.4, col = terrain.colors(4), main = 'Topographic Clusters')
+
+
+# make new column with cluster assignment
+cluster.assignments <- terrain.clust$cluster
+
+# make new df with x and y from swe.df
+clusters.df <- data.frame(x = swe.df$x,
+                          y = swe.df$y, 
+                          cluster = terrain.clust$cluster)
+
+# conver to raster(just for plotting)
+cluster.rast <- rast(clusters.df, type = 'xyz')
+plot(cluster.rast)
+
+# add cluster assignment column to swe.df
+swe.df.clustered <- swe.df %>%
+  left_join(clusters.df %>% dplyr::select(x, y, cluster), by = c('x', 'y'))
+
+
+# quick analysis to compare number of burned and unburned pixels in each cluster
+swe.df.clustered <- swe.df.clustered %>%
+  mutate(burned_status = ifelse(cbibc.30m > 0, "Burned", "Unburned"))
+
+ggplot(swe.df.clustered, aes(x = factor(cluster), fill = burned_status)) +
+  geom_bar(position = "dodge") +   # "dodge" puts bars side by side
+  scale_fill_manual(values = c("Unburned" = "grey70", "Burned" = "firebrick")) +
+  theme_minimal(base_size = 14) +
+  labs(
+    x = "Topographic Cluster",
+    y = "Number of pixels",
+    fill = "Status",
+    title = "Burned vs Unburned Pixels by Topographic Cluster"
+  )
