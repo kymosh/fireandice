@@ -48,3 +48,22 @@ head(df)
 
 # find max elevation where cbi > 0
 max(df$elevation[df$CBI_bc > 0], na.rm = T)
+
+
+
+
+# figuring out why my topo values look weird
+topo.dir <- here('data', 'processed', 'processed', 'tif')
+topo.files <- list.files(here(topo.dir, '50m'), pattern = '^creek_topo_', full.names = T)
+
+topo.rasters <- lapply(topo.files, rast)
+topo.stack <- rast(topo.rasters)
+
+topo.df <- as.data.frame(topo.stack, xy = T)
+
+aspect <- rast(here(topo.dir, '50m', 'creek_topo_aspect_50m_1524_2674.tif'))
+aspect <- as.data.frame(aspect, xy = T)
+summary(aspect$aspect)
+
+aspect.30 <- rast(here(topo.dir, '30m', 'creek_topo_aspect.tif'))
+summary(aspect.30)

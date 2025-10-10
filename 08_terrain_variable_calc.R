@@ -11,7 +11,7 @@ plot(dem)
 hist(dem)
 plot(is.na(dem), main = 'NA cells in DEM')
 
-dem.elev <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_elev.tif'))
+dem.elev <- rast(here('data', 'processed', 'processed', 'tif', '30m', 'nasadem_creek_elev_30m.tif'))
 
 
 # calculate variables
