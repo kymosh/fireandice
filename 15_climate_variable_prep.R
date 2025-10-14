@@ -6,8 +6,8 @@ lapply(packages, library, character.only = TRUE)
 clim <- rast(here('data', 'raw', 'background_variables', 'tif', 'creek_terraclimate_wy2018.tif'))
 plot(clim)
 
-swe <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_2023_0121_swe_50m_1524_2674.tif'))
-sdd <- rast(here('data', 'processed', 'processed', 'tif', 'creek_sdd_wy2020_32611.tif'))
+swe <- rast(here('data', 'processed', 'processed', 'tif', '50m' , 'ASO_SanJoaquin_2023_0121_swe_50m_1524.tif'))
+sdd <- rast(here('data', 'processed', 'processed', 'tif', '500m', 'creek_sdd_wy2020_32611_1524.tif'))
 
 crs(swe, describe = T)$code
 crs(sdd, describe = T)$code
@@ -37,29 +37,27 @@ out.dir.50 <- here('data', 'processed', 'processed', 'tif', '50m')
 out.dir.500 <- here('data', 'processed', 'processed', 'tif', '500m') 
 
 clim.files <- list.files(in.dir, pattern = '^creek_terraclimate.*\\.tif$', full.names = T)
-dem.500m <- rast(here(out.dir.500, 'creek_dem_500m.tif'))
+dem.500m <- rast(here(out.dir.500, 'creek_dem_500m_1524.tif'))
 
 # create elevation mask
-dem.elev <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_Creek_elev.tif'))
+dem.elev <- rast(here('data', 'processed', 'processed', 'tif', '50m' , 'nasadem_creek_50m_1524.tif'))
 elev.mask <- dem.elev
 elev.mask[!is.na(elev.mask)] <- 1
-# resample mask to 50m
-elev.mask.50m <- resample(elev.mask, swe, method = 'average')
 
 
 
 # resample to 50m
 for (f in clim.files) {
   r <- rast(f)
-  r.50m <- resample(r, swe, method = 'near') # change cubic to best method
-  r.50m.masked <- mask(r.50m, elev.mask.50m)
-  new.name <- sub('\\.tif$', '_50m_1524_2674.tif', basename(f))
+  r.50m <- resample(r, swe, method = 'near') 
+  r.50m.masked <- mask(r.50m, elev.mask)
+  new.name <- sub('\\.tif$', '_50m_1524.tif', basename(f))
   out.name <- file.path(out.dir.50, new.name)
 
   writeRaster(r.50m.masked, out.name, overwrite = T)
 }
 
-check <- rast(file.path(out.dir.50, 'creek_terraclimate_wy2018_50m.tif'))
+check <- rast(file.path(out.dir.50, 'creek_terraclimate_wy2018_50m_1524.tif'))
 plot(check)
 
 
@@ -70,19 +68,13 @@ for (f in clim.files) {
   r.500m <- resample(r, sdd, method = 'near')
   r.500m.elev <- mask(r.500m, dem.500m)
   
-  new.name <- sub('\\.tif$', '_500m.tif', basename(f))
+  new.name <- sub('\\.tif$', '_500m_1524.tif', basename(f))
   out.name <- file.path(out.dir.500, new.name)
   
   writeRaster(r.500m.elev, out.name, overwrite = T)
 }
 
-check <- rast(file.path(out.dir.500, 'creek_terraclimate_wy2018_500m_1524_2674.tif'))
+check <- rast(file.path(out.dir.500, 'creek_terraclimate_wy2018_500m_1524.tif'))
 plot(check)
 
-
-
-clim.files.500m <- list.files(out.dir.500, pattern = "^creek_terraclimate.*\\.tif$", full.names = T)
-
-check.elev <- mask(check, dem.500m)
-plot(check.elev)
 

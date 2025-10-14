@@ -11,7 +11,7 @@ plot(dem)
 hist(dem)
 plot(is.na(dem), main = 'NA cells in DEM')
 
-dem.elev <- rast(here('data', 'processed', 'processed', 'tif', '30m', 'nasadem_creek_elev_30m.tif'))
+dem.elev <- rast(here('data', 'processed', 'processed', 'tif', '30m', 'nasadem_creek_30m_1524.tif'))
 
 
 # calculate variables
@@ -26,9 +26,9 @@ plot(hli)
 # write files
 out.dir <- here('data', 'processed', 'processed', 'tif', '30m')
 
-writeRaster(slope.rad, filename = file.path(out.dir, 'creek_topo_slope.tif'), overwrite = TRUE)
-writeRaster(hli, filename = file.path(out.dir, 'creek_topo_hli.tif'), overwrite = TRUE)
-writeRaster(aspect.rad, filename = file.path(out.dir, 'creek_topo_aspect.tif'), overwrite = TRUE)
+writeRaster(slope.rad, filename = file.path(out.dir, 'creek_topo_slope_30m_1524.tif'), overwrite = TRUE)
+writeRaster(hli, filename = file.path(out.dir, 'creek_topo_hli_30m_1524.tif'), overwrite = TRUE)
+writeRaster(aspect.rad, filename = file.path(out.dir, 'creek_topo_aspect_30m_1524.tif'), overwrite = TRUE)
 
 # TPI at 150, 510, and 2010
 
@@ -50,9 +50,9 @@ tpi1200.elev <- mask(tpi1200, dem.elev)
 tpi2010.elev <- mask(tpi2010, dem.elev)
 
 # write files
-writeRaster(tpi150.elev, filename = file.path(out.dir, 'creek_topo_tpi150.tif'), overwrite = TRUE)
-writeRaster(tpi510.elev, filename = file.path(out.dir, 'creek_topo_tpi510.tif'), overwrite = TRUE)
-writeRaster(tpi1200.elev, filename = file.path(out.dir, 'creek_topo_tpi1200.tif'), overwrite = TRUE)
-writeRaster(tpi2010.elev, filename = file.path(out.dir, 'creek_topo_tpi2010.tif'), overwrite = TRUE)
+writeRaster(tpi150.elev, filename = file.path(out.dir, 'creek_topo_tpi150_30m_1524.tif'), overwrite = TRUE)
+writeRaster(tpi510.elev, filename = file.path(out.dir, 'creek_topo_tpi510_30m_1524.tif'), overwrite = TRUE)
+writeRaster(tpi1200.elev, filename = file.path(out.dir, 'creek_topo_tpi1200_30m_1524.tif'), overwrite = TRUE)
+writeRaster(tpi2010.elev, filename = file.path(out.dir, 'creek_topo_tpi2010_30m_1524.tif'), overwrite = TRUE)
 
 

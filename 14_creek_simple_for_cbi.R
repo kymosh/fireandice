@@ -43,7 +43,7 @@ writeRaster(cbibc.final, filename = file.path(out.dir, 'creek_cbi_bc_firescaronl
 
 
 ############ extend CBI to whole study area (make unburned areas = 0)
-cbibc.final <- rast(here(out.dir, 'creek_cbi_bc_firescaronly.tif'))
+cbibc.final <- rast(here('data', 'processed', 'processed', 'tif', 'extra', 'creek_cbi_bc_firescaronly_30m.tif'))
 
 # read in study extent
 study.extent.shp <- st_read(here('data', 'processed', 'processed','shp', 'study_extent_creek_32611.shp'))
@@ -66,10 +66,11 @@ cbibc.study.area <- mask(cbibc.crop, study.extent.shp)
 
 # mask to elevation
 # read in dem to mask cbi by elevation
-dem.elev <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_elev.tif'))
+dem.elev <- rast(here('data', 'processed', 'processed', 'tif', '30m', 'nasadem_creek_30m_1524.tif'))
 
 cbibc.elev <- mask(cbibc.study.area, dem.elev)
+par(mfrow = c(1, 2))
 plot(cbibc.elev)
-
-writeRaster(cbibc.elev, filename = file.path(out.dir, 'creek_cbibc_30m_1524_2674.tif'), overwrite = TRUE)
-
+plot(dem.elev)
+writeRaster(cbibc.elev, filename = file.path(out.dir, 'creek_cbibc_30m_1524.tif'), overwrite = TRUE)
+par(mfrow = c(1, 1))

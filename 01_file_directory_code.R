@@ -347,3 +347,17 @@ for (old_path in tif.files) {
   # Rename file
   file.rename(old_path, new_path)
 }
+
+
+#### rename files 1-/13/25
+
+swe.files <- list.files(here(tif.dir, '50m'), pattern = '_clipped_5000.*\\.tif$', full.names = T)
+
+for (f in swe.files) {
+  r <- rast(f)
+  new.name <- basename(f) %>% 
+    gsub('clipped_5000', '1524', .)
+  out.path <- here(tif.dir, '50m', new.name)
+  
+  writeRaster(r, out.path, overwrite = T)
+}

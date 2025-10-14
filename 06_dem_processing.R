@@ -5,11 +5,11 @@ lapply(packages, library, character.only = TRUE)
 
 
 # load in DEM
-creek.dem.nasadem <- rast(here('data', 'raw', 'background_variables', 'tif', 'dem_NASADEM_creek.tif'))
+creek.dem.nasadem <- rast(here('data', 'raw', 'background_variables', 'tif', 'nasadem_creek.tif'))
 
 # need to clip and mask using study extents
 # Read study extents
-castle.extent <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_castle_32611.shp'))
+# castle.extent <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_castle_32611.shp'))
 creek.extent  <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_creek_32611.shp'))
 
 # check CRS
@@ -33,28 +33,29 @@ writeRaster(creek.nasadem, filename = file.path(out.dir, 'nasadem_creek.tif'), o
 dem <- rast(here('data', 'raw', 'background_variables', 'tif', 'nasadem_creek.tif'))
 
 # create elevation mask 
-mask.elev <- dem > 1524 & dem < 2674 #1524m = 5000ft, 2674 is 98% percentile of burned elevations
+# mask.elev <- dem > 1524 & dem < 2674 #1524m = 5000ft, 2674 is 98% percentile of burned elevations
+mask.elev <- dem > 1524  #1524m = 5000ft
 
 # mask dem
 creek.nasadem.elev <- mask(dem, mask.elev, maskvalue = 0)
 plot(creek.nasadem.elev)
 
 # write new file
-writeRaster(creek.nasadem.elev, filename = file.path(out.dir, 'nasadem_creek_elev.tif'), overwrite = TRUE)
+writeRaster(creek.nasadem.elev, filename = file.path(out.dir, '30m', 'nasadem_creek_30m_1524.tif'), overwrite = TRUE)
 
 
 # also create dem that has been resampled to 500m to crop sdd to 
-dem.for.sdd <- rast(here(out.dir, 'nasadem_creek_elev.tif'))
+dem.for.sdd <- rast(here(out.dir, '30m', 'nasadem_creek_30m_1524.tif'))
 dem.for.sdd <- dem.for.sdd * 1.0  
 plot(dem.for.sdd)
 
 # sdd to resample to
-sdd <- rast(here(out.dir, '500m', 'creek_terraclimate_wy2018_500m.tif'))
+sdd <- rast(here(out.dir, '500m', 'creek_terraclimate_wy2018_500m_1524_2674.tif'))
 plot(sdd)
 
 dem.500m <- resample(dem.for.sdd, sdd, method = 'average')
 plot(dem.500m)
-writeRaster(dem.500m, filename = file.path(out.dir, '500m', 'creek_dem_500m.tif'), overwrite = TRUE)
+writeRaster(dem.500m, filename = file.path(out.dir, '500m', 'creek_dem_500m_1524.tif'), overwrite = TRUE)
 
 
 
@@ -130,8 +131,9 @@ ggplot(elev.df, aes(x = elevation, fill = area)) +
 # use 98% percentile to clip upper elevations (2674m)
 
 # create dem that is 50m resolution
-swe <-  rast(here('data', 'processed', 'processed', 'tif', '50m', 'ASO_SanJoaquin_2023_0317_swe_50m_1524_2674.tif')) 
-dem.30m <- rast(here('data', 'processed', 'processed', 'tif', '30m', 'nasadem_creek_elev_30m.tif'))
+swe <-  rast(here('data', 'processed', 'processed', 'tif', '50m', 'ASO_SanJoaquin_2023_0317_swe_50m_1524.tif')) 
+dem.30m <- rast(here('data', 'processed', 'processed', 'tif', '30m', 'nasadem_creek_30m_1524.tif'))
+dem.30m <- dem.30m * 1.0  
 dem50m <- resample(dem.30m, swe, method = 'average')
 
-writeRaster(dem50m, here('data', 'processed', 'processed', 'tif', '50m', 'nasadem_creek_50m_1524_2674.tif'))
+writeRaster(dem50m, here('data', 'processed', 'processed', 'tif', '50m', 'nasadem_creek_50m_1524.tif'), overwrite = T)

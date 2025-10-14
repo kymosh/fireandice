@@ -64,8 +64,8 @@ res(sdd.32611)
 # reproject SDD to 32611 and mask to study area
 
 in.dir <- here('data', 'raw', 'SDD')
-out.dir <- here('data', 'processed', 'processed', 'tif')
-dem.500 <- rast(here(out.dir, '500m', 'creek_dem_500m_1524_2674.tif'))
+out.dir <- here('data', 'processed', 'processed', 'tif', '500m')
+dem.500 <- rast(here(out.dir, 'creek_dem_500m_1524.tif'))
 
 sdd.files <- list.files(in.dir, pattern = '^creek_sdd.*\\.tif$', full.names = T)
 
@@ -74,26 +74,16 @@ for (f in sdd.files) {
   r.32611 <- project(r, 'EPSG:32611', method = 'near')
   r.32611.masked <- mask(r.32611, dem.500)
   
-  new.name <- sub('\\.tif$', '_32611_1524_2674.tif', basename(f))
+  new.name <- sub('\\.tif$', '_32611_1524.tif', basename(f))
   out.name <- file.path(out.dir, new.name)
   
   writeRaster(r.32611.masked, out.name, overwrite = T)
 }
 
-test <- rast(here(out.dir, 'creek_sdd_wy2023_32611_1524_2674.tif'))
+test <- rast(here(out.dir, 'creek_sdd_wy2023_32611_1524.tif'))
 plot(test)
 
 
-# IDK
-creek.extent  <- st_read(here('data', 'processed', 'processed', 'shp', 'study_extent_creek_32611.shp'))
-
-dem.5000 <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_5000.tif'))
-
-sdd.creek <- sdd %>%
-  crop(creek.extent) %>%
-  mask(creek.extent) 
-
-plot(sdd.creek)
 sdd.creek.5000 <- mask(sdd.creek, dem.5000)
 
 
@@ -148,6 +138,10 @@ for (f in aso) {
 
 test <- rast(here(out.dir, 'ASO_SanJoaquin_2023_0121_swe_50m_1524_2674.tif'))
 plot(test)
+
+# some SWE data have mismatched extents
+# crop all to the ref file
+
 
 
 
