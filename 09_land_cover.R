@@ -93,3 +93,7 @@ ggplot(lc.df, aes(x = landcover_factor, fill = landcover_factor)) +
     axis.text.x = element_blank(),  # hide x-axis labels
     legend.title = element_blank()
   )
+
+plot(lc.mask)
+plot(creek.scar, add = T, border = 'red', lwd = 1, col = NA)
+creek.scar <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'))
