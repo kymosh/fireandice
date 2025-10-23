@@ -18,7 +18,7 @@ lc.mask <- mask(lc.crop, dem.30)
 
 
 
-writeRaster(lc.mask, here(tif.dir, '30m', 'creek_landcover_1524.tif'))
+writeRaster(lc.mask, here(tif.dir, '30m', 'creek_landcover_30m_1524.tif'))
 
 # explore landcover
 lc.df <- as.data.frame(lc.mask)
@@ -97,3 +97,97 @@ ggplot(lc.df, aes(x = landcover_factor, fill = landcover_factor)) +
 plot(lc.mask)
 plot(creek.scar, add = T, border = 'red', lwd = 1, col = NA)
 creek.scar <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'))
+
+
+
+
+
+
+#######################  resample  #############################
+
+
+landcover <- rast(here(in.dir, '30m', 'creek_landcover_30m_1524.tif'))
+
+# Define landcover groupings
+lc.groups <- list(
+  Undesirable = c(16, 17, 18),
+  Temperate_subpolar_needleleaf_forest = c(1),
+  Temperate_subpolar_broadleaf_deciduous_forest = c(5),
+  Mixed_forest = c(6),
+  Temperate_subpolar_shrubland = c(8),
+  Temperate_subpolar_grassland = c(10),
+  Wetland = c(14)
+)
+
+# target resolution
+swe <- rast(here(in.dir, '50m', 'ASO_SanJoaquin_2024_0127_swe_50m_1524.tif'))
+sdd <- rast(here(in.dir, '500m', 'creek_sdd_wy2020_32611_1524.tif'))
+
+#### SDD ####
+
+# Initialize list for fractional layers
+frac.list <- list()
+
+# Loop over each landcover group
+for (grp in names(lc.groups)) {
+  classes <- lc.groups[[grp]]
+  
+  # Binary mask for this group (1 if pixel belongs to any of these classes)
+  lc.bin <- landcover %in% classes
+  
+  # Fractional cover at sdd resolution (mean of 1's = proportion)
+  lc.frac <- resample(lc.bin, sdd, method = 'average')
+  
+  # Mask to study area
+  lc.frac <- mask(lc.frac, sdd)
+  
+  # Rename layer
+  names(lc.frac) <- grp
+  
+  frac.list[[grp]] <- lc.frac
+}
+
+# Combine all fractional cover layers
+landcover.frac.500m <- rast(frac.list)
+
+# Check result
+plot(landcover.frac.500m)
+plot(landcover.frac.500m$Temperate_subpolar_needleleaf_forest)
+
+# Save raster stack 
+writeRaster(landcover.frac.500m, here('data', 'processed', 'processed', 'tif', '500m', 'landcover_fractional_groups_500m_1524.tif'), overwrite = TRUE)
+
+#### SWE ####
+
+# Initialize list for fractional layers
+frac.list <- list()
+
+# Loop over each landcover group
+for (grp in names(lc.groups)) {
+  classes <- lc.groups[[grp]]
+  
+  # Binary mask for this group (1 if pixel belongs to any of these classes)
+  lc.bin <- landcover %in% classes
+  
+  # Fractional cover at sdd resolution (mean of 1's = proportion)
+  lc.frac <- resample(lc.bin, swe, method = 'average')
+  
+  # Mask to study area
+  lc.frac <- mask(lc.frac, swe)
+  
+  # Rename layer
+  names(lc.frac) <- grp
+  
+  frac.list[[grp]] <- lc.frac
+}
+
+# Combine all fractional cover layers
+landcover.frac.50m <- rast(frac.list)
+
+# Check result
+plot(landcover.frac.50m)
+plot(landcover.frac.50m$Temperate_subpolar_needleleaf_forest)
+
+
+# Save raster stack 
+writeRaster(landcover.frac.50m, here('data', 'processed', 'processed', 'tif', '50m', 'landcover_fractional_groups_50m_1524.tif'), overwrite = TRUE)

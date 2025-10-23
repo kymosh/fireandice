@@ -26,10 +26,10 @@ for (f in topo.cbi) {
 }
 
 # test
-test.topo <- rast(here(in.dir, '30m', 'creek_topo_slope_30m_1524.tif'))
-plot(test.topo)
-test.topo.500m <- resample(test.topo, sdd, method = 'average')
-plot(test.topo.500m)
+# test.topo <- rast(here(in.dir, '30m', 'creek_topo_slope_30m_1524.tif'))
+# plot(test.topo)
+# test.topo.500m <- resample(test.topo, sdd, method = 'average')
+# plot(test.topo.500m)
 
 # resample to 50m to match swe
 for (f in topo.cbi) {
@@ -45,6 +45,7 @@ for (f in topo.cbi) {
 test <- rast(here(out.dir, 'creek_cbibc_30m_1524.tif'))
 plot(test)
 res(test)
+
 
 
 # resample to 500m to match sdd
