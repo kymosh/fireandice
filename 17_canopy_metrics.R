@@ -7,3 +7,5 @@ mean.csm <- rast(here('data', 'raw', 'ALS', 'tif', 'CreekFire_2021_MeanCSM_Meter
 rm(meancsm)
 
 summary(mean.csm)
+
+#test
