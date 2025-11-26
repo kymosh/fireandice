@@ -1,0 +1,99 @@
+---
+title: "study_area_extent"
+output: html_document
+date: "2025-06-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  collapse = TRUE,
+  comment = '#>'
+)
+
+packages <- (c('here', 'exactextractr', 'raster', 'sf', 'terra', 'geodata', 'tidyverse', 'spatialEco', 'patchwork', 'knitr', 'dplyr'))
+install.packages(setdiff(packages, rownames(installed.packages())))
+lapply(packages, library, character.only = TRUE)
+```
+
+```{r}
+hucs <- st_read(here('data', 'raw', 'background_variables', 'shp', 'ACE_HUC12s_WebMerc_1mXY.shp'))
+```
+
+```{r creek fire}
+
+creek.fire <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_fire_perimeter.shp'))
+
+st_crs(hucs)
+st_crs(creek.fire)
+
+# change crs to WGS.84
+if (st_crs(hucs) != st_crs(creek.fire)) {
+  creek.fire.84 <- st_transform(creek.fire, st_crs(hucs))
+}
+
+# hucs that intersect creek fire boundary
+creek.hucs <- hucs %>%
+  st_filter(creek.fire.84, .predicate = st_intersects)
+
+# View result
+plot(st_geometry(creek.hucs), col = adjustcolor('blue', alpha.f = 0.5), main = 'Creek Fire Intersecting HUCs')
+plot(st_geometry(creek.fire.84), add = TRUE, border = 'red')
+
+# dissolve into single polygon
+creek.study.extent <- creek.hucs %>%
+  st_union() %>%
+  st_as_sf()
+
+plot(st_geometry(creek.study.extent), col = adjustcolor('green', alpha.f = 0.5), main = 'Creek Study Extent')
+plot(st_geometry(creek.fire.84), add = TRUE, border = 'red')
+
+
+
+# Save to file
+st_write(creek.study.extent, here('data', 'processed', 'processed', 'study_extent_creek.shp'), delete_layer = TRUE)
+
+# reproject to EPSG:32611
+creek.study.extent.32611 <- st_transform(creek.study.extent, 32611)
+st_write(creek.study.extent.32611, here('data', 'processed', 'processed', 'study_extent_creek_32611.shp'), delete_layer = TRUE)
+
+plot(st_geometry(creek.study.extent.32611), col = adjustcolor('green', alpha.f = 0.5), main = 'Creek Study Extent')
+```
+
+```{r castle fire}
+castle.fire <- st_read(here('data', 'raw', 'fire_info', 'shp', 'castle_fire_perimeter.shp'))
+
+st_crs(hucs)
+st_crs(castle.fire)
+
+# change crs to WGS.84
+if (st_crs(hucs) != st_crs(castle.fire)) {
+  castle.fire.84 <- st_transform(castle.fire, st_crs(hucs))
+}
+
+# hucs that intersect creek fire boundary
+castle.hucs <- hucs %>%
+  st_filter(castle.fire.84, .predicate = st_intersects)
+
+# View result
+plot(st_geometry(castle.hucs), col = adjustcolor('blue', alpha.f = 0.5), main = 'Castle Fire Intersecting HUCs')
+plot(st_geometry(castle.fire.84), add = TRUE, border = 'red')
+
+# dissolve into single polygon
+castle.study.extent <- castle.hucs %>%
+  st_union() %>%
+  st_as_sf()
+
+plot(st_geometry(castle.study.extent), col = adjustcolor('green', alpha.f = 0.5), main = 'Castle Study Extent')
+plot(st_geometry(castle.fire.84), add = TRUE, border = 'red', lwd = 2)
+
+# Save to file
+st_write(castle.study.extent, here('data', 'processed', 'processed', 'shp', 'study_extent_castle.shp'), delete_layer = TRUE)
+
+# reproject to EPSG:32611
+castle.study.extent.32611 <- st_transform(castle.study.extent, 32611)
+st_write(castle.study.extent.32611, here('data', 'processed', 'processed', 'shp','study_extent_castle_32611.shp'), delete_layer = TRUE)
+
+```

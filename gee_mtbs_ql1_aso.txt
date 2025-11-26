@@ -1,0 +1,9 @@
+var mtbs = ee.FeatureCollection('USFS/GTAC/MTBS/burned_area_boundaries/v1');
+var asoBoundary = ee.FeatureCollection('projects/ee-kyliecmosher/assets/aso_ql1');
+
+var mtbsClipped = mtbs.filterBounds(asoBoundary);
+Export.table.toDrive({
+  collection: mtbsClipped,
+  description: 'MTBS_within_ASO_and_QL1',
+  fileFormat: 'SHP'  // or 'GeoJSON', 'KML', etc.
+});

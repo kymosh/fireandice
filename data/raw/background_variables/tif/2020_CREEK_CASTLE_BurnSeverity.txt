@@ -1,0 +1,7 @@
+This data was processed June through July 20201 by Gina Cova.
+
+Folders contain RBR (with offset) and RdNBR (with offset) images for every fire over 4 ha in 
+CALFIRE's FRAP dataset that burned between 1985 through the end of 2020.
+
+Burn severity images were derived using Sean Park's Google Earth Engine scripts. 1985 through 2019
+fires use Landsat imagery; 2020 fires use Sentinel.

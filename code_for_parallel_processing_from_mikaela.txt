@@ -1,0 +1,32 @@
+#library(doParallel)
+
+for(i in 1:10){
+  fire = fires[i]
+  for(dob in 1:10){
+    print(dob)
+    out[i] = final
+  }
+}
+ 
+ 
+cl <- makeCluster(4)
+registerDoParallel(cl)
+ 
+ 
+foreach(i = 1:10) %dopar% {
+  fire = fires[i]
+  for(dob in 1:10){
+    print(dob)
+    writeRaster()
+  }
+}
+ 
+ 
+out[[i]] = foreach(i = 1:10) %dopar% {
+  fire = fires[i]
+  for(dob in 1:10){
+    print(dob)
+    writeRaster()
+    final
+  }
+}
