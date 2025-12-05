@@ -1,4 +1,4 @@
-packages <- c('terra', 'sf', 'mapview', 'lidR', 'aRchi', 'TreeLS', 'dplyr')
+packages <- c('terra', 'sf', 'mapview', 'lidR', 'aRchi', 'TreeLS', 'dplyr', 'ForestGapR', 'raster')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -36,7 +36,7 @@ las1.clean <- readLAS(ctg@data$filename[1], filter = '-drop_class 7 18 -drop_wit
 table(las1.clean$Classification)
 
 # process one tile at a time
-opt_chunk_size(ctg) <- 0 
+opt_chunk_size(ctg) <- 0  # would change this when scaling up with more data
 # buffer of 20m to enable seamless normalization 
 opt_chunk_buffer(ctg) <- 20
 
@@ -261,76 +261,274 @@ pad.metrics <- function(z) {
 
 pad.stack <- pixel_metrics(ctg.norm, ~ pad.metrics(Z), res = 1)
 
-#------- gap metrics --------
-
-gap.metrics <- function(chm, pzabove2, gap_threshold = 0.05) {
-  
-  # GAP MASK (TRUE gaps where pzabove2 < threshold)
-  gap.mask <- pzabove2 < gap_threshold 
-  gap.mask <- ifel(gap.mask, 1, 0)
-  
-  # convert gaps to polygons
-  gap.poly.0 <- as.polygons(gap.mask, dissolve = T, values = T)
-  gap.poly <- gap.poly.0[ gap.poly.0$lyr1 == 1 ]
-  
-  # if no gaps exist, return dummy rasters of NA
-  if (nrow(gap.poly) == 0) {
-    empty <- rast(chm)
-    values(empty) <- NA_real_
-    names(empty) <- 'no_gaps'
-    return(empty)
-  }
-  
-  # gap attributes
-  gap.poly$gap_area <- expanse(gap.poly, unit = 'm')
-  gap.poly$gap_radius <- sqrt(gap.poly$gap_area / pi)     # effective radius
-  gap.poly$gap_id <- 1:nrow(gap.poly)
-  
-  # rasterize
-  gap_area_rast <- rasterize(gap.poly, chm, field = 'gap_area')
-  gap_radius_rast <- rasterize(gap.poly, chm, field = 'gap_radius')
-  gap_id_rast <- rasterize(gap.poly, chm, field = 'gap_id')
-  
-  # -- distance to nearest canopy --
-  dist_to_canopy <- distance(!gap.mask)
-  # gap edges
-  edges <- boundaries(gap.mask, directions = 8, classes = F)
-  # convert to binary
-  edges <- classify(edges, cbind(NA, 0))
-  # keep only inner edges of gaps
-  inner.edges <- mask(edges, gap.mask, maskvalue = 0)
-  # distance to gap edge
-  dist_to_gap_edge <- distance(!inner.edges)
-  
-  # stack all together
-  gap.stack <- c(
-    gap_area_rast,
-    gap_radius_rast,
-    gap_id_rast,
-    dist_to_canopy,
-    dist_to_gap_edge
-  )
-  
-  names(gap.stack) <- c(
-    'gap_area',
-    'gap_radius',
-    'gap_id',
-    'dist_to_canopy',
-    'dist_to_gap_edge'
-  )
-  
-  return(gap.stack)
-  
-}
-
-gap.stack <- gap.metrics(chm, cover.stack$pzabove2)
+# ====------- gap metrics ----------- BAD
+# =============================================
 
 
+# # we first have to write and re-read in to force the correct data type
+# writeRaster(cover.stack$pzabove2, 
+#             'pzabove2_fixed.tif', 
+#             overwrite = TRUE)
+# 
+# summary(cover.stack)
+# 
+# pzabove2_fixed <- rast('pzabove2_fixed.tif')
+# datatype(pzabove2_fixed)     # should NOT be ""
+# 
+# 
+# gap.mask <- pzabove2_fixed < 0.05
+# table(values(gap.mask), useNA = 'ifany')
+# 
+# 
+# 
+# 
+# 
+# gap.metrics <- function(chm, pzabove2, gap_threshold = 0.05) {
+#   
+#   # 1 — GAP MASK (TRUE gaps where pzabove2 < threshold)
+#   gap.mask <- pzabove2 < gap_threshold 
+#   values(gap.mask) <- as.integer(values(gap.mask))   # force 0/1
+#   
+#   # 2 — convert to polygons
+#   gap.poly.0 <- as.polygons(gap.mask, dissolve = TRUE, values = TRUE)
+#   
+#   # the attribute column name will match the raster name
+#   att <- names(gap.poly.0)[1]
+#   gap.poly <- gap.poly.0[ gap.poly.0[[att]] == 1 ]
+#   
+#   # 3 — NO GAPS case
+#   if (nrow(gap.poly) == 0) {
+#     gap_area_rast    <- rast(chm); values(gap_area_rast)    <- NA
+#     gap_radius_rast  <- rast(chm); values(gap_radius_rast)  <- NA
+#     gap_id_rast      <- rast(chm); values(gap_id_rast)      <- NA
+#     dist_to_canopy   <- rast(chm); values(dist_to_canopy)   <- NA
+#     dist_to_gap_edge <- rast(chm); values(dist_to_gap_edge) <- NA
+#     
+#     gap.stack <- c(gap_area_rast,
+#                    gap_radius_rast,
+#                    gap_id_rast,
+#                    dist_to_canopy,
+#                    dist_to_gap_edge)
+#     
+#     names(gap.stack) <- c(
+#       'gap_area',
+#       'gap_radius',
+#       'gap_id',
+#       'dist_to_canopy',
+#       'dist_to_gap_edge'
+#     )
+#     
+#     return(gap.stack)
+#   }
+#   
+#   # 4 — gap attributes
+#   gap.poly$gap_area   <- expanse(gap.poly, unit = 'm')
+#   gap.poly$gap_radius <- sqrt(gap.poly$gap_area / pi)
+#   gap.poly$gap_id     <- 1:nrow(gap.poly)
+#   
+#   # 5 — rasterize attributes back onto canopy grid
+#   gap_area_rast   <- rasterize(gap.poly, chm, field = 'gap_area')
+#   gap_radius_rast <- rasterize(gap.poly, chm, field = 'gap_radius')
+#   gap_id_rast     <- rasterize(gap.poly, chm, field = 'gap_id')
+#   
+#   # 6 — distance metrics
+#   dist_to_canopy <- distance(!gap.mask)
+#   
+#   edges <- boundaries(gap.mask, directions = 8, classes = FALSE)
+#   edges <- classify(edges, cbind(NA, 0))
+#   inner.edges <- mask(edges, gap.mask, maskvalue = 0)
+#   dist_to_gap_edge <- distance(!inner.edges)
+#   
+#   # 7 — combine
+#   gap.stack <- c(
+#     gap_area_rast,
+#     gap_radius_rast,
+#     gap_id_rast,
+#     dist_to_canopy,
+#     dist_to_gap_edge
+#   )
+#   
+#   names(gap.stack) <- c(
+#     'gap_area',
+#     'gap_radius',
+#     'gap_id',
+#     'dist_to_canopy',
+#     'dist_to_gap_edge'
+#   )
+#   
+#   return(gap.stack)
+# }
+# 
+# 
+# gap.stack <- gap.metrics(chm, cover.stack$pzabove2)
+# names(gap.stack)
+# summary(gap.stack)
+# 
+# gap.stack <- resample(gap.stack, height.stack, method = 'bilinear')
 
+
+
+
+# ==============================================================================
+#  GAP METRICS 
+# ==============================================================================
+# ForestGapR requires chm to be a raster::raster
+chm.r <- raster::raster(chm)
+
+# Plotting chm
+plot(chm.r, col=viridis(10))
+
+# Setting height thresholds (e.g. 10 meters)
+threshold <- 2 # No points >2 m = gap
+size<-c(1,10000) #all gaps between 1 and 1000m
+
+# Detecting forest gaps
+gaps.rast <- getForestGaps(chm_layer = chm.r, threshold, size)
+
+
+#plot
+plot(chm.r, col=viridis(10))
+plot(gaps.rast, col="red", add=TRUE, main="Forest Canopy Gap", legend=FALSE)
+
+
+# zoom
+ext_small <- ext(308350, 308550, 4135500, 4135700)
+terra::plot(
+  terra::crop(chm, ext_small),
+  col = viridisLite::plasma(100)
+)
+plot(gaps.rast, col="red", add=TRUE, main="Forest Canopy Gap", legend=F)
+
+# calc stats
+gaps.stats <- GapStats(gap_layer = gaps.rast, chm_layer = chm.r)
+
+# ----------- aggregate gap metrics to 50m ---------------------
+
+# turn back into spatraster
+gaps <- rast(gaps.rast)
+
+# force it to report correct CRS
+crs(gaps) <- "EPSG:32611"
+plot(chm)
+plot(gaps, col = 'red', add = T)
+
+
+names(gaps) <- 'gap_id'
+
+# change to binary gap or no gap
+gap.mask <- ifel(!is.na(gaps), 1, 0)
+names(gap.mask) <- 'is_gap'
+unique(gap.mask)
+plot(gap.mask, colNA='red')
+
+
+# plot binary gaps
+terra::plot(
+  terra::crop(gap.mask, ext_small),
+  col = viridisLite::plasma(2)
+)
+
+cell.size <- res(gap.mask)[1]
+fact <- res(target.swe)[1] / cell.size
+
+gap.count.50 <- aggregate(gap.mask, fact = fact, fun = sum, na.rm = T)
+names(gap.count.50) <- 'gap_area_m2'
+
+pixel.area.50 <- fact*50
+
+# gap.pct.50 is % of each 50 m pixel that is gap
+gap.pct.50 <- gap.count.50*(cell.size^2) / pixel.area.50
+
+ga <- gaps.stats$gap_area
+id <- gaps.stats$gap_id
+
+gap.bins <- ifelse(ga < 5, 1,
+             ifelse(ga < 10, 2,
+             ifelse(ga < 10000, 3, 0)))
+
+look.up.class <- cbind(id, gap.bins)
+look.up.class <- as.matrix(look.up.class)
+
+gap.class <- classify(gaps, look.up.class)
+hist(gap.class)
+plot(gap.class)
+
+
+# create binary for each size class
+gap.small <- ifel(gap.class == 1, 1, 0)
+gap.medium <- ifel(gap.class == 2, 1, 0)
+gap.large <- ifel(gap.class == 3, 1, 0)
+
+names(gap.small)  <- 'gap_small'
+names(gap.medium) <- 'gap_medium'
+names(gap.large)  <- 'gap_large'
+
+gaps.small.area <- aggregate(gap.small, fact = fact, fun = sum, na.rm = T)
+gaps.medium.area <- aggregate(gap.medium, fact = fact, fun = sum, na.rm = T)
+gaps.large.area <- aggregate(gap.large, fact = fact, fun = sum, na.rm = T)
+
+gaps.small.pct <- gaps.small.area * (cell.size^2) / pixel.area.50
+gaps.medium.pct <- gaps.medium.area * (cell.size^2) / pixel.area.50
+gaps.large.pct <- gaps.large.area * (cell.size^2) / pixel.area.50
+
+names(gaps.small.pct)  <- 'gap_small_pct'
+names(gaps.medium.pct) <- 'gap_medium_pct'
+names(gaps.large.pct)  <- 'gap_large_pct'
+
+gap.metrics.50m <- c(
+  gaps.small.pct,
+  gaps.medium.pct,
+  gaps.large.pct,
+  gap.pct.50
+)
+
+names(gap.metrics.50m)
+
+
+
+# ==============================================================================
+
+# ==============================================================================
+#                     Aggregate other metrics to 50m
+# ==============================================================================
+# first remove redundant metrics from height.stack (cover.stack metrics are better for theses)
+height.stack <- height.stack[[ !names(height.stack) %in% c('pzabove2','pzabove5','pzabove10') ]]
+
+# force correct projection
+crs(cover.stack) <- "EPSG:32611"
+crs(height.stack) <- "EPSG:32611"
+crs(pad.stack) <- "EPSG:32611"
+
+# ---------- height, cover, and pad stacks ------------
+canopy.metrics.minusgap <- c(height.stack, cover.stack, pad.stack)
+
+mean.vars <- c('zmean', 'zq50', 'zq95', 'zentropy', 'zsd', 'pzabovezmean', 'pzabove2', 'pzabove5', 'pzabove10', 'p_open', 'ground_frac_pc', 'gap_frac_pc')
+max.vars <- c('zmax')
+
+
+cell.size <- res(canopy.metrics.minusgap)[1]
+fact <- res(target.swe)[1] / cell.size
+
+canopy.mean.50m <- aggregate(canopy.metrics.minusgap[[mean.vars]], fact = fact, fun = mean, na.rm = T)
+canopy.max.50m <- aggregate(canopy.metrics.minusgap[[max.vars]], fact = fact, fun = max, na.rm = T)
+# sanity check
+plot(canopy.max.50m$zmax)
+
+# combine all metrics
+canopy.metrics.50m <- c(canopy.mean.50m, canopy.max.50m, gap.metrics.50m)
+
+# remove the 2 metrics that didn't work
+canopy.metrics.50m <- canopy.metrics.50m[[ !names(canopy.metrics.50m) %in% c('gap_medium_pct', 'gap_large_pct') ]]
+plot(canopy.metrics.50m)
 
 # ---------- combine 3 stacks into master stack ---------
 
-canopy.metrics <- c(height.stack, cover.stack, pad.stack, gap.stack)
+
+
+
+
+
+
 
 writeRaster(
   canopy.metrics,
@@ -338,10 +536,39 @@ writeRaster(
   overwrite = TRUE
 )
 
+names(canopy.metrics)
+# ==============================================================================
+# reproject data
+# ==============================================================================
+
+target.swe <- rast('data/processed/processed/tif/50m/ASO_SanJoaquin_2020_0608_swe_50m_1524.tif')
+
+canopy.metrics.32611 <- project(canopy.metrics, crs(target.swe), method = 'near')
+
 
 # ==============================================================================
-# gap metrics
+# Aggregate to 50m
 # ==============================================================================
+
+# variables where means are meaningful
+continuous_vars <- c(
+  'zmax','zmean','zsd','zskew','zkurt','zentropy',
+  grep('^zq', names(canopy.metrics.32611), value=TRUE),
+  grep('^zpcum', names(canopy.metrics.32611), value=TRUE),
+  'zmax_true',
+  'pzabove2','pzabove5','pzabove10','p_open',
+  'gap_frac_pc','ground_frac_pc',
+  'pzabovezmean',
+  'PAI','PAD_mean','PAD_SD','PAD_CV','PAD_max','H_PADmax'
+)
+
+canopy.continuous <- canopy.metrics.32611[[continuous_vars]]
+
+
+# ==============================================================================
+# test for spatial autocorrelation
+# ==============================================================================
+
 
 
 
@@ -370,7 +597,7 @@ nc <- ncol(cm)
 
 res.m <- res(canopy.mask)[1]
 
-# define 8 directions to "search"
+# define 8 directions to "search"a
 dirs.deg <- c(330, 345, 0, 15, 30, 150, 165, 180, 195, 210)
 dirs.rad <- dirs.deg * pi / 180
 
@@ -421,7 +648,7 @@ edginess.south <- dist.south.r / (3*H)
 edginess.south <- ifel(edginess.south > 1, 1, edginess.south)
 edginess.total <- edginess.north + edginess.south
 
-#========= visualization ============
+# visualization ============
 
 # quick glance
 plot(edginess.north, main='Edginess to the North', col=viridis::viridis(200))
