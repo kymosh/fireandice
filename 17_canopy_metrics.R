@@ -1,48 +1,54 @@
-packages <- c('terra', 'sf', 'mapview', 'lidR', 'aRchi', 'TreeLS', 'dplyr', 'ForestGapR', 'raster')
+packages <- c('terra', 'sf', 'mapview', 'lidR', 'aRchi', 'TreeLS', 'dplyr', 'ForestGapR', 'raster', 'future')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
-
-mean.csm <- rast(here('data', 'raw', 'ALS', 'tif', 'CreekFire_2021_MeanCSM_Meters.tif'))
-rm(meancsm)
-
-summary(mean.csm)
-
-#test
+# 
+# mean.csm <- rast(here('data', 'raw', 'ALS', 'tif', 'CreekFire_2021_MeanCSM_Meters.tif'))
+# rm(meancsm)
+# 
+# summary(mean.csm)
+# 
+# #test
 
 # ---  Read catalog & set options ---
-ctg <- readLAScatalog('data/raw/ALS/laz/random_tiles')   # Load a LAScatalog from the folder of tiles
-set_lidr_threads(8)         # Use 8 threads for lidR operations (parallel where supported)
-opt_laz_compression(ctg) <- TRUE      # Write LAZ (compressed) outputs instead of LAS
-opt_progress(ctg)        <- TRUE      # Show a progress bar for catalog operations
 
-plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
+
+#----------------------
+# Catalog setup 
+#----------------------
+ctg <- readLAScatalog('data/raw/ALS/laz/random_tiles')
+set_lidr_threads(8)     # <— THIS is the correct parallelism for lidR
+opt_laz_compression(ctg) <- TRUE
+opt_progress(ctg) <- TRUE
+opt_chunk_size(ctg) <- 0
+opt_chunk_buffer(ctg) <- 20
+
+
+#plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
 
 tile.dtm = rasterize_terrain(ctg, res = 3.28, algorithm = tin())
+# should run without warnings, try again if orange
 
-# data inspection
-ctg
-# just look at 1 las file
-las1 <- readLAS(ctg@data$filename[1])
-las1
-# see number of each classification categories
-table(las1$Classification)
-
-# filter out unwanted points 
+# # just look at 1 las file
+# las1 <- readLAS(ctg@data$filename[1])
+# las1
+# # see number of each classification categories
+# table(las1$Classification)
+# 
+#filter out unwanted points 
 opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
+# 
+# # check to make sure it worked
+# las1.clean <- readLAS(ctg@data$filename[1], filter = '-drop_class 7 18 -drop_withheld')
+# table(las1.clean$Classification)
 
-# check to make sure it worked
-las1.clean <- readLAS(ctg@data$filename[1], filter = '-drop_class 7 18 -drop_withheld')
-table(las1.clean$Classification)
 
-# process one tile at a time
-opt_chunk_size(ctg) <- 0  # would change this when scaling up with more data
-# buffer of 20m to enable seamless normalization 
-opt_chunk_buffer(ctg) <- 20
+
 
 # ---  Normalize ---
 
 # set output file names
+# NOTE if rerunning, make sure this folder is empty
 opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTTOM}'
 
 # normalize heights using point cloud
@@ -50,8 +56,6 @@ opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTT
 
 # using TIN because we have good ground point classification already
 ctg.norm <- normalize_height(ctg, tin())
-
-ctg.norm
 
 # look at one normalized tile
 norm.file <- ctg.norm@data$filename[1]
@@ -68,11 +72,7 @@ quantile(las.norm$Z[las.norm$Classification == 2], c(0.05, 0.5, 0.95), na.rm = T
 # Non-ground (likely vegetation, buildings, etc.)
 summary(las.norm$Z[las.norm$Classification != 2])
 
-quantile(
-  las.norm$Z[las.norm$Classification != 2],
-  c(0.5, 0.9, 0.95, 0.99, 0.999),
-  na.rm = TRUE
-)
+
 
 hist(
   las.norm$Z[las.norm$Classification != 2 & las.norm$Z < 80],
@@ -86,78 +86,82 @@ hist(
 # Example at 1 m
 res.m <- 1
 
-# at a 1m pixel, get a number of how many points per pixel to see if dense enought
-density.test <- pixel_metrics(
-  ctg.norm,
-  ~ list(n = length(Z)),
-  res = res.m
-)
-
-# make a list of all the density values
-vals <- values(density.test, mat = FALSE)
-# see what propotion of values are <10 (too low)
-sum(vals$n < 10, na.rm = T)
-# only 4% are less than 10, so 1m should be fine
+# # at a 1m pixel, get a number of how many points per pixel to see if dense enought
+# density.test <- pixel_metrics(
+#   ctg.norm,
+#   ~ list(n = length(Z)),
+#   res = res.m
+# )
+# 
+# # make a list of all the density values
+# vals <- values(density.test, mat = FALSE)
+# # see what propotion of values are <10 (too low)
+# sum(vals$n < 10, na.rm = T)
+# # only 4% are less than 10, so 1m should be fine
 
 # ------ canopy height model --------
 
 chm <- rasterize_canopy(ctg.norm, res = 1, algorithm = pitfree())
+saveRDS(chm, 'data/processed/processed/rds/chm.test.rds')
 
-# ----- Compute canopy metrics ------
+# ----- Compute canopy metrics old code, don't use -------------
 
-# z = height
+# z = height()
 # cl = classification code 
 
-canopy_metrics <- function(z, cl)
-{ # ----- canopy height metrics -----       # only above 2m
-  n_all <- length(z)                        # how many points per pixel
-  if (n_all == 0) return(NULL)              # if no points in a pixel, return NULL
-  z_can <- z[z > 2 &                        # height must be > 2m
-               cl != 2]                     # can't be a ground classified point (shouldn't be anyways)
-  if (length(z_can) > 0) {                  # make sure there are canopy points to begin with
-    std <- stdmetrics_z(z_can)
-    out <- list(zmean = as.numeric(std['zmean']),
-                zsd = as.numeric(std['zsd']),
-                zq95 = as.numeric(std['zq95']),
-                zentropy = as.numeric(std['zentropy']))
-    } else { 
-      out <- list(zmean = NA_real_,
-                  zsd = NA_real_,
-                  zq95 = NA_real_,
-                  zentropy = NA_real_ )}
-  # ----- canopy cover metrics -----        # on all pixels (incl <2m)
-  out$pzabove2 = sum(z > 2) / n_all         # proportion of returns above 2m
-  out$pzabove10 = sum(z > 10) / n_all       # proportion of returns above 10m (tall canopy)
-  out$p_2_10 = sum(z > 2 & z <= 10) / n_all # proportion between 2 and 10m (midstory)
-  out$p_open = 1 - out$pzabove2             # proportion open canopy
-  return(out)
-  }
-
-  
-
-res.m = 1
-
-# remove output directory so that forces to use temporary files
-opt_output_files(ctg.norm) <- ""
-
-# apply function to ctg.norm to create raster
-canopy.rasters <- pixel_metrics(ctg.norm, ~ canopy_metrics(Z, Classification), res = res.m)
-
-plot(canopy.rasters$zq95, main = 'Canopy height (zq95)')
-plot(canopy.rasters$pzabove2, main = 'Canopy cover (>2 m)')
-plot(canopy.rasters$p_open, main = '             Gap fraction (1 - pzabove2)')
-plot(canopy.rasters$p_2_10, main = 'Midstory (2–10 m)')
-plot(canopy.rasters$zentropy, main = '           Canopy vertical complexity')
-
-plot(canopy.rasters, col = height.colors(50))
-
-writeRaster(canopy.rasters,'data/processed/ALS/tif/canopy_metrics_1m_test.tif', overwrite = T)
+# canopy_metrics <- function(z, cl)
+# { # ----- canopy height metrics -----       # only above 2m
+#   n_all <- length(z)                        # how many points per pixel
+#   if (n_all == 0) return(NULL)              # if no points in a pixel, return NULL
+#   z_can <- z[z > 2 &                        # height must be > 2m
+#                cl != 2]                     # can't be a ground classified point (shouldn't be anyways)
+#   if (length(z_can) > 0) {                  # make sure there are canopy points to begin with
+#     std <- stdmetrics_z(z_can)
+#     out <- list(zmean = as.numeric(std['zmean']),
+#                 zsd = as.numeric(std['zsd']),
+#                 zq95 = as.numeric(std['zq95']),
+#                 zentropy = as.numeric(std['zentropy']))
+#     } else { 
+#       out <- list(zmean = NA_real_,
+#                   zsd = NA_real_,
+#                   zq95 = NA_real_,
+#                   zentropy = NA_real_ )}
+#   # ----- canopy cover metrics -----        # on all pixels (incl <2m)
+#   out$pzabove2 = sum(z > 2) / n_all         # proportion of returns above 2m
+#   out$pzabove10 = sum(z > 10) / n_all       # proportion of returns above 10m (tall canopy)
+#   out$p_2_10 = sum(z > 2 & z <= 10) / n_all # proportion between 2 and 10m (midstory)
+#   out$p_open = 1 - out$pzabove2             # proportion open canopy
+#   return(out)
+#   }
+# 
+# 
+# 
+# # remove output directory so that forces to use temporary files
+# opt_output_files(ctg.norm) <- ""
+# 
+# # apply function to ctg.norm to create raster
+# canopy.rasters <- pixel_metrics(ctg.norm, ~ canopy_metrics(Z, Classification), res = res.m)
+# 
+# plot(canopy.rasters$zq95, main = 'Canopy height (zq95)')
+# plot(canopy.rasters$pzabove2, main = 'Canopy cover (>2 m)')
+# plot(canopy.rasters$p_open, main = '             Gap fraction (1 - pzabove2)')
+# plot(canopy.rasters$p_2_10, main = 'Midstory (2–10 m)')
+# plot(canopy.rasters$zentropy, main = '           Canopy vertical complexity')
+# 
+# plot(canopy.rasters, col = height.colors(50))
+# 
+# writeRaster(canopy.rasters,'data/processed/ALS/tif/canopy_metrics_1m_test.tif', overwrite = T)
 
 # ==============================================================================
 # recalculate canopy metrics 
 # ==============================================================================
 
 # ------- height metrics --------
+
+# clear output pattern
+# NOTE: necessary step to avoid overwrite issues if rerunning
+opt_output_files(ctg.norm) <- ""
+
 height.metrics <- function(z, cl) {
   z.canopy <- z[z > 2 & cl != 2]
   
@@ -180,6 +184,7 @@ height.metrics <- function(z, cl) {
 height.stack <- pixel_metrics(ctg.norm, ~ height.metrics(Z, Classification), res = 1)
 
 # ------- cover metrics --------
+
 cover.metrics <- function(z, cl) {
   n_all = length(z)
   list(
@@ -367,101 +372,81 @@ pad.stack <- pixel_metrics(ctg.norm, ~ pad.metrics(Z), res = 1)
 # gap.stack <- resample(gap.stack, height.stack, method = 'bilinear')
 
 
-
-
+#------  other BAD gap metric code
+# ForestGapR requires chm to be a raster::raster
+# chm.r <- raster::raster(chm)
+# 
+# # Plotting chm
+# plot(chm.r, col=viridis(10))
+# 
+# # Setting height thresholds (e.g. 10 meters)
+# threshold <- 2 # No points >2 m = gap
+# size<-c(1,10000) #all gaps between 1 and 1000m
+# 
+# # Detecting forest gaps
+# gaps.rast <- getForestGaps(chm_layer = chm.r, threshold, size)
+# 
+# 
+# #plot
+# plot(chm.r, col=viridis(10))
+# plot(gaps.rast, col="red", add=TRUE, main="Forest Canopy Gap", legend=FALSE)
+# 
+# 
+# # zoom
+# ext_small <- ext(308350, 308550, 4135500, 4135700)
+# terra::plot(
+#   terra::crop(chm, ext_small),
+#   col = viridisLite::plasma(100)
+# )
+# plot(gaps.rast, col="red", add=TRUE, main="Forest Canopy Gap", legend=F)
+# 
+# # calc stats
+# gaps.stats <- GapStats(gap_layer = gaps.rast, chm_layer = chm.r)
 # ==============================================================================
 #  GAP METRICS 
 # ==============================================================================
-# ForestGapR requires chm to be a raster::raster
-chm.r <- raster::raster(chm)
 
-# Plotting chm
-plot(chm.r, col=viridis(10))
+gap.mask <- ifel(cover.stack$p_open >= 0.5, 1, 0)
+names(gap.mask) <- 'is_gap'
+plot(gap.mask, col = viridisLite::viridis(2))
 
-# Setting height thresholds (e.g. 10 meters)
-threshold <- 2 # No points >2 m = gap
-size<-c(1,10000) #all gaps between 1 and 1000m
-
-# Detecting forest gaps
-gaps.rast <- getForestGaps(chm_layer = chm.r, threshold, size)
-
-
-#plot
-plot(chm.r, col=viridis(10))
-plot(gaps.rast, col="red", add=TRUE, main="Forest Canopy Gap", legend=FALSE)
-
-
-# zoom
 ext_small <- ext(308350, 308550, 4135500, 4135700)
 terra::plot(
   terra::crop(chm, ext_small),
-  col = viridisLite::plasma(100)
+  col = viridisLite::plasma(100), 
+  main = 'Canopy Height Model: Zoom'
 )
-plot(gaps.rast, col="red", add=TRUE, main="Forest Canopy Gap", legend=F)
-
-# calc stats
-gaps.stats <- GapStats(gap_layer = gaps.rast, chm_layer = chm.r)
+terra::plot(
+  terra::crop(gap.mask, ext_small),
+  col = viridisLite::viridis(2),
+  main = 'Gap Mask: Zoom'
+)
 
 # ----------- aggregate gap metrics to 50m ---------------------
 
-# turn back into spatraster
-gaps <- rast(gaps.rast)
-
 # force it to report correct CRS
-crs(gaps) <- "EPSG:32611"
-plot(chm)
-plot(gaps, col = 'red', add = T)
+crs(gap.mask) <- "EPSG:32611"
 
+popen <- cover.stack$p_open
 
-names(gaps) <- 'gap_id'
-
-# change to binary gap or no gap
-gap.mask <- ifel(!is.na(gaps), 1, 0)
-names(gap.mask) <- 'is_gap'
-unique(gap.mask)
-plot(gap.mask, colNA='red')
-
-
-# plot binary gaps
-terra::plot(
-  terra::crop(gap.mask, ext_small),
-  col = viridisLite::plasma(2)
-)
+target.swe <- rast('data/processed/processed/tif/50m/ASO_SanJoaquin_2020_0414_SUPERswe_50m_1524.tif')
 
 cell.size <- res(gap.mask)[1]
 fact <- res(target.swe)[1] / cell.size
 
 gap.count.50 <- aggregate(gap.mask, fact = fact, fun = sum, na.rm = T)
-names(gap.count.50) <- 'gap_area_m2'
+names(gap.count.50) <- 'gap_area_cells'
 
 pixel.area.50 <- fact*50
 
 # gap.pct.50 is % of each 50 m pixel that is gap
 gap.pct.50 <- gap.count.50*(cell.size^2) / pixel.area.50
-
-ga <- gaps.stats$gap_area
-id <- gaps.stats$gap_id
-
-gap.bins <- ifelse(ga < 5, 1,
-             ifelse(ga < 10, 2,
-             ifelse(ga < 10000, 3, 0)))
-
-look.up.class <- cbind(id, gap.bins)
-look.up.class <- as.matrix(look.up.class)
-
-gap.class <- classify(gaps, look.up.class)
-hist(gap.class)
-plot(gap.class)
-
+names(gap.pct.50) <- 'gap_pct_50m'
 
 # create binary for each size class
-gap.small <- ifel(gap.class == 1, 1, 0)
-gap.medium <- ifel(gap.class == 2, 1, 0)
-gap.large <- ifel(gap.class == 3, 1, 0)
-
-names(gap.small)  <- 'gap_small'
-names(gap.medium) <- 'gap_medium'
-names(gap.large)  <- 'gap_large'
+gap.small <- ifel(popen >= 0.5 & popen < 0.7, 1, 0)
+gap.medium <- ifel(popen >= 0.7 & popen < 0.9, 1, 0)
+gap.large <- ifel(popen >= 0.9, 1, 0)
 
 gaps.small.area <- aggregate(gap.small, fact = fact, fun = sum, na.rm = T)
 gaps.medium.area <- aggregate(gap.medium, fact = fact, fun = sum, na.rm = T)
@@ -483,6 +468,11 @@ gap.metrics.50m <- c(
 )
 
 names(gap.metrics.50m)
+
+plot(gap.metrics.50m$gap_small_pct, main = '        Percent small gap')
+plot(gap.metrics.50m$gap_medium_pct, main = '            Percent medium gap')
+plot(gap.metrics.50m$gap_large_pct, main = '        Percent large gap')
+
 
 
 
@@ -511,58 +501,17 @@ fact <- res(target.swe)[1] / cell.size
 
 canopy.mean.50m <- aggregate(canopy.metrics.minusgap[[mean.vars]], fact = fact, fun = mean, na.rm = T)
 canopy.max.50m <- aggregate(canopy.metrics.minusgap[[max.vars]], fact = fact, fun = max, na.rm = T)
+
 # sanity check
-plot(canopy.max.50m$zmax)
+plot(canopy.mean.50m$zq95, main = 'Canopy Height (zq95) 50m')
 
 # combine all metrics
 canopy.metrics.50m <- c(canopy.mean.50m, canopy.max.50m, gap.metrics.50m)
+saveRDS(canopy.metrics.50m, 'data/processed/processed/rds/canopy_metrics_50m_test.rds')
 
-# remove the 2 metrics that didn't work
-canopy.metrics.50m <- canopy.metrics.50m[[ !names(canopy.metrics.50m) %in% c('gap_medium_pct', 'gap_large_pct') ]]
 plot(canopy.metrics.50m)
 
-# ---------- combine 3 stacks into master stack ---------
 
-
-
-
-
-
-
-
-writeRaster(
-  canopy.metrics,
-  'data/processed/ALS/tif/canopy_metrics_all_1m_test.tif',
-  overwrite = TRUE
-)
-
-names(canopy.metrics)
-# ==============================================================================
-# reproject data
-# ==============================================================================
-
-target.swe <- rast('data/processed/processed/tif/50m/ASO_SanJoaquin_2020_0608_swe_50m_1524.tif')
-
-canopy.metrics.32611 <- project(canopy.metrics, crs(target.swe), method = 'near')
-
-
-# ==============================================================================
-# Aggregate to 50m
-# ==============================================================================
-
-# variables where means are meaningful
-continuous_vars <- c(
-  'zmax','zmean','zsd','zskew','zkurt','zentropy',
-  grep('^zq', names(canopy.metrics.32611), value=TRUE),
-  grep('^zpcum', names(canopy.metrics.32611), value=TRUE),
-  'zmax_true',
-  'pzabove2','pzabove5','pzabove10','p_open',
-  'gap_frac_pc','ground_frac_pc',
-  'pzabovezmean',
-  'PAI','PAD_mean','PAD_SD','PAD_CV','PAD_max','H_PADmax'
-)
-
-canopy.continuous <- canopy.metrics.32611[[continuous_vars]]
 
 
 # ==============================================================================
