@@ -1,4 +1,4 @@
-packages <- c('terra', 'dplyr', 'here')
+packages <- c('terra', 'dplyr', 'here', 'tidyverse')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -155,9 +155,12 @@ df.long <- df.peak.swe %>%
   left_join(df.0 %>% 
               select(all_of(keep.vars), x, y), by = c('x', 'y'))
 
+# change cbibc for year 2020 to NA because this would be prior to the Creek Fire
+df.long$cbibc[df.long$year == 2020] <- NA
+
 saveRDS(df.long, 'data/processed/dataframes/swe_df_1524_long.rds')
 
-  
+
 # quick data exploration
 
 ggplot(df.long, aes(x = peak_swe)) +
@@ -199,3 +202,6 @@ always_zero <- df.long %>%
   filter(all_zero)
 
 nrow(always_zero)
+
+
+
