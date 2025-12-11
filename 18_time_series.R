@@ -1,4 +1,4 @@
-packages <- c( 'here', 'dplyr', 'terra', 'ggplot2', 'tidyr', 'stringr', 'lubridate')
+packages <- c( 'here', 'terra', 'dplyr', 'ggplot2', 'tidyr', 'stringr', 'lubridate')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 # # ==============================================================================
@@ -583,7 +583,7 @@ swe.cols <- grep('^20', colnames(df.0), value = TRUE)
 
 df <- df.0 %>%
 
-  select(x, y, year, all_of(swe.cols), cbibc, aspect, hli,
+  dplyr::select(x, y, year, all_of(swe.cols), cbibc, aspect, hli,
          elev, pr, tmmx, tmmn, forest_type) %>%
   # keep only elevations between 1500 and 2400
   filter(elev >= 1500 & elev <= 2400) %>%

@@ -26,7 +26,7 @@ opt_chunk_buffer(ctg) <- 20
 
 #plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
 
-tile.dtm = rasterize_terrain(ctg, res = 3.28, algorithm = tin())
+# tile.dtm = rasterize_terrain(ctg, res = 3.28, algorithm = tin())
 # should run without warnings, try again if orange
 
 # # just look at 1 las file
@@ -223,7 +223,7 @@ pad.metrics <- function(z) {
     ))
   }
   
-  # extract PAD values and corresponding height bines
+  # extract PAD values and corresponding height bins
   pad_vals <- pad.profile$lad # plant area density at each height
   heights <- pad.profile$z    # height (in m)
   
@@ -423,6 +423,9 @@ terra::plot(
 )
 
 # ----------- aggregate gap metrics to 50m ---------------------
+#### this is still not really getting at what I want because the actual size of each individual gap is not being calculated. 
+# I think using the forestgapR might be closer since it creates statistics on individual gaps
+# But I just think it's missing a lot of gaps
 
 # force it to report correct CRS
 crs(gap.mask) <- "EPSG:32611"
