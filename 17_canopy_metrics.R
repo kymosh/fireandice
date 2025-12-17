@@ -2,22 +2,12 @@ packages <- c('terra', 'sf', 'mapview', 'lidR', 'aRchi', 'TreeLS', 'dplyr', 'For
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
-# 
-# mean.csm <- rast(here('data', 'raw', 'ALS', 'tif', 'CreekFire_2021_MeanCSM_Meters.tif'))
-# rm(meancsm)
-# 
-# summary(mean.csm)
-# 
-# #test
-
-# ---  Read catalog & set options ---
-
 
 #----------------------
 # Catalog setup 
 #----------------------
 ctg <- readLAScatalog('data/raw/ALS/laz/random_tiles')
-set_lidr_threads(8)     # <— THIS is the correct parallelism for lidR
+set_lidr_threads(8)     # lidR parallelization
 opt_laz_compression(ctg) <- TRUE
 opt_progress(ctg) <- TRUE
 opt_chunk_size(ctg) <- 0
@@ -55,7 +45,10 @@ opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTT
 # NOTE: I am using the point cloud, not a DTM here to normalize. This is computationally heavier than using a DTM. May have to use DTM when processing entire study area dataset
 
 # using TIN because we have good ground point classification already
-ctg.norm <- normalize_height(ctg, tin())
+# ctg.norm <- normalize_height(ctg, tin())
+
+# saveRDS(ctg.norm, 'data/processed/processed/rds/ctg_norm_test_rds')
+ctg.norm <- readRDS('data/processed/processed/rds/ctg_norm_test_rds')
 
 # look at one normalized tile
 norm.file <- ctg.norm@data$filename[1]
@@ -81,86 +74,37 @@ hist(
   xlab  = 'Z (m)'
 )
 
-
-# exploration to figure out what resolution to use
-# Example at 1 m
 res.m <- 1
 
-# # at a 1m pixel, get a number of how many points per pixel to see if dense enought
-# density.test <- pixel_metrics(
-#   ctg.norm,
-#   ~ list(n = length(Z)),
-#   res = res.m
-# )
-# 
-# # make a list of all the density values
-# vals <- values(density.test, mat = FALSE)
-# # see what propotion of values are <10 (too low)
-# sum(vals$n < 10, na.rm = T)
-# # only 4% are less than 10, so 1m should be fine
+# clear output pattern
+# NOTE: necessary step to avoid overwrite issues if rerunning
+# opt_output_files(ctg.norm) <- ""
 
 # ------ canopy height model --------
 
-chm <- rasterize_canopy(ctg.norm, res = 1, algorithm = pitfree())
-saveRDS(chm, 'data/processed/processed/rds/chm.test.rds')
+# chm <- rasterize_canopy(ctg.norm, res = 1, algorithm = pitfree())
+# saveRDS(chm, 'data/processed/processed/rds/chm_test.rds')
+chm <- readRDS('data/processed/processed/rds/chm_test.rds')
 
-# ----- Compute canopy metrics old code, don't use -------------
+# check CRS
+crs(chm, describe = T)$code
+# CRS 6340
+res(chm)
+# 1 x 1
 
-# z = height()
-# cl = classification code 
-
-# canopy_metrics <- function(z, cl)
-# { # ----- canopy height metrics -----       # only above 2m
-#   n_all <- length(z)                        # how many points per pixel
-#   if (n_all == 0) return(NULL)              # if no points in a pixel, return NULL
-#   z_can <- z[z > 2 &                        # height must be > 2m
-#                cl != 2]                     # can't be a ground classified point (shouldn't be anyways)
-#   if (length(z_can) > 0) {                  # make sure there are canopy points to begin with
-#     std <- stdmetrics_z(z_can)
-#     out <- list(zmean = as.numeric(std['zmean']),
-#                 zsd = as.numeric(std['zsd']),
-#                 zq95 = as.numeric(std['zq95']),
-#                 zentropy = as.numeric(std['zentropy']))
-#     } else { 
-#       out <- list(zmean = NA_real_,
-#                   zsd = NA_real_,
-#                   zq95 = NA_real_,
-#                   zentropy = NA_real_ )}
-#   # ----- canopy cover metrics -----        # on all pixels (incl <2m)
-#   out$pzabove2 = sum(z > 2) / n_all         # proportion of returns above 2m
-#   out$pzabove10 = sum(z > 10) / n_all       # proportion of returns above 10m (tall canopy)
-#   out$p_2_10 = sum(z > 2 & z <= 10) / n_all # proportion between 2 and 10m (midstory)
-#   out$p_open = 1 - out$pzabove2             # proportion open canopy
-#   return(out)
-#   }
-# 
-# 
-# 
-# # remove output directory so that forces to use temporary files
-# opt_output_files(ctg.norm) <- ""
-# 
-# # apply function to ctg.norm to create raster
-# canopy.rasters <- pixel_metrics(ctg.norm, ~ canopy_metrics(Z, Classification), res = res.m)
-# 
-# plot(canopy.rasters$zq95, main = 'Canopy height (zq95)')
-# plot(canopy.rasters$pzabove2, main = 'Canopy cover (>2 m)')
-# plot(canopy.rasters$p_open, main = '             Gap fraction (1 - pzabove2)')
-# plot(canopy.rasters$p_2_10, main = 'Midstory (2–10 m)')
-# plot(canopy.rasters$zentropy, main = '           Canopy vertical complexity')
-# 
-# plot(canopy.rasters, col = height.colors(50))
-# 
-# writeRaster(canopy.rasters,'data/processed/ALS/tif/canopy_metrics_1m_test.tif', overwrite = T)
+# reproject to 32611
+chm <- project(chm, 'EPSG:32611')
+crs(chm, describe = T)$code
 
 # ==============================================================================
-# recalculate canopy metrics 
+# Calculate canopy metrics 
 # ==============================================================================
-
-# ------- height metrics --------
 
 # clear output pattern
 # NOTE: necessary step to avoid overwrite issues if rerunning
 opt_output_files(ctg.norm) <- ""
+
+# ------- height metrics --------
 
 height.metrics <- function(z, cl) {
   z.canopy <- z[z > 2 & cl != 2]
@@ -196,12 +140,13 @@ cover.metrics <- function(z, cl) {
     ground_frac_pc = sum(cl == 2) / n_all)
 }
 
-cover.stack <- pixel_metrics(ctg.norm, ~ cover.metrics(Z, Classification), res = 1)
+# cover.stack <- pixel_metrics(ctg.norm, ~ cover.metrics(Z, Classification), res = 1)
+# saveRDS(cover.stack, 'data/processed/processed/rds/cover_test.rds')
+cover.stack <- readRDS('data/processed/processed/rds/cover_test.rds')
 
 # ------- PAD/PAI metrics --------
 # Compute Plant Area Density (PAD) and Plant Area Index (PAI)
 # from LiDAR point heights "z".
-#
 # LAD/PAD tells us the vertical distribution of plant material.
 
 pad.metrics <- function(z) {
@@ -266,218 +211,207 @@ pad.metrics <- function(z) {
 
 pad.stack <- pixel_metrics(ctg.norm, ~ pad.metrics(Z), res = 1)
 
-# ====------- gap metrics ----------- BAD
-# =============================================
 
-
-# # we first have to write and re-read in to force the correct data type
-# writeRaster(cover.stack$pzabove2, 
-#             'pzabove2_fixed.tif', 
-#             overwrite = TRUE)
-# 
-# summary(cover.stack)
-# 
-# pzabove2_fixed <- rast('pzabove2_fixed.tif')
-# datatype(pzabove2_fixed)     # should NOT be ""
-# 
-# 
-# gap.mask <- pzabove2_fixed < 0.05
-# table(values(gap.mask), useNA = 'ifany')
-# 
-# 
-# 
-# 
-# 
-# gap.metrics <- function(chm, pzabove2, gap_threshold = 0.05) {
-#   
-#   # 1 — GAP MASK (TRUE gaps where pzabove2 < threshold)
-#   gap.mask <- pzabove2 < gap_threshold 
-#   values(gap.mask) <- as.integer(values(gap.mask))   # force 0/1
-#   
-#   # 2 — convert to polygons
-#   gap.poly.0 <- as.polygons(gap.mask, dissolve = TRUE, values = TRUE)
-#   
-#   # the attribute column name will match the raster name
-#   att <- names(gap.poly.0)[1]
-#   gap.poly <- gap.poly.0[ gap.poly.0[[att]] == 1 ]
-#   
-#   # 3 — NO GAPS case
-#   if (nrow(gap.poly) == 0) {
-#     gap_area_rast    <- rast(chm); values(gap_area_rast)    <- NA
-#     gap_radius_rast  <- rast(chm); values(gap_radius_rast)  <- NA
-#     gap_id_rast      <- rast(chm); values(gap_id_rast)      <- NA
-#     dist_to_canopy   <- rast(chm); values(dist_to_canopy)   <- NA
-#     dist_to_gap_edge <- rast(chm); values(dist_to_gap_edge) <- NA
-#     
-#     gap.stack <- c(gap_area_rast,
-#                    gap_radius_rast,
-#                    gap_id_rast,
-#                    dist_to_canopy,
-#                    dist_to_gap_edge)
-#     
-#     names(gap.stack) <- c(
-#       'gap_area',
-#       'gap_radius',
-#       'gap_id',
-#       'dist_to_canopy',
-#       'dist_to_gap_edge'
-#     )
-#     
-#     return(gap.stack)
-#   }
-#   
-#   # 4 — gap attributes
-#   gap.poly$gap_area   <- expanse(gap.poly, unit = 'm')
-#   gap.poly$gap_radius <- sqrt(gap.poly$gap_area / pi)
-#   gap.poly$gap_id     <- 1:nrow(gap.poly)
-#   
-#   # 5 — rasterize attributes back onto canopy grid
-#   gap_area_rast   <- rasterize(gap.poly, chm, field = 'gap_area')
-#   gap_radius_rast <- rasterize(gap.poly, chm, field = 'gap_radius')
-#   gap_id_rast     <- rasterize(gap.poly, chm, field = 'gap_id')
-#   
-#   # 6 — distance metrics
-#   dist_to_canopy <- distance(!gap.mask)
-#   
-#   edges <- boundaries(gap.mask, directions = 8, classes = FALSE)
-#   edges <- classify(edges, cbind(NA, 0))
-#   inner.edges <- mask(edges, gap.mask, maskvalue = 0)
-#   dist_to_gap_edge <- distance(!inner.edges)
-#   
-#   # 7 — combine
-#   gap.stack <- c(
-#     gap_area_rast,
-#     gap_radius_rast,
-#     gap_id_rast,
-#     dist_to_canopy,
-#     dist_to_gap_edge
-#   )
-#   
-#   names(gap.stack) <- c(
-#     'gap_area',
-#     'gap_radius',
-#     'gap_id',
-#     'dist_to_canopy',
-#     'dist_to_gap_edge'
-#   )
-#   
-#   return(gap.stack)
-# }
-# 
-# 
-# gap.stack <- gap.metrics(chm, cover.stack$pzabove2)
-# names(gap.stack)
-# summary(gap.stack)
-# 
-# gap.stack <- resample(gap.stack, height.stack, method = 'bilinear')
-
-
-#------  other BAD gap metric code
-# ForestGapR requires chm to be a raster::raster
-# chm.r <- raster::raster(chm)
-# 
-# # Plotting chm
-# plot(chm.r, col=viridis(10))
-# 
-# # Setting height thresholds (e.g. 10 meters)
-# threshold <- 2 # No points >2 m = gap
-# size<-c(1,10000) #all gaps between 1 and 1000m
-# 
-# # Detecting forest gaps
-# gaps.rast <- getForestGaps(chm_layer = chm.r, threshold, size)
-# 
-# 
-# #plot
-# plot(chm.r, col=viridis(10))
-# plot(gaps.rast, col="red", add=TRUE, main="Forest Canopy Gap", legend=FALSE)
-# 
-# 
-# # zoom
-# ext_small <- ext(308350, 308550, 4135500, 4135700)
-# terra::plot(
-#   terra::crop(chm, ext_small),
-#   col = viridisLite::plasma(100)
-# )
-# plot(gaps.rast, col="red", add=TRUE, main="Forest Canopy Gap", legend=F)
-# 
-# # calc stats
-# gaps.stats <- GapStats(gap_layer = gaps.rast, chm_layer = chm.r)
 # ==============================================================================
-#  GAP METRICS 
+#  Gap Metrics
 # ==============================================================================
 
-gap.mask <- ifel(cover.stack$p_open >= 0.5, 1, 0)
-names(gap.mask) <- 'is_gap'
-plot(gap.mask, col = viridisLite::viridis(2))
+# define gap as height is less than 2m
+gap.mask.1m <- ifel(!is.na(chm) & chm < 2, 1, NA)
+names(gap.mask.1m) <- 'gap_mask'
 
-ext_small <- ext(308350, 308550, 4135500, 4135700)
-terra::plot(
-  terra::crop(chm, ext_small),
-  col = viridisLite::plasma(100), 
-  main = 'Canopy Height Model: Zoom'
+# check
+table(values(gap.mask.1m), useNA = "ifany")
+plot(gap.mask.1m)
+
+# create individual gaps with their own ID numbers
+gap.id.1m <- patches(gap.mask.1m, directions = 8)
+names(gap.id.1m) <- 'gap_id'
+
+summary(gap.id.1m)
+
+# add gap size
+gaps <- values(gap.id.1m)
+gaps <- gaps[!is.na(gaps)]
+
+# calculate gap areas
+gap.areas <- table(gaps) * prod(res(gap.id.1m))
+# create df of indiv gaps and their areas
+gap.df <- data.frame(gap_ID = as.integer(names(gap.areas)),
+                     gap_area_m2 = as.numeric(gap.areas))
+# inspect
+head(gap.df)
+summary(gap.df$gap_area_m2)
+
+##### break into ecologically meaningful gap size bins
+gap.df$gap_class <- cut(
+  gap.df$gap_area_m2,
+  breaks = c(0, 10, 100, 1000, Inf),
+  labels = c('small', 'medium', 'large', 'xlarge')
 )
+
+# map gap class back to the raster
+gap.lookup <- data.frame(gap_id = gap.df$gap_ID,
+                         gap_class = as.integer(gap.df$gap_class))
+
+gap.class.1m <- classify(gap.id.1m, rcl = as.matrix(gap.lookup))
+
+#------ aggregate to 50m -------
+fact <-  50 / res(gap.class.1m)[1]
+
+# core gap pct
+gap.pct.50 <- aggregate(
+  !is.na(gap.id.1m),
+  fact = fact,
+  fun = mean,
+  na.rm = T
+)
+names(gap.pct.50) <- 'gap_pct'
+
+# gap-specific percentages
+gap_small <- aggregate(
+  gap.class.1m == 1,
+  fact = fact,
+  fun = mean,
+  na.rm = T
+)
+gap_medium <- aggregate(
+  gap.class.1m == 2,
+  fact = fact,
+  fun = mean,
+  na.rm = T
+)
+gap_large <- aggregate(
+  gap.class.1m == 3,
+  fact = fact,
+  fun = mean,
+  na.rm = T
+)
+gap_xlarge <- aggregate(
+  gap.class.1m == 4,
+  fact = fact,
+  fun = mean,
+  na.rm = T
+)
+
+names(gap_small)  <- 'gap_small_pct'
+names(gap_medium) <- 'gap_medium_pct'
+names(gap_large)  <- 'gap_large_pct'
+names(gap_xlarge) <- 'gap_xlarge_pct'
+
+
+
+# visualize
+plot(gap_large)
+
 terra::plot(
-  terra::crop(gap.mask, ext_small),
-  col = viridisLite::viridis(2),
+  terra::crop(gap.class.1m, ext_small),
+  col = viridisLite::viridis(100, direction = -1),
   main = 'Gap Mask: Zoom'
 )
 
-# ----------- aggregate gap metrics to 50m ---------------------
-#### this is still not really getting at what I want because the actual size of each individual gap is not being calculated. 
-# I think using the forestgapR might be closer since it creates statistics on individual gaps
-# But I just think it's missing a lot of gaps
+plot(gap.class.1m, col = viridisLite::viridis(100, direction = -1))
 
-# force it to report correct CRS
-crs(gap.mask) <- "EPSG:32611"
-
-popen <- cover.stack$p_open
-
-target.swe <- rast('data/processed/processed/tif/50m/ASO_SanJoaquin_2020_0414_SUPERswe_50m_1524.tif')
-
-cell.size <- res(gap.mask)[1]
-fact <- res(target.swe)[1] / cell.size
-
-gap.count.50 <- aggregate(gap.mask, fact = fact, fun = sum, na.rm = T)
-names(gap.count.50) <- 'gap_area_cells'
-
-pixel.area.50 <- fact*50
-
-# gap.pct.50 is % of each 50 m pixel that is gap
-gap.pct.50 <- gap.count.50*(cell.size^2) / pixel.area.50
-names(gap.pct.50) <- 'gap_pct_50m'
-
-# create binary for each size class
-gap.small <- ifel(popen >= 0.5 & popen < 0.7, 1, 0)
-gap.medium <- ifel(popen >= 0.7 & popen < 0.9, 1, 0)
-gap.large <- ifel(popen >= 0.9, 1, 0)
-
-gaps.small.area <- aggregate(gap.small, fact = fact, fun = sum, na.rm = T)
-gaps.medium.area <- aggregate(gap.medium, fact = fact, fun = sum, na.rm = T)
-gaps.large.area <- aggregate(gap.large, fact = fact, fun = sum, na.rm = T)
-
-gaps.small.pct <- gaps.small.area * (cell.size^2) / pixel.area.50
-gaps.medium.pct <- gaps.medium.area * (cell.size^2) / pixel.area.50
-gaps.large.pct <- gaps.large.area * (cell.size^2) / pixel.area.50
-
-names(gaps.small.pct)  <- 'gap_small_pct'
-names(gaps.medium.pct) <- 'gap_medium_pct'
-names(gaps.large.pct)  <- 'gap_large_pct'
-
-gap.metrics.50m <- c(
-  gaps.small.pct,
-  gaps.medium.pct,
-  gaps.large.pct,
-  gap.pct.50
+ext_chm <- ext(308000, 309000, 4135000, 4139000) 
+terra::plot(
+  terra::crop(swe.rast$cbibc, ext_chm),
+  col = viridisLite::viridis(100),
+  main = 'Gap Mask: Zoom'
 )
 
-names(gap.metrics.50m)
+# ------------- distance to gap/canopy -----------------
 
-plot(gap.metrics.50m$gap_small_pct, main = '        Percent small gap')
-plot(gap.metrics.50m$gap_medium_pct, main = '            Percent medium gap')
-plot(gap.metrics.50m$gap_large_pct, main = '        Percent large gap')
+# recalculate gap mask to keep NAs (necessary for dist calculation)
+gap.mask.for.dist <- ifel(!is.na(chm) & chm < 2, 1, NA)
+dist.to.gap.all <- distance(gap.mask.for.dist)
+names(dist.to.gap.all) <- 'dist_to_gap'
 
 
+canopy.mask.for.dist <- ifel(!is.na(chm) & chm >= 2, 2, NA)
+dist.to.canopy.all <- distance(canopy.mask.for.dist)
+names(dist.to.canopy.all) <- 'dist_to_canopy'
 
+# mask out gap pixels
+dist.to.gap <- mask(dist.to.gap.all, canopy.mask.for.dist)
+# mask out canopy pixels
+dist.to.canopy <- mask(dist.to.canopy.all, gap.mask.for.dist)
+
+# ----- aggregate to 50m -----
+
+dist.to.gap.mean <- aggregate(dist.to.gap, fact = fact, fun = mean, na.rm = T)
+
+
+dist.to.canopy.mean <- aggregate(dist.to.canopy, fact = fact, fun = mean, na.rm = T)
+dist.to.canopy.max <- aggregate(dist.to.canopy, fact = fact, fun = max, na.rm = T)
+
+# rename
+names(dist.to.gap.mean)    <- 'dist_to_gap_mean'
+
+names(dist.to.canopy.mean) <- 'dist_to_canopy_mean'
+names(dist.to.canopy.max)  <- 'dist_to_canopy_max'
+
+# ---------------- direction-based metric ------------------
+library(terra)
+
+dir.sector.dist <- function(target_mask, from_mask,
+                            sector = 'N',
+                            max_dist_m = 200) {
+  
+  res.m <- res(target_mask)[1]
+  max.k <- floor(max_dist_m / res.m)
+  
+  out <- rast(target_mask)
+  values(out) <- NA_real_
+  
+  from_mask <- crop(from_mask, target_mask)
+  
+  for (k in 1:max.k) {
+    
+    dy <- k * res.m
+    horiz.range <- k * res.m
+    
+    if (sector == 'N') {
+      shifted <- shift(target_mask, dy = -dy)
+    }
+    
+    if (sector == 'S') {
+      shifted <- shift(target_mask, dy = dy)
+    }
+    
+    for (dx in seq(-horiz.range, horiz.range, by = res.m)) {
+      
+      candidate <- resample(
+        shift(shifted, dx = dx),
+        target_mask,
+        method = 'near'
+      )
+      
+      hit <- mask(candidate, from_mask)
+      dist <- sqrt(dx^2 + dy^2)
+      
+      out <- cover(out, ifel(!is.na(hit), dist, NA_real_))
+    }
+  }
+  
+  out
+}
+
+    
+dist.canopy.north <- dir.sector.dist(
+  target_mask = canopy.mask.for.dist,
+  from_mask = gap.mask.for.dist,
+  sector = 'N',
+  max_dist_m = 200
+)
+
+# started at 4:10pm on 12/16
+saveRDS(dist.canopy.north, 'data/processed/processed/rds/dist_canopy_north_test.rds')
+plot(dist.canopy.north)
+
+# ------ combine ------
+
+# combine into single 50m stack
+gap.metrics.50m <- c(gap_small, gap_medium, gap_large, gap_xlarge, gap.pct.50, dist.to.gap.mean, dist.to.canopy.mean, dist.to.canopy.max)
 
 # ==============================================================================
 
@@ -487,10 +421,11 @@ plot(gap.metrics.50m$gap_large_pct, main = '        Percent large gap')
 # first remove redundant metrics from height.stack (cover.stack metrics are better for theses)
 height.stack <- height.stack[[ !names(height.stack) %in% c('pzabove2','pzabove5','pzabove10') ]]
 
-# force correct projection
+# bad
 crs(cover.stack) <- "EPSG:32611"
 crs(height.stack) <- "EPSG:32611"
 crs(pad.stack) <- "EPSG:32611"
+
 
 # ---------- height, cover, and pad stacks ------------
 canopy.metrics.minusgap <- c(height.stack, cover.stack, pad.stack)
@@ -515,124 +450,3 @@ saveRDS(canopy.metrics.50m, 'data/processed/processed/rds/canopy_metrics_50m_tes
 plot(canopy.metrics.50m)
 
 
-
-
-# ==============================================================================
-# test for spatial autocorrelation
-# ==============================================================================
-
-
-
-
-
-# ==============================================================================
-# create aspect- dependent edginess metric
-# ==============================================================================
-
-###### this is not right, getting east/west shading due to incorrect directions. Back to the drawing board. Need outside help most likely. 
-
-# create canopy mask for presence of canopy
-# canopy is present if canopy height > 2m 
-canopy.logical <- canopy.rasters$zq95 > 2
-canopy.mask <- ifel(canopy.logical, 1, 0)
-
-
-# calculate mean canopy height H
-H <- global(canopy.rasters$zq95, 'mean', na.rm = T)[1,1]
-H
-
-# extract canopy mask into matrix
-cm <- as.matrix(canopy.mask, wide = T)
-cm[is.na(cm)] <- 0    # convert NAs → 0 (open)
-nr <- nrow(cm)
-nc <- ncol(cm)
-
-res.m <- res(canopy.mask)[1]
-
-# define 8 directions to "search"a
-dirs.deg <- c(330, 345, 0, 15, 30, 150, 165, 180, 195, 210)
-dirs.rad <- dirs.deg * pi / 180
-
-# function to search from the pixel
-ray.distance <- function(r0, c0, theta, max_steps, cm, res.m) {
-  for (step in 1:max_steps) {
-    # compute location along ray
-    r <- round(r0 - step * sin(theta))
-    c <- round(c0 + step * cos(theta))
-    
-    # boundary check
-    if (r < 1 || r > nrow(cm) || c < 1 || c > ncol(cm))
-      return(NA_real_)
-    
-    # canopy hit?
-    if (cm[r, c] == 1)
-      return(step * res.m)
-  }
-  return(NA_real_) # no canopy found within max distance
-}
-
-max_dist <- 3 * H
-max_steps <- ceiling(max_dist / res.m)
-
-dist.array <- array(NA_real_, dim = c(nr, nc, length(dirs.rad)))
-
-for (j in 1:nc) { # for each column
-  for (i in 1:nr) { # for each row()
-    if(cm[i, j] == 0) { # only compute for open pixels
-      for (k in 1:length(dirs.rad)) {
-        dist.array[i, j, k] <- ray.distance(i, j, dirs.rad[k], max_steps, cm, res.m) }}}}
-
-dist.north <- apply(dist.array[, , 1:5], c(1, 2), min, na.rm = T)
-dist.south <- apply(dist.array[, , 6:10], c(1, 2), min, na.rm = T)
-
-dist.north[is.infinite(dist.north)] <- NA_real_
-dist.south[is.infinite(dist.south)] <- NA_real_
-
-
-# convert to rasters
-dist.north.r <- rast(dist.north, ext = ext(canopy.mask), crs = crs(canopy.mask))
-dist.south.r <- rast(dist.south, ext = ext(canopy.mask), crs = crs(canopy.mask))
-
-# edginess
-edginess.north <- dist.north.r / (3*H)
-edginess.north <- ifel(edginess.north > 1, 1, edginess.north)
-edginess.south <- dist.south.r / (3*H)
-edginess.south <- ifel(edginess.south > 1, 1, edginess.south)
-edginess.total <- edginess.north + edginess.south
-
-# visualization ============
-
-# quick glance
-plot(edginess.north, main='Edginess to the North', col=viridis::viridis(200))
-plot(edginess.south, main='Edginess to the South', col=viridis::viridis(200))
-
-# choose breakpoints centered at zero
-rng <- max(abs(global(contrast, "range", na.rm=TRUE)))
-
-brks <- seq(-rng, rng, length.out = 255)
-
-# diverging palette: blue → gray → red
-pal <- colorRampPalette(c("blue", "gray90", "red"))
-
-contrast <- edginess.south - edginess.north
-
-plot(crop(contrast, ext_small),
-     col = pal(254),
-     breaks = brks,
-     main = "Directional Edginess Contrast (South - North)")
-
-
-plot(edginess.north, col=viridis::viridis(200), main='Edginess North')
-plot(canopy.mask, col=c("transparent","black"), add=TRUE, legend=FALSE)
-
-# zoom
-ext_small <- ext(308200, 308400, 4135500, 4135700)  
-
-plot(crop(edginess.north, ext_small), 
-     main='Zoom: Edginess North', 
-     col=viridis::magma(200))
-
-plot(crop(canopy.mask, ext_small), 
-     add=TRUE, col=c("transparent","white"), legend=FALSE)
-
-#### getting east/west shading. NOT RIGHT
