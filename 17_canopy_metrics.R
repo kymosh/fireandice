@@ -1,4 +1,4 @@
-packages <- c('terra', 'sf', 'mapview', 'lidR', 'aRchi', 'TreeLS', 'dplyr', 'ForestGapR', 'raster', 'future')
+packages <- c('terra', 'sf', 'mapview', 'lidR', 'aRchi', 'TreeLS', 'dplyr', 'ForestGapR', 'raster', 'future', 'future.apply')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -84,6 +84,8 @@ res.m <- 1
 
 # chm <- rasterize_canopy(ctg.norm, res = 1, algorithm = pitfree())
 # saveRDS(chm, 'data/processed/processed/rds/chm_test.rds')
+# writeRaster(chm, 'data/processed/processed/tif/1m/chm_test.tif', overwrite = TRUE) # this one is already projected to 32611
+
 chm <- readRDS('data/processed/processed/rds/chm_test.rds')
 
 # check CRS
@@ -125,7 +127,13 @@ height.metrics <- function(z, cl) {
   return(out)
 }
 
-height.stack <- pixel_metrics(ctg.norm, ~ height.metrics(Z, Classification), res = 1)
+# height.stack <- pixel_metrics(ctg.norm, ~ height.metrics(Z, Classification), res = 1)
+# need to get delete pzabove 2 since it's 100%
+
+# reproject to 32611
+# height.stack <- project(height.stack, 'EPSG:32611')
+# saveRDS(height.stack, 'data/processed/processed/rds/height_test.rds')
+height.stack <- readRDS('data/processed/processed/rds/height_test.rds')
 
 # ------- cover metrics --------
 
@@ -141,6 +149,9 @@ cover.metrics <- function(z, cl) {
 }
 
 # cover.stack <- pixel_metrics(ctg.norm, ~ cover.metrics(Z, Classification), res = 1)
+
+# reproject to 32611
+# cover.stack <- project(cover.stack, 'EPSG:32611')
 # saveRDS(cover.stack, 'data/processed/processed/rds/cover_test.rds')
 cover.stack <- readRDS('data/processed/processed/rds/cover_test.rds')
 
@@ -209,7 +220,14 @@ pad.metrics <- function(z) {
   
 }
 
-pad.stack <- pixel_metrics(ctg.norm, ~ pad.metrics(Z), res = 1)
+# pad.stack <- pixel_metrics(ctg.norm, ~ pad.metrics(Z), res = 1)
+
+# pad.stack <- project(pad.stack, 'EPSG:32611')
+# saveRDS(pad.stack, 'data/processed/processed/rds/pad_test.rds')
+pad.stack <- readRDS('data/processed/processed/rds/pad_test.rds')
+
+
+
 
 
 # ==============================================================================
@@ -256,7 +274,7 @@ gap.lookup <- data.frame(gap_id = gap.df$gap_ID,
 
 gap.class.1m <- classify(gap.id.1m, rcl = as.matrix(gap.lookup))
 
-#------ aggregate to 50m -------
+# ------- aggregate to 50m -------
 fact <-  50 / res(gap.class.1m)[1]
 
 # core gap pct
@@ -304,6 +322,8 @@ names(gap_xlarge) <- 'gap_xlarge_pct'
 # visualize
 plot(gap_large)
 
+ext_small <- ext(308350, 308550, 4135500, 4135700)
+
 terra::plot(
   terra::crop(gap.class.1m, ext_small),
   col = viridisLite::viridis(100, direction = -1),
@@ -319,7 +339,7 @@ terra::plot(
   main = 'Gap Mask: Zoom'
 )
 
-# ------------- distance to gap/canopy -----------------
+# ------- distance to gap/canopy -----------------
 
 # recalculate gap mask to keep NAs (necessary for dist calculation)
 gap.mask.for.dist <- ifel(!is.na(chm) & chm < 2, 1, NA)
@@ -336,7 +356,7 @@ dist.to.gap <- mask(dist.to.gap.all, canopy.mask.for.dist)
 # mask out canopy pixels
 dist.to.canopy <- mask(dist.to.canopy.all, gap.mask.for.dist)
 
-# ----- aggregate to 50m -----
+# ------- aggregate to 50m -----
 
 dist.to.gap.mean <- aggregate(dist.to.gap, fact = fact, fun = mean, na.rm = T)
 
@@ -350,12 +370,33 @@ names(dist.to.gap.mean)    <- 'dist_to_gap_mean'
 names(dist.to.canopy.mean) <- 'dist_to_canopy_mean'
 names(dist.to.canopy.max)  <- 'dist_to_canopy_max'
 
-# ---------------- direction-based metric ------------------
-library(terra)
+# ------- direction-based metric -------
 
+# ------- set up parallelization
+plan(multisession, workers = 4)
+
+# --------- create buffer ----------
+
+# define buffer
+buffer.m <- 60 # should equal max_dist_m
+
+# split into tiles
+
+tiles <- makeTiles(chm, 
+                   y = c(1000, 1000), 
+                   buffer = ceiling(buffer.m / res(chm)[1]),
+                   value = 'collection')
+
+tile.extents <- lapply(tiles, ext)
+rm(tiles)  # important: drop terra objects
+gc()
+
+# function for distance from North or South canopy
 dir.sector.dist <- function(target_mask, from_mask,
-                            sector = 'N',
-                            max_dist_m = 200) {
+                            sector = 'S',
+                            max_dist_m = 60 # may need to increase this number when calculating on more tiles
+                            ) {
+
   
   res.m <- res(target_mask)[1]
   max.k <- floor(max_dist_m / res.m)
@@ -364,6 +405,7 @@ dir.sector.dist <- function(target_mask, from_mask,
   values(out) <- NA_real_
   
   from_mask <- crop(from_mask, target_mask)
+  
   
   for (k in 1:max.k) {
     
@@ -393,27 +435,130 @@ dir.sector.dist <- function(target_mask, from_mask,
     }
   }
   
+  
   out
 }
 
-    
-dist.canopy.north <- dir.sector.dist(
-  target_mask = canopy.mask.for.dist,
-  from_mask = gap.mask.for.dist,
-  sector = 'N',
-  max_dist_m = 200
+start.total <- Sys.time()
+
+dist.tiles <- future_lapply(seq_along(tile.extents), function(i) {
+  
+  message('Starting tile ', i)
+  
+  tile.ext <- tile.extents[[i]]
+  
+  chm.local <- rast('data/processed/processed/tif/1m/chm_test.tif')
+  
+  # recreate raster inside worker
+  chm.buf <- crop(chm.local, tile.ext)
+  
+  gap.mask.buf <- ifel(!is.na(chm.buf) & chm.buf < 2, 1, NA)
+  canopy.mask.buf <- ifel(!is.na(chm.buf) & chm.buf >= 2, 1, NA)
+  
+  dist.buf <- dir.sector.dist(
+    target_mask = canopy.mask.buf,
+    from_mask   = gap.mask.buf,
+    sector      = 'S',
+    max_dist_m  = 60
+  )
+  
+  # remove buffer safely
+  tile.core.ext <- ext(trim(chm.buf, pad = FALSE))
+  crop(dist.buf, tile.core.ext)
+})
+
+
+end.total <- Sys.time()
+message(
+  'TOTAL runtime: ',
+  round(difftime(end.total, start.total, units = 'mins'), 2),
+  ' minutes'
 )
 
-# started at 4:10pm on 12/16
+plan(sequential)
+dist.canopy.south <- do.call(mosaic, dist.tiles)
+saveRDS(dist.canopy.south, 'data/processed/processed/rds/dist_canopy_south_test.rds')
+    
+dist.canopy.south.2 <- dir.sector.dist(
+  target_mask = canopy.mask.buf,
+  from_mask = gap.mask.buf,
+  sector = 'S',
+  max_dist_m = 60
+)
+
 saveRDS(dist.canopy.north, 'data/processed/processed/rds/dist_canopy_north_test.rds')
-plot(dist.canopy.north)
+
+terra::plot(
+  terra::crop(dist.canopy.north, ext_small),
+  col = viridisLite::viridis(100, direction = -1),
+  main = 'Dist to Canopy - North: Zoom'
+)
 
 # ------ combine ------
 
 # combine into single 50m stack
 gap.metrics.50m <- c(gap_small, gap_medium, gap_large, gap_xlarge, gap.pct.50, dist.to.gap.mean, dist.to.canopy.mean, dist.to.canopy.max)
 
-# ==============================================================================
+# ------- Fractal Dimension -------
+ 
+boxcount.fractal.dim <- function(mat, box.sizes) {
+  
+  # mat: matrix with 1 = gap, NA = no gap
+  # box sizes: vector of box sizes (in pixels)
+  
+  mat[is.na(mat)] <- 0
+  
+  n.box <- is.numeric(length(box.sizes))
+  
+  for (i in seq_along(box.sizes)) {
+    
+    bs <- box.sizes[i]
+    
+    # trim matrix so dimensions divisible by box size
+    nr <- nrow(mat) - (nrow(mat) %% bs)
+    nc <- ncol(mat) - (ncol(mat) %% bs)
+    
+    m <- mat[1:nr, 1:nc, drop = F]
+    
+    # reshape into blocks
+    m <- array(
+      m, dim = c(bs, nr / bs, bs, nc / bs)
+    )
+    
+    # sum within each block
+    block.sum <- apply(m, c(2, 4), sum)
+    
+    # count occupied boxes
+    n.box[i] <- sum(block.sum > 0)
+  }
+  
+  # remove zero-count scales
+  keep <- n.box > 0 
+  
+  if(sum(keep) < 2) return(NA_real_)
+  
+  fit <- lm(log(n.box[keep]) ~ log(1 / box.sizes[keep]))
+  
+  coef(fit)[2]
+ 
+}
+
+
+box.sizes <- c(1, 2, 5, 10, 25)
+
+fractal.dim.fun <- function(v, ...) {
+  
+  mat <- matrix(v, nrow = 50, ncol = 50, byrow = TRUE)
+  
+  boxcount.fractal.dim(
+    mat = mat,
+    box.sizes = box.sizes
+  )
+}
+
+fractal.dim.50m <- aggregate(gap.mask.1m, fact = 50, fun = fractal.dim.fun)
+
+
 
 # ==============================================================================
 #                     Aggregate other metrics to 50m
@@ -421,10 +566,7 @@ gap.metrics.50m <- c(gap_small, gap_medium, gap_large, gap_xlarge, gap.pct.50, d
 # first remove redundant metrics from height.stack (cover.stack metrics are better for theses)
 height.stack <- height.stack[[ !names(height.stack) %in% c('pzabove2','pzabove5','pzabove10') ]]
 
-# bad
-crs(cover.stack) <- "EPSG:32611"
-crs(height.stack) <- "EPSG:32611"
-crs(pad.stack) <- "EPSG:32611"
+
 
 
 # ---------- height, cover, and pad stacks ------------
