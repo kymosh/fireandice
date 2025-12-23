@@ -6,12 +6,14 @@ lapply(packages, library, character.only = T)
 #----------------------
 # Catalog setup 
 #----------------------
+
 ctg <- readLAScatalog('data/raw/ALS/laz/random_tiles')
-set_lidr_threads(8)     # lidR parallelization
+# ----- lidR parallelism setup -----
+set_lidr_threads(8)     
 opt_laz_compression(ctg) <- TRUE
 opt_progress(ctg) <- TRUE
-opt_chunk_size(ctg) <- 0
-opt_chunk_buffer(ctg) <- 20
+opt_chunk_size(ctg) <- 0 # change this when processing more tiles
+opt_chunk_buffer(ctg) <- 20 # check that this is enough
 
 
 #plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap

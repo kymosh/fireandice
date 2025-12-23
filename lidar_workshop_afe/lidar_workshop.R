@@ -192,6 +192,7 @@ dir <- 'las-20251202T171856Z-1-001/las'
 ctg.t <- readLAScatalog(dir)
 plot(ctg.t)
 
+### set up parallelization (this way is specific to lidR package)
 # Let's make the chunks bigger! 
 opt_chunk_size(ctg.t) = 2000                   # play with number of workers and chunk size to optimaze based on our storeage and processing needs
 # 2000 would be larger chunk
