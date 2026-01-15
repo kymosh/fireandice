@@ -3,6 +3,32 @@ install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
 # ==============================================================================
+# select only needed tiles from Liz's harddrive
+# ==============================================================================
+
+index.13 <- read_sf('data/raw/ALS/tile_index_13.shp')
+index.14 <- read_sf('data/raw/ALS/tile_index_14.shp')
+
+# ----- create list of file names -----
+prefix <- 'USGS_LPC_CA_SierraNevada_B22_'
+basenames <- paste0(prefix, index.14$Tile)
+tiles.laz <- paste0(basenames, '.laz')
+
+writeLines(tiles.laz, 'J:/Fire_Snow/fireandice/data/raw/ALS/tiles_14.txt')
+
+# ----- copy only needed tiles -----
+source.dir <- 'D:/Siera_2022_LPC_Unit13'
+dest.dir <- "J:/Fire_Snow/fireandice/data/raw/ALS/laz"
+
+# full paths
+from <- file.path(source.dir, tiles.laz)
+to <- file.path(dest.dir, tiles.laz)
+
+# check to makes ure all files exists 
+exists <- file.exists(from)
+unique(exists)
+
+# ==============================================================================
 # code for downloading lidar tiles from USGS Rockyweb in bulk
 # ==============================================================================
 
@@ -30,7 +56,7 @@ urls <- paste0(
 )
 
 # make this where we want the files to go
-out.dir <- normalizePath('data/raw/ALS/creek_fire', mustWork = FALSE)
+out.dir <- normalizePath('data/raw/ALS/laz/creek_fire', mustWork = FALSE)
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 # ----- set up parallelism -----

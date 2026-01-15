@@ -7,8 +7,9 @@ lapply(packages, library, character.only = T)
 # Catalog setup 
 #----------------------
 
-ctg <- readLAScatalog('data/raw/ALS/laz/random_tiles')
+ctg <- readLAScatalog('data/raw/ALS/laz/creek_fire')
 # ----- lidR parallelism setup -----
+plan(sequential)
 set_lidr_threads(8)     
 opt_laz_compression(ctg) <- TRUE
 opt_progress(ctg) <- TRUE
@@ -16,24 +17,23 @@ opt_chunk_size(ctg) <- 0 # change this when processing more tiles
 opt_chunk_buffer(ctg) <- 20 # check that this is enough
 
 
-#plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
+plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
 
 # tile.dtm = rasterize_terrain(ctg, res = 3.28, algorithm = tin())
 # should run without warnings, try again if orange
 
 # # just look at 1 las file
-# las1 <- readLAS(ctg@data$filename[1])
+las1 <- readLAS(ctg@data$filename[1])
 # las1
 # # see number of each classification categories
-# table(las1$Classification)
+table(las1$Classification)
 # 
 #filter out unwanted points 
 opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
 # 
 # # check to make sure it worked
-# las1.clean <- readLAS(ctg@data$filename[1], filter = '-drop_class 7 18 -drop_withheld')
-# table(las1.clean$Classification)
-
+las1.clean <- readLAS(ctg@data$filename[1], filter = '-drop_class 7 18 -drop_withheld')
+table(las1.clean$Classification)
 
 
 
@@ -47,9 +47,9 @@ opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTT
 # NOTE: I am using the point cloud, not a DTM here to normalize. This is computationally heavier than using a DTM. May have to use DTM when processing entire study area dataset
 
 # using TIN because we have good ground point classification already
-# ctg.norm <- normalize_height(ctg, tin())
+ctg.norm <- normalize_height(ctg, tin())
 
-# saveRDS(ctg.norm, 'data/processed/processed/rds/ctg_norm_test_rds')
+saveRDS(ctg.norm, 'data/processed/processed/rds/ctg_norm_test_rds')
 ctg.norm <- readRDS('data/processed/processed/rds/ctg_norm_test_rds')
 
 # look at one normalized tile
@@ -58,6 +58,7 @@ las.norm <- readLAS(norm.file)
 
 # visualization
 plot(las.norm, color = 'Z', legend = T)
+plot(ctg.norm)
 
 # ground Z distribution
 summary(las.norm$Z[las.norm$Classification == 2])
@@ -67,7 +68,7 @@ quantile(las.norm$Z[las.norm$Classification == 2], c(0.05, 0.5, 0.95), na.rm = T
 # Non-ground (likely vegetation, buildings, etc.)
 summary(las.norm$Z[las.norm$Classification != 2])
 
-
+min(las.norm$Z)
 
 hist(
   las.norm$Z[las.norm$Classification != 2 & las.norm$Z < 80],
@@ -80,15 +81,15 @@ res.m <- 1
 
 # clear output pattern
 # NOTE: necessary step to avoid overwrite issues if rerunning
-# opt_output_files(ctg.norm) <- ""
+opt_output_files(ctg.norm) <- ""
 
 # ------ canopy height model --------
 
-# chm <- rasterize_canopy(ctg.norm, res = 1, algorithm = pitfree())
-# saveRDS(chm, 'data/processed/processed/rds/chm_test.rds')
-# writeRaster(chm, 'data/processed/processed/tif/1m/chm_test.tif', overwrite = TRUE) # this one is already projected to 32611
+chm <- rasterize_canopy(ctg.norm, res = 1, algorithm = pitfree())
+saveRDS(chm, 'data/processed/processed/rds/chm_test.rds')
+writeRaster(chm, 'data/processed/processed/tif/1m/chm_test.tif', overwrite = TRUE) 
 
-chm <- readRDS('data/processed/processed/rds/chm_test.rds')
+#chm <- readRDS('data/processed/processed/rds/chm_test.rds')
 
 # check CRS
 crs(chm, describe = T)$code
@@ -99,7 +100,10 @@ res(chm)
 # reproject to 32611
 chm <- project(chm, 'EPSG:32611')
 crs(chm, describe = T)$code
+chm[chm < 0] <- 0
 
+writeRaster(chm, 'data/processed/processed/tif/1m/chm_test.tif', overwrite = TRUE) 
+saveRDS(chm, 'data/processed/processed/rds/chm_test.rds')
 # ==============================================================================
 # Calculate canopy metrics 
 # ==============================================================================
@@ -129,13 +133,13 @@ height.metrics <- function(z, cl) {
   return(out)
 }
 
-# height.stack <- pixel_metrics(ctg.norm, ~ height.metrics(Z, Classification), res = 1)
+height.stack <- pixel_metrics(ctg.norm, ~ height.metrics(Z, Classification), res = 1)
 # need to get delete pzabove 2 since it's 100%
 
 # reproject to 32611
-# height.stack <- project(height.stack, 'EPSG:32611')
-# saveRDS(height.stack, 'data/processed/processed/rds/height_test.rds')
-height.stack <- readRDS('data/processed/processed/rds/height_test.rds')
+height.stack <- project(height.stack, 'EPSG:32611')
+saveRDS(height.stack, 'data/processed/processed/rds/height_test.rds')
+# height.stack <- readRDS('data/processed/processed/rds/height_test.rds')
 
 # ------- cover metrics --------
 
@@ -150,12 +154,12 @@ cover.metrics <- function(z, cl) {
     ground_frac_pc = sum(cl == 2) / n_all)
 }
 
-# cover.stack <- pixel_metrics(ctg.norm, ~ cover.metrics(Z, Classification), res = 1)
+cover.stack <- pixel_metrics(ctg.norm, ~ cover.metrics(Z, Classification), res = 1)
 
 # reproject to 32611
-# cover.stack <- project(cover.stack, 'EPSG:32611')
-# saveRDS(cover.stack, 'data/processed/processed/rds/cover_test.rds')
-cover.stack <- readRDS('data/processed/processed/rds/cover_test.rds')
+cover.stack <- project(cover.stack, 'EPSG:32611')
+saveRDS(cover.stack, 'data/processed/processed/rds/cover_test.rds')
+# cover.stack <- readRDS('data/processed/processed/rds/cover_test.rds')
 
 # ------- PAD/PAI metrics --------
 # Compute Plant Area Density (PAD) and Plant Area Index (PAI)
@@ -222,12 +226,73 @@ pad.metrics <- function(z) {
   
 }
 
-# pad.stack <- pixel_metrics(ctg.norm, ~ pad.metrics(Z), res = 1)
+pad.stack <- pixel_metrics(ctg.norm, ~ pad.metrics(Z), res = 1)
 
-# pad.stack <- project(pad.stack, 'EPSG:32611')
-# saveRDS(pad.stack, 'data/processed/processed/rds/pad_test.rds')
-pad.stack <- readRDS('data/processed/processed/rds/pad_test.rds')
+pad.stack <- project(pad.stack, 'EPSG:32611')
+saveRDS(pad.stack, 'data/processed/processed/rds/pad_test.rds')
+# pad.stack <- readRDS('data/processed/processed/rds/pad_test.rds')
 
+
+# ==============================================================================
+#  Fractal Dimension 
+# ==============================================================================
+
+boxcount.fractal.dim <- function(mat, box.sizes) {
+  
+  # mat: matrix with 1 = gap, NA = no gap
+  # box sizes: vector of box sizes (in pixels)
+  
+  mat[is.na(mat)] <- 0
+  
+  n.box <- is.numeric(length(box.sizes))
+  
+  for (i in seq_along(box.sizes)) {
+    
+    bs <- box.sizes[i]
+    
+    # trim matrix so dimensions divisible by box size
+    nr <- nrow(mat) - (nrow(mat) %% bs)
+    nc <- ncol(mat) - (ncol(mat) %% bs)
+    
+    m <- mat[1:nr, 1:nc, drop = F]
+    
+    # reshape into blocks
+    m <- array(
+      m, dim = c(bs, nr / bs, bs, nc / bs)
+    )
+    
+    # sum within each block
+    block.sum <- apply(m, c(2, 4), sum)
+    
+    # count occupied boxes
+    n.box[i] <- sum(block.sum > 0)
+  }
+  
+  # remove zero-count scales
+  keep <- n.box > 0 
+  
+  if(sum(keep) < 2) return(NA_real_)
+  
+  fit <- lm(log(n.box[keep]) ~ log(1 / box.sizes[keep]))
+  
+  coef(fit)[2]
+  
+}
+
+
+box.sizes <- c(1, 2, 5, 10, 25)
+
+fractal.dim.fun <- function(v, ...) {
+  
+  mat <- matrix(v, nrow = 50, ncol = 50, byrow = TRUE)
+  
+  boxcount.fractal.dim(
+    mat = mat,
+    box.sizes = box.sizes
+  )
+}
+
+fractal.dim.50m <- aggregate(gap.mask.1m, fact = 50, fun = fractal.dim.fun)
 
 
 
@@ -235,6 +300,9 @@ pad.stack <- readRDS('data/processed/processed/rds/pad_test.rds')
 # ==============================================================================
 #  Gap Metrics
 # ==============================================================================
+
+terraOptions(memfrac = 0.7)
+
 
 # define gap as height is less than 2m
 gap.mask.1m <- ifel(!is.na(chm) & chm < 2, 1, NA)
@@ -379,19 +447,19 @@ plan(multisession, workers = 4)
 
 # --------- create buffer ----------
 
-# define buffer
-buffer.m <- 60 # should equal max_dist_m
-
-# split into tiles
-
-tiles <- makeTiles(chm, 
-                   y = c(1000, 1000), 
-                   buffer = ceiling(buffer.m / res(chm)[1]),
-                   value = 'collection')
-
-tile.extents <- lapply(tiles, ext)
-rm(tiles)  # important: drop terra objects
-gc()
+# # define buffer
+# buffer.m <- 60 # should equal max_dist_m
+# 
+# # split into tiles
+# 
+# tiles <- makeTiles(chm, 
+#                    y = c(1000, 1000), 
+#                    buffer = ceiling(buffer.m / res(chm)[1]),
+#                    value = 'collection')
+# 
+# tile.extents <- lapply(tiles, ext)
+# rm(tiles)  # important: drop terra objects
+# gc()
 
 # function for distance from North or South canopy
 dir.sector.dist <- function(target_mask, from_mask,
@@ -399,21 +467,25 @@ dir.sector.dist <- function(target_mask, from_mask,
                             max_dist_m = 60 # may need to increase this number when calculating on more tiles
                             ) {
 
-  
+  # --- this is how many "rings" we will search ---
   res.m <- res(target_mask)[1]
-  max.k <- floor(max_dist_m / res.m)
+  max.k <- floor(max_dist_m / res.m) 
   
-  out <- rast(target_mask)
+  # --- create blank raster with same geometry as target ---
+  out <- rast(target_mask) 
   values(out) <- NA_real_
   
+  # --- ensure masks have same spatial extent ---
   from_mask <- crop(from_mask, target_mask)
   
   
   for (k in 1:max.k) {
     
+    # --- moves pixels north/south and form fan-shaped search region ---
     dy <- k * res.m
     horiz.range <- k * res.m
     
+    # --- move target pixels in the decided direction ---
     if (sector == 'N') {
       shifted <- shift(target_mask, dy = -dy)
     }
@@ -422,17 +494,22 @@ dir.sector.dist <- function(target_mask, from_mask,
       shifted <- shift(target_mask, dy = dy)
     }
     
+    # --- allows lateral deviation ---
     for (dx in seq(-horiz.range, horiz.range, by = res.m)) {
       
+      # shift by (dx, dy) and resample back onto original grid
       candidate <- resample(
         shift(shifted, dx = dx),
         target_mask,
         method = 'near'
       )
       
+      # keep value only when gap pixel is found
       hit <- mask(candidate, from_mask)
+      # euclidean distance 
       dist <- sqrt(dx^2 + dy^2)
       
+      # --- if canopy is found, write distance
       out <- cover(out, ifel(!is.na(hit), dist, NA_real_))
     }
   }
@@ -441,54 +518,61 @@ dir.sector.dist <- function(target_mask, from_mask,
   out
 }
 
-start.total <- Sys.time()
-
-dist.tiles <- future_lapply(seq_along(tile.extents), function(i) {
-  
-  message('Starting tile ', i)
-  
-  tile.ext <- tile.extents[[i]]
-  
-  chm.local <- rast('data/processed/processed/tif/1m/chm_test.tif')
-  
-  # recreate raster inside worker
-  chm.buf <- crop(chm.local, tile.ext)
-  
-  gap.mask.buf <- ifel(!is.na(chm.buf) & chm.buf < 2, 1, NA)
-  canopy.mask.buf <- ifel(!is.na(chm.buf) & chm.buf >= 2, 1, NA)
-  
-  dist.buf <- dir.sector.dist(
-    target_mask = canopy.mask.buf,
-    from_mask   = gap.mask.buf,
-    sector      = 'S',
-    max_dist_m  = 60
-  )
-  
-  # remove buffer safely
-  tile.core.ext <- ext(trim(chm.buf, pad = FALSE))
-  crop(dist.buf, tile.core.ext)
-})
 
 
-end.total <- Sys.time()
-message(
-  'TOTAL runtime: ',
-  round(difftime(end.total, start.total, units = 'mins'), 2),
-  ' minutes'
-)
 
-plan(sequential)
-dist.canopy.south <- do.call(mosaic, dist.tiles)
-saveRDS(dist.canopy.south, 'data/processed/processed/rds/dist_canopy_south_test.rds')
-    
-dist.canopy.south.2 <- dir.sector.dist(
-  target_mask = canopy.mask.buf,
-  from_mask = gap.mask.buf,
+# # ----- scaling up ------
+# dist.tiles <- lapply(seq_along(tile.extents), function(i) {
+# 
+#   message('Starting tile ', i)
+# 
+#   tile.ext <- tile.extents[[i]]
+# 
+#   chm.local <- rast('data/processed/processed/tif/1m/chm_test.tif')
+# 
+#   # recreate raster inside worker
+#   chm.buf <- crop(chm.local, tile.ext)
+# 
+#   gap.mask.buf <- ifel(!is.na(chm.buf) & chm.buf < 2, 1, NA)
+#   canopy.mask.buf <- ifel(!is.na(chm.buf) & chm.buf >= 2, 1, NA)
+# 
+#   dist.buf <- dir.sector.dist(
+#     target_mask = gap.mask.buf,
+#     from_mask   = canopy.mask.buf,
+#     sector      = 'S',
+#     max_dist_m  = 60
+#   )
+# 
+#   # remove buffer safely
+#   tile.core.ext <- ext(trim(chm.buf, pad = FALSE))
+#   crop(dist.buf, tile.core.ext)
+# })
+
+# dist.canopy.south <- do.call(mosaic, dist.tiles)
+# saveRDS(dist.canopy.south, 'data/processed/processed/rds/dist_canopy_south_test.rds')
+
+# Phase 1 - test on 5 tiles, sequentially
+chm <- rast('data/processed/processed/tif/1m/chm_test.tif')
+gap.mask <- ifel(!is.na(chm) & chm < 2, 1, NA)
+canopy.mask <- ifel(!is.na(chm) & chm >= 2, 1, NA)
+
+# ----- run function and time it ----
+start.time <- Sys.time()
+
+dist.canopy.south <- dir.sector.dist(
+  target_mask = gap.mask,
+  from_mask = canopy.mask,
   sector = 'S',
   max_dist_m = 60
 )
 
-saveRDS(dist.canopy.north, 'data/processed/processed/rds/dist_canopy_north_test.rds')
+end.time <- Sys.time()
+message(
+  'Runtime: ',
+  round(difftime(end.time, start.time, units = 'mins'), 2),
+  ' minutes'
+)
+saveRDS(dist.canopy.south, 'data/processed/processed/rds/dist_canopy_south_test.rds')
 
 terra::plot(
   terra::crop(dist.canopy.north, ext_small),
@@ -500,65 +584,6 @@ terra::plot(
 
 # combine into single 50m stack
 gap.metrics.50m <- c(gap_small, gap_medium, gap_large, gap_xlarge, gap.pct.50, dist.to.gap.mean, dist.to.canopy.mean, dist.to.canopy.max)
-
-# ------- Fractal Dimension -------
- 
-boxcount.fractal.dim <- function(mat, box.sizes) {
-  
-  # mat: matrix with 1 = gap, NA = no gap
-  # box sizes: vector of box sizes (in pixels)
-  
-  mat[is.na(mat)] <- 0
-  
-  n.box <- is.numeric(length(box.sizes))
-  
-  for (i in seq_along(box.sizes)) {
-    
-    bs <- box.sizes[i]
-    
-    # trim matrix so dimensions divisible by box size
-    nr <- nrow(mat) - (nrow(mat) %% bs)
-    nc <- ncol(mat) - (ncol(mat) %% bs)
-    
-    m <- mat[1:nr, 1:nc, drop = F]
-    
-    # reshape into blocks
-    m <- array(
-      m, dim = c(bs, nr / bs, bs, nc / bs)
-    )
-    
-    # sum within each block
-    block.sum <- apply(m, c(2, 4), sum)
-    
-    # count occupied boxes
-    n.box[i] <- sum(block.sum > 0)
-  }
-  
-  # remove zero-count scales
-  keep <- n.box > 0 
-  
-  if(sum(keep) < 2) return(NA_real_)
-  
-  fit <- lm(log(n.box[keep]) ~ log(1 / box.sizes[keep]))
-  
-  coef(fit)[2]
- 
-}
-
-
-box.sizes <- c(1, 2, 5, 10, 25)
-
-fractal.dim.fun <- function(v, ...) {
-  
-  mat <- matrix(v, nrow = 50, ncol = 50, byrow = TRUE)
-  
-  boxcount.fractal.dim(
-    mat = mat,
-    box.sizes = box.sizes
-  )
-}
-
-fractal.dim.50m <- aggregate(gap.mask.1m, fact = 50, fun = fractal.dim.fun)
 
 
 
