@@ -58,7 +58,7 @@ urls <- paste0(
 )
 
 # make this where we want the files to go
-out.dir <- normalizePath('J:/Fire_Snow/fireandice/data/raw/ALS/creek', mustWork = FALSE)
+out.dir <- normalizePath('J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek', mustWork = FALSE)
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 # ----- set up parallelism -----
