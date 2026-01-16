@@ -24,9 +24,11 @@ dest.dir <- "J:/Fire_Snow/fireandice/data/raw/ALS/laz"
 from <- file.path(source.dir, tiles.laz)
 to <- file.path(dest.dir, tiles.laz)
 
-# check to makes ure all files exists 
+# check to makes sure all files exists 
 exists <- file.exists(from)
 unique(exists)
+
+# the actual copying function is completed directly in powershell
 
 # ==============================================================================
 # code for downloading lidar tiles from USGS Rockyweb in bulk
@@ -56,7 +58,7 @@ urls <- paste0(
 )
 
 # make this where we want the files to go
-out.dir <- normalizePath('data/raw/ALS/laz/creek_fire', mustWork = FALSE)
+out.dir <- normalizePath('J:/Fire_Snow/fireandice/data/raw/ALS/creek', mustWork = FALSE)
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 # ----- set up parallelism -----
