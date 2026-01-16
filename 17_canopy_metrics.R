@@ -7,7 +7,7 @@ lapply(packages, library, character.only = T)
 # Catalog setup 
 #----------------------
 
-ctg <- readLAScatalog('data/raw/ALS/laz/creek_fire')
+ctg <- readLAScatalog('data/raw/ALS/laz/creek_fire') # change this to ALS/creek when ready to run on all tiles
 # ----- lidR parallelism setup -----
 plan(sequential)
 set_lidr_threads(8)     
@@ -23,17 +23,17 @@ plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of
 # should run without warnings, try again if orange
 
 # # just look at 1 las file
-las1 <- readLAS(ctg@data$filename[1])
+# las1 <- readLAS(ctg@data$filename[1])
 # las1
 # # see number of each classification categories
-table(las1$Classification)
+# table(las1$Classification)
 # 
 #filter out unwanted points 
 opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
 # 
 # # check to make sure it worked
-las1.clean <- readLAS(ctg@data$filename[1], filter = '-drop_class 7 18 -drop_withheld')
-table(las1.clean$Classification)
+# las1.clean <- readLAS(ctg@data$filename[1], filter = '-drop_class 7 18 -drop_withheld')
+# table(las1.clean$Classification)
 
 
 
