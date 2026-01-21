@@ -31,6 +31,35 @@ unique(exists)
 # the actual copying function is completed directly in powershell
 
 # ==============================================================================
+# remove tiles that are too low in elevation
+# ==============================================================================
+
+# shapefile that contains all tile that are too low in elevation
+tiles.to.remove <- read_sf('data/raw/ALS/tiles_to_remove.shp')
+
+# ----- create list of file names -----
+prefix <- 'USGS_LPC_CA_SierraNevada_B22_'
+basenames <- paste0(prefix, tiles.to.remove$Tile)
+to.remove <- paste0(basenames, '.laz')
+
+# name dirs
+source.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek'
+dest.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek_unused'
+
+# get full paths of files 
+files.to.move <- file.path(source.dir, to.remove)
+files.to.move <- files.to.move[file.exists(files.to.move)]
+
+head(files.to.move)
+length(files.to.move)
+
+
+# move files
+file.rename(from = files.to.move, 
+            to = file.path(dest.dir, basename(files.to.move)))
+
+
+# ==============================================================================
 # code for downloading lidar tiles from USGS Rockyweb in bulk
 # ==============================================================================
 
@@ -38,7 +67,6 @@ unique(exists)
 index.11 <- read_sf('data/raw/ALS/tile_index_11.shp')
 
 tile.ids <- index.11$Tile
-
 
 
 # ----- build RockyWeb download URLs -----
@@ -110,3 +138,6 @@ results <- future_mapply(
   dest = test.dest,
   SIMPLIFY = T
 )
+
+
+

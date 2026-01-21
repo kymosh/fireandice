@@ -8,32 +8,32 @@ lapply(packages, library, character.only = T)
 #----------------------
 
 ctg <- readLAScatalog('data/raw/ALS/laz/creek_fire') # change this to ALS/creek when ready to run on all tiles
+ctg.full <- readLAScatalog('J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek')
+plot(ctg.full)
+bbox <- st_bbox(ctg.full)
+sub.ext <- raster::extent(
+  bbox['xmin'],
+  bbox['xmin'] + 5000,  # 5 km wide
+  bbox['ymax'] - 5000,  # 5 km tall
+  bbox['ymax']
+)
+
+las_check(ctg)
+
 # ----- lidR parallelism setup -----
 plan(sequential)
-set_lidr_threads(8)     
+set_lidr_threads(14)     
 opt_laz_compression(ctg) <- TRUE
 opt_progress(ctg) <- TRUE
-opt_chunk_size(ctg) <- 0 # change this when processing more tiles
-opt_chunk_buffer(ctg) <- 20 # check that this is enough
+opt_chunk_size(ctg) <- 0 # 0 = 1000
+opt_chunk_buffer(ctg) <- 30 # check that this is enough
 
 
 plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
+plot(ctg, chunk = TRUE)
 
-# tile.dtm = rasterize_terrain(ctg, res = 3.28, algorithm = tin())
-# should run without warnings, try again if orange
-
-# # just look at 1 las file
-# las1 <- readLAS(ctg@data$filename[1])
-# las1
-# # see number of each classification categories
-# table(las1$Classification)
-# 
 #filter out unwanted points 
 opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
-# 
-# # check to make sure it worked
-# las1.clean <- readLAS(ctg@data$filename[1], filter = '-drop_class 7 18 -drop_withheld')
-# table(las1.clean$Classification)
 
 
 
@@ -45,9 +45,14 @@ opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTT
 
 # normalize heights using point cloud
 # NOTE: I am using the point cloud, not a DTM here to normalize. This is computationally heavier than using a DTM. May have to use DTM when processing entire study area dataset
+library(future)
+plan(multisession, workers = 4)
+set_lidr_threads(1)   
 
 # using TIN because we have good ground point classification already
+system.time(
 ctg.norm <- normalize_height(ctg, tin())
+)
 
 saveRDS(ctg.norm, 'data/processed/processed/rds/ctg_norm_test_rds')
 ctg.norm <- readRDS('data/processed/processed/rds/ctg_norm_test_rds')
