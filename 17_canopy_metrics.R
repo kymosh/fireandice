@@ -10,15 +10,45 @@ lapply(packages, library, character.only = T)
 ctg <- readLAScatalog('data/raw/ALS/laz/creek_fire') # change this to ALS/creek when ready to run on all tiles
 ctg.full <- readLAScatalog('J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek')
 plot(ctg.full)
-bbox <- st_bbox(ctg.full)
-sub.ext <- raster::extent(
-  bbox['xmin'],
-  bbox['xmin'] + 5000,  # 5 km wide
-  bbox['ymax'] - 5000,  # 5 km tall
-  bbox['ymax']
-)
 
-las_check(ctg)
+# =================================================================================
+# test on 36 tiles 
+# =================================================================================
+d <- ctg.full@data
+nms <- names(d)
+
+# --- find extent columns (names vary by lidR version) ---
+xmn_name <- nms[grep('Min\\.X|^xmin$|Xleft',   nms, ignore.case = TRUE)][1]
+xmx_name <- nms[grep('Max\\.X|^xmax$|Xright',  nms, ignore.case = TRUE)][1]
+ymn_name <- nms[grep('Min\\.Y|^ymin$|Ybottom', nms, ignore.case = TRUE)][1]
+ymx_name <- nms[grep('Max\\.Y|^ymax$|Ytop',    nms, ignore.case = TRUE)][1]
+
+xmn <- d[[xmn_name]]; xmx <- d[[xmx_name]]
+ymn <- d[[ymn_name]]; ymx <- d[[ymx_name]]
+
+# --- your target point ---
+x0 <- 310000
+y0 <- 4130000
+
+# --- block size ---
+block_m <- 6000  # 6 km -> ~36 1km tiles
+
+# define bbox centered on (x0, y0)
+xmin_b <- x0 - block_m/2
+xmax_b <- x0 + block_m/2
+ymin_b <- y0 - block_m/2
+ymax_b <- y0 + block_m/2
+
+# tiles that intersect the bbox
+keep <- (xmx > xmin_b) & (xmn < xmax_b) &
+  (ymx > ymin_b) & (ymn < ymax_b)
+
+files.sub <- d$filename[keep]
+length(files.sub)
+
+ctg.test <- readLAScatalog(files.sub)
+plot(ctg.test)
+
 
 # ----- lidR parallelism setup -----
 plan(sequential)
