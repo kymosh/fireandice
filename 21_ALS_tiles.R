@@ -139,5 +139,69 @@ results <- future_mapply(
   SIMPLIFY = T
 )
 
+# ==============================================================================
+# code for downloading DEM tifs from USGS Rockyweb in bulk
+# ==============================================================================
 
+# extract tile names from creek batch
+
+tile.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/raw/ALS/laz_creek'
+
+files <- list.files(tile.dir, pattern = '\\.laz$', full.names = FALSE)
+
+tile.ids <- sub('.*_', '', tools::file_path_sans_ext(files))
+
+tile.ids[1:10]  # sanity check
+
+# basenames like: USGS_LPC_CA_SierraNevada_B22_11SKB7732
+laz.files <- list.files(tile.dir, pattern = '\\.laz$', full.names = FALSE)
+tile.basenames <- tools::file_path_sans_ext(laz.files)
+tile.basenames[1:5]
+
+tile.ids <- sub('.*_', '', tile.basenames)
+tile.ids[1:5]
+
+work.units <- c(
+  'CA_SierraNevada_11_B22',
+  'CA_SierraNevada_13_B22',
+  'CA_SierraNevada_14_B22'
+)
+
+# Base URL for DEM products (OPR)
+base <- 'https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/OPR/Projects/CA_SierraNevada_B22'
+
+
+get_unit_links <- function(unit) {
+  url <- paste0(base, '/', unit, '/0_file_download_links.txt')
+  raw <- tryCatch(readLines(url, warn = FALSE), error = function(e) character(0))
+  if (!length(raw)) return(character(0))
+  
+  # Some of these "txt" files behave like one long line: split into tokens (URLs)
+  tokens <- unlist(strsplit(raw, '\\s+'))
+  tokens[nzchar(tokens)]
+}
+
+# Pull all links once per work unit
+unit.links <- setNames(lapply(work.units, get_unit_links), work.units)
+
+# sanity check: should be BIG, non-zero
+sapply(unit.links, length)
+
+# match using tile id, keep only .tif
+dem.urls <- unique(unlist(lapply(tile.ids, function(id) {
+  hits <- unlist(lapply(unit.links, function(x) x[grepl(id, x, fixed = TRUE)]))
+  hits
+}), use.names = FALSE))
+
+dem.urls <- dem.urls[grepl('\\.tif$', dem.urls, ignore.case = TRUE)]
+length(dem.urls)
+dem.urls[1:10]
+
+# ------ download ------
+out.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/raw/DEM'
+
+dest <- file.path(out.dir, basename(dem.urls))
+
+mapply(function(u, d) download.file(u, d, mode = 'wb', quiet = TRUE),
+       u = dem.urls, d = dest)
 

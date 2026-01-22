@@ -51,12 +51,12 @@ plot(ctg)
 plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
 plot(ctg, chunk = TRUE)
 
-#filter out unwanted points 
-opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
+
 
 # =================================================================================
 # Process laz files
 # =================================================================================
+
 
 # ------------------------ lidR parallelism setup ------------------------
 plan(sequential)
@@ -66,10 +66,15 @@ opt_progress(ctg) <- TRUE
 opt_chunk_size(ctg) <- 0 # 0 = 1000
 opt_chunk_buffer(ctg) <- 20 # check that this is enough
 
+#filter out unwanted points 
+opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
+
 # set output file names
 # NOTE if rerunning, make sure this folder is empty
 opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTTOM}'
 
+###### NOTE #####
+# NEED TO CHANGE NORMALIZE_HEIGHT TO USE DTM NOT TIN()
 # using TIN because we have good ground point classification already
 system.time(
   ctg.norm <- normalize_height(ctg, tin())
@@ -78,6 +83,9 @@ system.time(
 # --------------------- future parallelism setup ------------------------
 set_lidr_threads(1)
 plan(multisession, workers = 14)
+
+#filter out unwanted points 
+opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
 
 files <- ctg@data$filename
 filter_str <- opt_filter(ctg)
