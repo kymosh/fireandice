@@ -1,4 +1,4 @@
-packages <- c('terra', 'sf', 'mapview', 'lidR', 'aRchi', 'TreeLS', 'dplyr', 'ForestGapR', 'raster', 'future', 'future.apply')
+packages <- c('terra', 'sf', 'mapview', 'lidR', 'dplyr', 'ForestGapR', 'raster', 'future', 'future.apply')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -8,7 +8,7 @@ lapply(packages, library, character.only = T)
 #----------------------
 
 ctg <- readLAScatalog('data/raw/ALS/laz/creek_fire') # change this to ALS/creek when ready to run on all tiles
-ctg.full <- readLAScatalog('J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek')
+ctg.full <- readLAScatalog('J:/Structure_Data/Fire_Snow/fireandice/data/raw/ALS/laz_creek')
 plot(ctg.full)
 
 # =================================================================================
@@ -46,38 +46,73 @@ keep <- (xmx > xmin_b) & (xmn < xmax_b) &
 files.sub <- d$filename[keep]
 length(files.sub)
 
-ctg.test <- readLAScatalog(files.sub)
-plot(ctg.test)
-
-
-# ----- lidR parallelism setup -----
-plan(sequential)
-set_lidr_threads(14)     
-opt_laz_compression(ctg) <- TRUE
-opt_progress(ctg) <- TRUE
-opt_chunk_size(ctg) <- 0 # 0 = 1000
-opt_chunk_buffer(ctg) <- 30 # check that this is enough
-
-
+ctg <- readLAScatalog(files.sub)
+plot(ctg)
 plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
 plot(ctg, chunk = TRUE)
 
 #filter out unwanted points 
 opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
 
+# =================================================================================
+# Process laz files
+# =================================================================================
 
-
-# ---  Normalize ---
+# ------------------------ lidR parallelism setup ------------------------
+plan(sequential)
+set_lidr_threads(14)     
+opt_laz_compression(ctg) <- TRUE
+opt_progress(ctg) <- TRUE
+opt_chunk_size(ctg) <- 0 # 0 = 1000
+opt_chunk_buffer(ctg) <- 20 # check that this is enough
 
 # set output file names
 # NOTE if rerunning, make sure this folder is empty
 opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTTOM}'
 
+# using TIN because we have good ground point classification already
+system.time(
+  ctg.norm <- normalize_height(ctg, tin())
+)
+
+# --------------------- future parallelism setup ------------------------
+set_lidr_threads(1)
+plan(multisession, workers = 14)
+
+files <- ctg@data$filename
+filter_str <- opt_filter(ctg)
+
+# ---  Normalize ---
+normalize_one <- function(f, filter_str) {
+  out <- file.path(
+    'data/processed/ALS/normalized',
+    paste0(tools::file_path_sans_ext(basename(f)), '_norm.laz')
+  )
+  
+  # only runs if file does not exist
+  if (file.exists(out) && file.info(out)$size > 50 * 1024^2) return(TRUE)
+  
+  las <- readLAS(f, filter = filter_str)
+  if (is.empty(las)) return(FALSE)
+  
+  lasn <- normalize_height(las, tin())
+  writeLAS(lasn, out)
+  TRUE
+}
+
+system.time({
+  ok <- future_sapply(files, normalize_one, filter_str = filter_str)
+})
+
+table(ok, useNA = 'ifany')
+
+plan(sequential)
+
 # normalize heights using point cloud
 # NOTE: I am using the point cloud, not a DTM here to normalize. This is computationally heavier than using a DTM. May have to use DTM when processing entire study area dataset
-library(future)
-plan(multisession, workers = 4)
-set_lidr_threads(1)   
+#library(future)
+#plan(multisession, workers = 4)
+#set_lidr_threads(1)   
 
 # using TIN because we have good ground point classification already
 system.time(
