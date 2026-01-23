@@ -12,22 +12,24 @@ suppressPackageStartupMessages({
 # -----------------------
 # USER SETTINGS
 # -----------------------
-workers <- 6
+workers <- 10
 buffer <- 20
 
-# test block settings (same as you used before)
+# test block settings 
 x0 <- 310000
 y0 <- 4130000
 block.m <- 6000
 
-run.test.block <- TRUE  # set FALSE to run all tiles
+run.test.block <- FALSE  # set FALSE to run all tiles
 
 las.dir <- 'data/raw/ALS/laz_creek'
 dtm.dir <- 'data/raw/DEM/creek'
 out.dir <- 'data/processed/ALS/normalized/creek'
-
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
+
+
 log.file <- file.path(out.dir, 'normalize_run.log')
+
 
 log.msg <- function(...) {
   msg <- paste0(format(Sys.time(), '%Y-%m-%d %H:%M:%S'), ' | ', paste(..., collapse = ' '))
@@ -141,49 +143,86 @@ normalize <- function(las.file, dtm.file, out.dir, buffer = 20) {
     paste0(tools::file_path_sans_ext(basename(las.file)), '_norm.laz')
   )
   
-  # Resume-safe: skip if exists and non-trivial size
   if (file.exists(out.file) && file.info(out.file)$size > 5 * 1024^2) {
     return(out.file)
   }
   
-  las <- readLAS(las.file, filter = '-drop_withheld -drop_class 7 18')
-  if (is.empty(las)) return(NA_character_)
+  out <- tryCatch({
+    
+    las <- readLAS(las.file, filter = '-drop_withheld -drop_class 7 18')
+    if (is.empty(las)) return(NA_character_)
+    
+    dtm <- rast(dtm.file)
+    
+    e <- ext(las)
+    e.buf <- ext(e$xmin - buffer, e$xmax + buffer,
+                 e$ymin - buffer, e$ymax + buffer)
+    dtm <- crop(dtm, e.buf)
+    
+    las.norm <- normalize_height(las, dtm)
+    writeLAS(las.norm, out.file)
+    
+    rm(las, dtm, las.norm)
+    gc()
+    
+    out.file
+    
+  }, error = function(e) {
+    # write a tiny per-tile error marker so you can review later
+    errfile <- file.path(out.dir, paste0(basename(las.file), '_ERROR.txt'))
+    writeLines(conditionMessage(e), errfile)
+    NA_character_
+  })
   
-  dtm <- rast(dtm.file)
-  
-  e <- ext(las)
-  e.buf <- ext(e$xmin - buffer, e$xmax + buffer,
-               e$ymin - buffer, e$ymax + buffer)
-  dtm <- crop(dtm, e.buf)
-  
-  las.norm <- normalize_height(las, dtm)
-  writeLAS(las.norm, out.file)
-  
-  out.file
+  out
 }
 
+
 # -----------------------
-# Run in parallel + log time
+# Run in parallel (batched) + log time
 # -----------------------
 set_lidr_threads(1)
 plan(multisession, workers = workers)
 options(future.globals.maxSize = 8 * 1024^3)
 
 log.msg('Starting run. workers=', workers, ' buffer=', buffer)
+log.msg('Already on disk:', length(list.files(out.dir, pattern = '_norm\\.laz$', full.names = TRUE)))
+
 t0 <- Sys.time()
 
-out.files <- future_mapply(
-  FUN = normalize,
-  las.file = pairs.run$las.file,
-  dtm.file = pairs.run$dtm.file,
-  MoreArgs = list(out.dir = out.dir, buffer = buffer),
-  SIMPLIFY = TRUE,
-  future.seed = TRUE
-)
+n <- nrow(pairs.run)
+batch.size <- 120   # good starting point (adjust if needed)
+starts <- seq(1, n, by = batch.size)
+
+out.files <- character(n)
+
+for (b in seq_along(starts)) {
+  
+  i1 <- starts[b]
+  i2 <- min(i1 + batch.size - 1, n)
+  
+  log.msg('Batch ', b, '/', length(starts), ' | tiles ', i1, '-', i2)
+  
+  out.files[i1:i2] <- future_mapply(
+    FUN = normalize,
+    las.file = pairs.run$las.file[i1:i2],
+    dtm.file = pairs.run$dtm.file[i1:i2],
+    MoreArgs = list(out.dir = out.dir, buffer = buffer),
+    SIMPLIFY = TRUE,
+    future.seed = TRUE
+  )
+  
+  terra::tmpFiles(remove = TRUE)
+  
+  done <- sum(file.exists(out.files[1:i2]) & !is.na(out.files[1:i2]))
+  elapsed.min <- as.numeric(difftime(Sys.time(), t0, units = 'mins'))
+  log.msg('Progress: ', done, '/', n, ' | elapsed min: ', round(elapsed.min, 2))
+}
 
 t1 <- Sys.time()
 plan(sequential)
 
 elapsed.min <- as.numeric(difftime(t1, t0, units = 'mins'))
 log.msg('Finished. Elapsed minutes:', round(elapsed.min, 2))
-log.msg('Outputs that exist:', sum(file.exists(out.files), na.rm = TRUE), ' / ', length(out.files))
+log.msg('Outputs that exist:', length(list.files(out.dir, pattern = '_norm\\.laz$', full.names = TRUE)), ' total')
+
