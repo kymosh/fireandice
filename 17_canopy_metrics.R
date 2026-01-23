@@ -1,7 +1,6 @@
-packages <- c('terra', 'sf', 'mapview', 'lidR', 'dplyr', 'ForestGapR', 'raster', 'future', 'future.apply')
+packages <- c('terra', 'sf', 'mapview', 'lidR', 'dplyr', 'ForestGapR', 'raster', 'future', 'future.apply', 'stringr')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
-
 
 #----------------------
 # Catalog setup 
@@ -44,7 +43,6 @@ keep <- (xmx > xmin_b) & (xmn < xmax_b) &
   (ymx > ymin_b) & (ymn < ymax_b)
 
 files.sub <- d$filename[keep]
-length(files.sub)
 
 ctg <- readLAScatalog(files.sub)
 plot(ctg)
@@ -73,59 +71,117 @@ opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
 # NOTE if rerunning, make sure this folder is empty
 opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTTOM}'
 
-###### NOTE #####
-# NEED TO CHANGE NORMALIZE_HEIGHT TO USE DTM NOT TIN()
-# using TIN because we have good ground point classification already
-system.time(
-  ctg.norm <- normalize_height(ctg, tin())
-)
+# ------------------------------ normalize height ------------------------------
 
-# --------------------- future parallelism setup ------------------------
-set_lidr_threads(1)
-plan(multisession, workers = 14)
+# ----- first we need to match up our laz files to their corresponding dtm files ----- 
 
-#filter out unwanted points 
-opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
+las.dir <- 'data/raw/ALS/laz_creek'
+dtm.dir <- 'data/raw/DEM/creek'
 
-files <- ctg@data$filename
-filter_str <- opt_filter(ctg)
+las.files <- list.files(las.dir, pattern = '\\.la[sz]$', full.names = TRUE, ignore.case = TRUE)
+dtm.files <- list.files(dtm.dir, pattern = '\\.(tif|tiff|img)$', full.names = TRUE, ignore.case = TRUE)
 
-# ---  Normalize ---
-normalize_one <- function(f, filter_str) {
-  out <- file.path(
-    'data/processed/ALS/normalized',
-    paste0(tools::file_path_sans_ext(basename(f)), '_norm.laz')
-  )
+# Extract the USGS tile code, e.g., "11SLB2329" (adjust if your naming differs)
+get.tile.code <- function(x) {
+  x <- basename(x)
   
-  # only runs if file does not exist
-  if (file.exists(out) && file.info(out)$size > 50 * 1024^2) return(TRUE)
-  
-  las <- readLAS(f, filter = filter_str)
-  if (is.empty(las)) return(FALSE)
-  
-  lasn <- normalize_height(las, tin())
-  writeLAS(lasn, out)
-  TRUE
+  # finds patterns like 11SLB2329, 10SBG3212, 11SKB7732, etc.
+  m <- str_match(x, '([0-9]{2}[A-Z]{3}[0-9]{4})')
+  m[, 2]
 }
 
-system.time({
-  ok <- future_sapply(files, normalize_one, filter_str = filter_str)
-})
+# dfs for codes
+las.df <- tibble(
+  las.file = las.files,
+  tile.code = vapply(las.files, get.tile.code, character(1))
+)
 
-table(ok, useNA = 'ifany')
+dtm.df <- tibble(
+  dtm.file = dtm.files,
+  tile.code = vapply(dtm.files, get.tile.code, character(1))
+)
+
+# join into single df
+pairs <- left_join(las.df, dtm.df, by = 'tile.code')
+
+# check for missing 
+filter(pairs, is.na(las.file))
+filter(pairs, is.na(dtm.file))
+# check for duplicates
+count(pairs, tile.code) |> filter(n > 1)
+
+# ----- now we normalize -----
+
+normalize <- function(las.file, dtm.file, out.dir, buffer = 20) {
+  
+  las <- readLAS(las.file, filter = '-drop_withheld -drop_class 7 18')
+  if (is.empty(las)) return(NA_character_)
+  
+  dtm <- rast(dtm.file)
+  
+  e <- ext(las)
+  e.buf <- ext(e$xmin - buffer, e$xmax + buffer,
+               e$ymin - buffer, e$ymax + buffer)
+  dtm <- crop(dtm, e.buf)
+  
+  las.norm <- normalize_height(las, dtm)
+  
+  out.file <- file.path(
+    out.dir,
+    paste0(tools::file_path_sans_ext(basename(las.file)), '_norm.laz')
+  )
+  
+  writeLAS(las.norm, out.file)
+  out.file
+}
+
+out.dir <- 'data/processed/ALS/normalized/creek'
+
+# ----- parallel plan -----
+set_lidr_threads(1)
+plan(multisession, workers = 10)
+
+options(future.globals.maxSize = 8 * 1024^3)  # 8 GB
+
+# --- test on the 36 tiles ---
+# find the filename column 
+file.col <- nms[grep('filename$|^file$|^files?$|fullpath', nms, ignore.case = TRUE)][1]
+files.sub.test <- d[[file.col]][keep]
+pairs.test <- pairs[basename(pairs$las.file) %in% basename(files.sub.test), , drop = FALSE]
+
+
+t0 <- Sys.time()
+out.files.36 <- future_mapply(
+  FUN = normalize,  
+  las.file = pairs.test$las.file,
+  dtm.file = pairs.test$dtm.file,
+  MoreArgs = list(out.dir = out.dir, buffer = 20),
+  SIMPLIFY = TRUE,
+  future.seed = TRUE
+)
+t1 <- Sys.time()
+plan(sequential)
+message('Elapsed time: ', round(difftime(t1, t0, units = 'mins'), 2), ' minutes')
+
+
+# run on all tiles
+out.files <- future_mapply(
+  FUN = normalize,
+  las.file = pairs$las.file,
+  dtm.file = pairs$dtm.file,
+  MoreArgs = list(out.dir = out.dir),
+  future.seed = TRUE
+)
 
 plan(sequential)
 
-# normalize heights using point cloud
-# NOTE: I am using the point cloud, not a DTM here to normalize. This is computationally heavier than using a DTM. May have to use DTM when processing entire study area dataset
-#library(future)
-#plan(multisession, workers = 4)
-#set_lidr_threads(1)   
 
-# using TIN because we have good ground point classification already
-system.time(
-ctg.norm <- normalize_height(ctg, tin())
-)
+
+
+
+
+
+
 
 saveRDS(ctg.norm, 'data/processed/processed/rds/ctg_norm_test_rds')
 ctg.norm <- readRDS('data/processed/processed/rds/ctg_norm_test_rds')
