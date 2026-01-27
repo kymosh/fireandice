@@ -1,5 +1,11 @@
 # scripts/normalize_creek_dtm.R
 
+# run in command prompt with this code:
+# "C:\Program Files\R\R-4.5.2\bin\Rscript.exe" scripts\normalize.R
+
+# ----- runtime notes -----
+# 2889 tiles ran in 413 minutes
+
 suppressPackageStartupMessages({
   library(terra)
   library(lidR)
@@ -12,7 +18,7 @@ suppressPackageStartupMessages({
 # -----------------------
 # USER SETTINGS
 # -----------------------
-workers <- 10
+workers <- 10 # failed at 16
 buffer <- 20
 
 # test block settings 
@@ -46,14 +52,14 @@ log.msg('dtm.dir:', dtm.dir)
 log.msg('out.dir:', out.dir)
 
 # -----------------------
-# Build LAScatalog (so ctg.full exists in script)
+# Build LAScatalog 
 # -----------------------
 ctg.full <- readLAScatalog(las.dir)
 
 d <- ctg.full@data
 nms <- names(d)
 
-# --- extent columns (lidR version differences) ---
+# --- extent columns  ---
 xmn.name <- nms[grep('Min\\.X|^xmin$|Xleft',   nms, ignore.case = TRUE)][1]
 xmx.name <- nms[grep('Max\\.X|^xmax$|Xright',  nms, ignore.case = TRUE)][1]
 ymn.name <- nms[grep('Min\\.Y|^ymin$|Ybottom', nms, ignore.case = TRUE)][1]
@@ -62,7 +68,7 @@ ymx.name <- nms[grep('Max\\.Y|^ymax$|Ytop',    nms, ignore.case = TRUE)][1]
 xmn <- d[[xmn.name]]; xmx <- d[[xmx.name]]
 ymn <- d[[ymn.name]]; ymx <- d[[ymx.name]]
 
-# --- bbox for ~36 tiles ---
+# --- bbox for 36 tiles ---
 xmin.b <- x0 - block.m / 2
 xmax.b <- x0 + block.m / 2
 ymin.b <- y0 - block.m / 2
@@ -116,7 +122,7 @@ if (nrow(missing.dtm) > 0) {
   stop('Some LAS tiles did not find a matching DTM file.')
 }
 
-# Duplicates check (not always fatal, but you should know)
+# Duplicates check
 dups <- pairs %>% count(tile.code) %>% filter(n > 1)
 if (nrow(dups) > 0) {
   log.msg('WARNING: duplicate tile.code entries found. Example codes:',
@@ -171,6 +177,7 @@ normalize <- function(las.file, dtm.file, out.dir, buffer = 20) {
     # write a tiny per-tile error marker so you can review later
     errfile <- file.path(out.dir, paste0(basename(las.file), '_ERROR.txt'))
     writeLines(conditionMessage(e), errfile)
+    log.msg('ERROR on ', basename(las.file), ': ', conditionMessage(e))
     NA_character_
   })
   
@@ -181,6 +188,7 @@ normalize <- function(las.file, dtm.file, out.dir, buffer = 20) {
 # -----------------------
 # Run in parallel (batched) + log time
 # -----------------------
+
 set_lidr_threads(1)
 plan(multisession, workers = workers)
 options(future.globals.maxSize = 8 * 1024^3)
@@ -214,7 +222,7 @@ for (b in seq_along(starts)) {
   
   terra::tmpFiles(remove = TRUE)
   
-  done <- sum(file.exists(out.files[1:i2]) & !is.na(out.files[1:i2]))
+  done <- length(list.files(out.dir, pattern = '_norm\\.laz$', full.names = TRUE))
   elapsed.min <- as.numeric(difftime(Sys.time(), t0, units = 'mins'))
   log.msg('Progress: ', done, '/', n, ' | elapsed min: ', round(elapsed.min, 2))
 }
