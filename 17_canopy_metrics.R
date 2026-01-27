@@ -9,95 +9,12 @@ lapply(packages, library, character.only = T)
 # Catalog setup 
 #----------------------
 
-ctg <- readLAScatalog('data/raw/ALS/laz/creek_fire') # change this to ALS/creek when ready to run on all tiles
-ctg.full <- readLAScatalog('J:/Structure_Data/Fire_Snow/fireandice/data/raw/ALS/laz_creek')
-plot(ctg.full)
+# normalized tiles
+ctg.norm <- readLAScatalog('data/processed/ALS/normalized/creek') 
 
-# =================================================================================
-# test on 36 tiles 
-# =================================================================================
-d <- ctg.full@data
-nms <- names(d)
-
-# --- find extent columns (names vary by lidR version) ---
-xmn_name <- nms[grep('Min\\.X|^xmin$|Xleft',   nms, ignore.case = TRUE)][1]
-xmx_name <- nms[grep('Max\\.X|^xmax$|Xright',  nms, ignore.case = TRUE)][1]
-ymn_name <- nms[grep('Min\\.Y|^ymin$|Ybottom', nms, ignore.case = TRUE)][1]
-ymx_name <- nms[grep('Max\\.Y|^ymax$|Ytop',    nms, ignore.case = TRUE)][1]
-
-xmn <- d[[xmn_name]]; xmx <- d[[xmx_name]]
-ymn <- d[[ymn_name]]; ymx <- d[[ymx_name]]
-
-# --- your target point ---
-x0 <- 310000
-y0 <- 4130000
-
-# --- block size ---
-block_m <- 6000  # 6 km -> ~36 1km tiles
-
-# define bbox centered on (x0, y0)
-xmin_b <- x0 - block_m/2
-xmax_b <- x0 + block_m/2
-ymin_b <- y0 - block_m/2
-ymax_b <- y0 + block_m/2
-
-# tiles that intersect the bbox
-keep <- (xmx > xmin_b) & (xmn < xmax_b) &
-  (ymx > ymin_b) & (ymn < ymax_b)
-
-files.sub <- d$filename[keep]
-
-ctg <- readLAScatalog(files.sub)
-plot(ctg)
-plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
-plot(ctg, chunk = TRUE)
-
-
-
-
-
-
-
-# ----- parallel plan -----
-set_lidr_threads(1)
-plan(multisession, workers = 10)
-
-options(future.globals.maxSize = 8 * 1024^3)  # 8 GB
-
-# --- test on the 36 tiles ---
-# find the filename column 
-file.col <- nms[grep('filename$|^file$|^files?$|fullpath', nms, ignore.case = TRUE)][1]
-files.sub.test <- d[[file.col]][keep]
-pairs.test <- pairs[basename(pairs$las.file) %in% basename(files.sub.test), , drop = FALSE]
-
-
-t0 <- Sys.time()
-out.files.36 <- future_mapply(
-  FUN = normalize,  
-  las.file = pairs.test$las.file,
-  dtm.file = pairs.test$dtm.file,
-  MoreArgs = list(out.dir = out.dir, buffer = 20),
-  SIMPLIFY = TRUE,
-  future.seed = TRUE
-)
-t1 <- Sys.time()
-plan(sequential)
-message('Elapsed time: ', round(difftime(t1, t0, units = 'mins'), 2), ' minutes')
-
-
-# run on all tiles
-out.files <- future_mapply(
-  FUN = normalize,
-  las.file = pairs$las.file,
-  dtm.file = pairs$dtm.file,
-  MoreArgs = list(out.dir = out.dir),
-  future.seed = TRUE
-)
-
-plan(sequential)
-
-saveRDS(ctg.norm, 'data/processed/processed/rds/ctg_norm_test_rds')
-ctg.norm <- readRDS('data/processed/processed/rds/ctg_norm_test_rds')
+# ----- sanity check -----
+plot(ctg.norm)
+plot(ctg.norm, mapview = T, map.types = "Esri.WorldImagery")
 
 # look at one normalized tile
 norm.file <- ctg.norm@data$filename[1]
@@ -110,7 +27,7 @@ plot(ctg.norm)
 # ground Z distribution
 summary(las.norm$Z[las.norm$Classification == 2])
 quantile(las.norm$Z[las.norm$Classification == 2], c(0.05, 0.5, 0.95), na.rm = TRUE)
-# all zero, which is what we would expect (because it's ground!)
+# mostly zero, which is what we would expect (because it's ground!)
 
 # Non-ground (likely vegetation, buildings, etc.)
 summary(las.norm$Z[las.norm$Classification != 2])
@@ -124,7 +41,93 @@ hist(
   xlab  = 'Z (m)'
 )
 
+# =================================================================================
+# test on few tiles 
+# =================================================================================
+
+# inputs
+norm.dir <- 'data/processed/ALS/normalized/creek'
+out.base <- 'data/processed/ALS/tests'
+
+# chm resolution
 res.m <- 1
+
+# how many tiles to test
+n.test <- 8
+
+# normalized catalog
+# ctg.norm <- readLAScatalog('data/processed/ALS/normalized/creek')
+
+# keep simple for test
+opt_progress(ctg.norm) <- TRUE
+opt_chunk_size(ctg.norm) <- 0
+opt_chunk_buffer(ctg.norm) <- 0
+opt_filter(ctg.norm) <- '-drop_withheld'
+
+# --- Select tiles to test ---
+# ctg@data has one row per file; take a sample for now
+set.seed(1)
+idx <- sample(seq_len(nrow(ctg.norm@data)), size = min(n.test, nrow(ctg.norm@data)))
+ctg.test <- ctg.norm[idx, ]
+
+dir.create(file.path(out.base, 'p2r'), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(out.base, 'pitfree'), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(out.base, 'diff_p2r_minus_pitfree'), recursive = TRUE, showWarnings = FALSE)
+
+opt_output_files(ctg.test) <- file.path(out.base, 'p2r', '{ORIGINALFILENAME}_chm_p2r')
+
+chm.p2r <- rasterize_canopy(ctg.test,
+                            res.m,
+                            algorithm = p2r())
+
+
+#### rest is continued in 00_canopy_height_model_alg_exploration
+
+# =================================================================================
+# test on 36 tiles 
+# =================================================================================
+# d <- ctg.norm@data
+# nms <- names(d)
+# 
+# # --- find extent columns (names vary by lidR version) ---
+# xmn_name <- nms[grep('Min\\.X|^xmin$|Xleft',   nms, ignore.case = TRUE)][1]
+# xmx_name <- nms[grep('Max\\.X|^xmax$|Xright',  nms, ignore.case = TRUE)][1]
+# ymn_name <- nms[grep('Min\\.Y|^ymin$|Ybottom', nms, ignore.case = TRUE)][1]
+# ymx_name <- nms[grep('Max\\.Y|^ymax$|Ytop',    nms, ignore.case = TRUE)][1]
+# 
+# xmn <- d[[xmn_name]]; xmx <- d[[xmx_name]]
+# ymn <- d[[ymn_name]]; ymx <- d[[ymx_name]]
+# 
+# # --- your target point ---
+# x0 <- 310000
+# y0 <- 4130000
+# 
+# # --- block size ---
+# block_m <- 6000  # 6 km -> ~36 1km tiles
+# 
+# # define bbox centered on (x0, y0)
+# xmin_b <- x0 - block_m/2
+# xmax_b <- x0 + block_m/2
+# ymin_b <- y0 - block_m/2
+# ymax_b <- y0 + block_m/2
+# 
+# # tiles that intersect the bbox
+# keep <- (xmx > xmin_b) & (xmn < xmax_b) &
+#   (ymx > ymin_b) & (ymn < ymax_b)
+# 
+# files.sub <- d$filename[keep]
+# 
+# ctg <- readLAScatalog(files.sub)
+# plot(ctg)
+# plot(ctg, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
+# plot(ctg, chunk = TRUE)
+
+
+
+
+
+
+
 
 # clear output pattern
 # NOTE: necessary step to avoid overwrite issues if rerunning
