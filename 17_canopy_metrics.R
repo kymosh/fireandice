@@ -2,6 +2,9 @@ packages <- c('terra', 'sf', 'mapview', 'lidR', 'dplyr', 'ForestGapR', 'raster',
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
+
+# NOTE: the final normalization code was saved as a script in data/scripts and run through the command prompt
+
 #----------------------
 # Catalog setup 
 #----------------------
@@ -51,91 +54,9 @@ plot(ctg, chunk = TRUE)
 
 
 
-# =================================================================================
-# Process laz files
-# =================================================================================
 
 
-# ------------------------ lidR parallelism setup ------------------------
-plan(sequential)
-set_lidr_threads(14)     
-opt_laz_compression(ctg) <- TRUE
-opt_progress(ctg) <- TRUE
-opt_chunk_size(ctg) <- 0 # 0 = 1000
-opt_chunk_buffer(ctg) <- 20 # check that this is enough
 
-#filter out unwanted points 
-opt_filter(ctg) <- '-drop_class 7 18 -drop_withheld'
-
-# set output file names
-# NOTE if rerunning, make sure this folder is empty
-opt_output_files(ctg) <- 'data/processed/ALS/normalized/tile_norm_{XLEFT}_{YBOTTOM}'
-
-# ------------------------------ normalize height ------------------------------
-
-# ----- first we need to match up our laz files to their corresponding dtm files ----- 
-
-las.dir <- 'data/raw/ALS/laz_creek'
-dtm.dir <- 'data/raw/DEM/creek'
-
-las.files <- list.files(las.dir, pattern = '\\.la[sz]$', full.names = TRUE, ignore.case = TRUE)
-dtm.files <- list.files(dtm.dir, pattern = '\\.(tif|tiff|img)$', full.names = TRUE, ignore.case = TRUE)
-
-# Extract the USGS tile code, e.g., "11SLB2329" (adjust if your naming differs)
-get.tile.code <- function(x) {
-  x <- basename(x)
-  
-  # finds patterns like 11SLB2329, 10SBG3212, 11SKB7732, etc.
-  m <- str_match(x, '([0-9]{2}[A-Z]{3}[0-9]{4})')
-  m[, 2]
-}
-
-# dfs for codes
-las.df <- tibble(
-  las.file = las.files,
-  tile.code = vapply(las.files, get.tile.code, character(1))
-)
-
-dtm.df <- tibble(
-  dtm.file = dtm.files,
-  tile.code = vapply(dtm.files, get.tile.code, character(1))
-)
-
-# join into single df
-pairs <- left_join(las.df, dtm.df, by = 'tile.code')
-
-# check for missing 
-filter(pairs, is.na(las.file))
-filter(pairs, is.na(dtm.file))
-# check for duplicates
-count(pairs, tile.code) |> filter(n > 1)
-
-# ----- now we normalize -----
-
-normalize <- function(las.file, dtm.file, out.dir, buffer = 20) {
-  
-  las <- readLAS(las.file, filter = '-drop_withheld -drop_class 7 18')
-  if (is.empty(las)) return(NA_character_)
-  
-  dtm <- rast(dtm.file)
-  
-  e <- ext(las)
-  e.buf <- ext(e$xmin - buffer, e$xmax + buffer,
-               e$ymin - buffer, e$ymax + buffer)
-  dtm <- crop(dtm, e.buf)
-  
-  las.norm <- normalize_height(las, dtm)
-  
-  out.file <- file.path(
-    out.dir,
-    paste0(tools::file_path_sans_ext(basename(las.file)), '_norm.laz')
-  )
-  
-  writeLAS(las.norm, out.file)
-  out.file
-}
-
-out.dir <- 'data/processed/ALS/normalized/creek'
 
 # ----- parallel plan -----
 set_lidr_threads(1)
@@ -174,14 +95,6 @@ out.files <- future_mapply(
 )
 
 plan(sequential)
-
-
-
-
-
-
-
-
 
 saveRDS(ctg.norm, 'data/processed/processed/rds/ctg_norm_test_rds')
 ctg.norm <- readRDS('data/processed/processed/rds/ctg_norm_test_rds')
