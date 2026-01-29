@@ -100,19 +100,21 @@ dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 opt_progress(ctg.norm) <- TRUE
 opt_chunk_size(ctg.norm) <- 0 # process tile by tile
 opt_chunk_buffer(ctg.norm) <-  0 # buffer not needed for CHM
+opt_laz_compression(ctg.norm) <- TRUE   
+
 
 opt_output_files(ctg.norm) <- file.path(out.dir, 'creek_chm_{ORIGINALFILENAME}')
 
 # ----- run CHM -----
 
 chm <- rasterize_canopy(ctg.norm, res = res.m, algorithm = p2r())
+# 10:13am 1/29/26
 saveRDS(chm, 'data/processed/processed/rds/creek_chm.rds')
 writeRaster(chm, 'data/processed/processed/tif/1m/creek_chm.tif', overwrite = TRUE) 
 
 # ----- check results -----
 chm.vrt <- vrt(tifs)
 plot(chm.vrt)
-
 
 # build a point density raster at the same resolution
 opt_output_files(ctg.sub) <- file.path(out.dir, 'density_{ORIGINALFILENAME}')
@@ -125,16 +127,6 @@ plot(dens, main = 'Point density (pts / m^2)')
 v <- values(chm.vrt, mat = FALSE)
 pct.na <- mean(is.na(v)) * 100
 pct.na
-
-
-
-# ------ canopy height model --------
-
-chm <- rasterize_canopy(ctg.norm, res = 1, algorithm = pitfree())
-saveRDS(chm, 'data/processed/processed/rds/chm_test.rds')
-writeRaster(chm, 'data/processed/processed/tif/1m/chm_test.tif', overwrite = TRUE) 
-
-#chm <- readRDS('data/processed/processed/rds/chm_test.rds')
 
 # check CRS
 crs(chm, describe = T)$code
@@ -155,7 +147,7 @@ saveRDS(chm, 'data/processed/processed/rds/chm_test.rds')
 
 # clear output pattern
 # NOTE: necessary step to avoid overwrite issues if rerunning
-opt_output_files(ctg.norm) <- ""
+# opt_output_files(ctg.norm) <- ""
 
 # ------- height metrics --------
 
