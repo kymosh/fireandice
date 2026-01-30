@@ -108,7 +108,14 @@ opt_output_files(ctg.norm) <- file.path(out.dir, 'creek_chm_{ORIGINALFILENAME}')
 # ----- run CHM -----
 
 chm <- rasterize_canopy(ctg.norm, res = res.m, algorithm = p2r())
-# 10:13am 1/29/26
+# START 10:13am 1/29/26
+
+##### NOTE: I ran this for the creek file (2889 tiles) and it took about 27 hours to run
+# These were my parallel settings:
+# plan(multisession, workers = 10)
+# set_lidr_threads(1) # important to avoid nested parallelism
+# I think in the future I would set plan to sequential and let my lidr threads to 10-12
+
 saveRDS(chm, 'data/processed/processed/rds/creek_chm.rds')
 writeRaster(chm, 'data/processed/processed/tif/1m/creek_chm.tif', overwrite = TRUE) 
 
