@@ -378,6 +378,9 @@ write.csv(summary.all, file.path(out.dir.gap.dist, 'summary_all.csv'), row.names
 # quick checks
 table(is.na(summary.all$n.gaps))
 subset(summary.all, !is.na(error))
+summary(summary.all$n.gaps)
+
+
 
 #13:54 2/2/26
 
