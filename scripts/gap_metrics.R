@@ -297,6 +297,37 @@ length(tiles.36)
 
 plan(multisession, workers = 8)
 
+out.dir.36 <- file.path(out.dir, 'test_36_gap_dist')
+dir.create(out.dir.36, recursive = T, showWarnings = F)
+
+start <- Sys.time()
+summary.36 <- future_lapply(tiles.36, function(f){
+  
+  gap.fun <- gap.metric.single.tile(
+    vrt.file = vrt.file,
+    out.dir  = out.dir.36,
+    buffer.m = 100
+  )
+  
+  # returned function runs once per tile
+    tryCatch(
+      gap.fun(f),
+      error = function(e) data.frame(
+        tile = tools::file_path_sans_ext(basename(f)),
+        n.gaps = NA_integer_,
+        error = conditionMessage(e)
+      )
+    )
+  
+})
+
+
+summary.36 <- do.call(rbind, summary.36)
+end <- Sys.time()
+message('36-tile block finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
+
+summary.36
+# 2.07 minutes
 
 
 
@@ -305,6 +336,50 @@ plan(multisession, workers = 8)
 
 
 
+
+
+# -------------- FINAL RUN ----------------------
+plan(multisession, workers = 10)
+
+out.dir.gap.dist <- file.path(out.dir, 'gap_dist')
+dir.create(out.dir.gap.dist, recursive = TRUE, showWarnings = FALSE)
+
+start <- Sys.time()
+summary.all <- future_lapply(chm.files, function(f){
+  
+  gap.fun <- gap.metric.single.tile(
+    vrt.file = vrt.file,
+    out.dir  = out.dir.gap.dist,
+    buffer.m = 100
+  )
+  
+  # returned function runs once per tile
+  tryCatch(
+    gap.fun(f),
+    error = function(e) data.frame(
+      tile = tools::file_path_sans_ext(basename(f)),
+      n.gaps = NA_integer_,
+      error = conditionMessage(e)
+    )
+  )
+  
+})
+
+
+summary.all <- do.call(rbind, summary.all)
+end <- Sys.time()
+message('Full run finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
+
+# save summary
+saveRDS(summary.all, file.path(out.dir.gap.dist, 'summary_all.rds'))
+write.csv(summary.all, file.path(out.dir.gap.dist, 'summary_all.csv'), row.names = FALSE)
+
+
+# quick checks
+table(is.na(summary.all$n.gaps))
+subset(summary.all, !is.na(error))
+
+#13:54 2/2/26
 
 
 
