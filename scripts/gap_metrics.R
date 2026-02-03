@@ -369,157 +369,57 @@ summary.all <- future_lapply(chm.files, function(f){
 summary.all <- do.call(rbind, summary.all)
 end <- Sys.time()
 message('Full run finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
+# ran on 2/2/26 and finished in 126 minutes
 
 # save summary
 saveRDS(summary.all, file.path(out.dir.gap.dist, 'summary_all.rds'))
 write.csv(summary.all, file.path(out.dir.gap.dist, 'summary_all.csv'), row.names = FALSE)
 
 
-# quick checks
+# ==============================================================================
+# Checks and Validation
+# ==============================================================================
+
 table(is.na(summary.all$n.gaps))
 subset(summary.all, !is.na(error))
 summary(summary.all$n.gaps)
 
+out.files <- list.files(out.dir.gap.dist,
+                        pattern = '_gap_dist_metrics_50m\\.tif$',
+                        full.names = TRUE)
 
+set.seed(1)
+samp <- sample(out.files, 5)
 
-#13:54 2/2/26
+for (p in samp) {
+  r <- rast(p)
+  
+  cat('\n---', basename(p), '---\n')
+  cat('nlyr:', nlyr(r), '\n')
+  print(names(r))
+  
+  # range checks
+  print(global(r$gap_pct, range, na.rm = TRUE))
+  print(global(r$dist_to_canopy_max, range, na.rm = TRUE))
+}
 
+r1 <- rast(out.files[1])
+r5 <- rast(out.files[5])
+plot(r1$gap_pct, main = 'gap_pct (50m)')
+plot(r5$gap_pct, main = 'gap_pct (50m)')
+plot(r1$dist_to_gap_mean, main = 'dist_to_gap_mean (50m)')
+plot(r5$dist_to_gap_mean, main = 'dist_to_gap_mean (50m)')
 
+# look for if "we are hitting the buffer"
+mx <- sapply(out.files, function(p) {
+  r <- rast(p)
+  global(r$dist_to_canopy_max, max, na.rm = TRUE)[1,1]
+})
 
+summary(mx)
+quantile(mx, c(0.5, 0.9, 0.95, 0.99), na.rm = TRUE)
 
-# ----- below is the gap metric code I had previously used -----
-# define gap as height is less than 2m
-gap.mask.1m <- ifel(!is.na(chm) & chm < 2, 1, NA)
-names(gap.mask.1m) <- 'gap_mask'
+hist(mx, breaks = 50, main = 'Max distance to canopy per tile')
 
-# check
-table(values(gap.mask.1m), useNA = "ifany")
-plot(gap.mask.1m)
+# dominant canopy-gap length is ~30-40m
 
-# create individual gaps with their own ID numbers
-gap.id.1m <- patches(gap.mask.1m, directions = 8)
-names(gap.id.1m) <- 'gap_id'
-
-summary(gap.id.1m)
-
-# add gap size
-gaps <- values(gap.id.1m)
-gaps <- gaps[!is.na(gaps)]
-
-# calculate gap areas
-gap.areas <- table(gaps) * prod(res(gap.id.1m))
-# create df of indiv gaps and their areas
-gap.df <- data.frame(gap_ID = as.integer(names(gap.areas)),
-                     gap_area_m2 = as.numeric(gap.areas))
-# inspect
-head(gap.df)
-summary(gap.df$gap_area_m2)
-
-##### break into ecologically meaningful gap size bins
-gap.df$gap_class <- cut(
-  gap.df$gap_area_m2,
-  breaks = c(0, 10, 100, 1000, Inf),
-  labels = c('small', 'medium', 'large', 'xlarge')
-)
-
-# map gap class back to the raster
-gap.lookup <- data.frame(gap_id = gap.df$gap_ID,
-                         gap_class = as.integer(gap.df$gap_class))
-
-gap.class.1m <- classify(gap.id.1m, rcl = as.matrix(gap.lookup))
-
-# ------- aggregate to 50m -------
-fact <-  50 / res(gap.class.1m)[1]
-
-# core gap pct
-gap.pct.50 <- aggregate(
-  !is.na(gap.id.1m),
-  fact = fact,
-  fun = mean,
-  na.rm = T
-)
-names(gap.pct.50) <- 'gap_pct'
-
-# gap-specific percentages
-gap_small <- aggregate(
-  gap.class.1m == 1,
-  fact = fact,
-  fun = mean,
-  na.rm = T
-)
-gap_medium <- aggregate(
-  gap.class.1m == 2,
-  fact = fact,
-  fun = mean,
-  na.rm = T
-)
-gap_large <- aggregate(
-  gap.class.1m == 3,
-  fact = fact,
-  fun = mean,
-  na.rm = T
-)
-gap_xlarge <- aggregate(
-  gap.class.1m == 4,
-  fact = fact,
-  fun = mean,
-  na.rm = T
-)
-
-names(gap_small)  <- 'gap_small_pct'
-names(gap_medium) <- 'gap_medium_pct'
-names(gap_large)  <- 'gap_large_pct'
-names(gap_xlarge) <- 'gap_xlarge_pct'
-
-
-
-# visualize
-plot(gap_large)
-
-ext_small <- ext(308350, 308550, 4135500, 4135700)
-
-terra::plot(
-  terra::crop(gap.class.1m, ext_small),
-  col = viridisLite::viridis(100, direction = -1),
-  main = 'Gap Mask: Zoom'
-)
-
-plot(gap.class.1m, col = viridisLite::viridis(100, direction = -1))
-
-ext_chm <- ext(308000, 309000, 4135000, 4139000) 
-terra::plot(
-  terra::crop(swe.rast$cbibc, ext_chm),
-  col = viridisLite::viridis(100),
-  main = 'Gap Mask: Zoom'
-)
-
-# ------- distance to gap/canopy -----------------
-
-# recalculate gap mask to keep NAs (necessary for dist calculation)
-gap.mask.for.dist <- ifel(!is.na(chm) & chm < 2, 1, NA)
-dist.to.gap.all <- distance(gap.mask.for.dist)
-names(dist.to.gap.all) <- 'dist_to_gap'
-
-
-canopy.mask.for.dist <- ifel(!is.na(chm) & chm >= 2, 2, NA)
-dist.to.canopy.all <- distance(canopy.mask.for.dist)
-names(dist.to.canopy.all) <- 'dist_to_canopy'
-
-# mask out gap pixels
-dist.to.gap <- mask(dist.to.gap.all, canopy.mask.for.dist)
-# mask out canopy pixels
-dist.to.canopy <- mask(dist.to.canopy.all, gap.mask.for.dist)
-
-# ------- aggregate to 50m -----
-
-dist.to.gap.mean <- aggregate(dist.to.gap, fact = fact, fun = mean, na.rm = T)
-
-
-dist.to.canopy.mean <- aggregate(dist.to.canopy, fact = fact, fun = mean, na.rm = T)
-dist.to.canopy.max <- aggregate(dist.to.canopy, fact = fact, fun = max, na.rm = T)
-
-# rename
-names(dist.to.gap.mean)    <- 'dist_to_gap_mean'
-
-names(dist.to.canopy.mean) <- 'dist_to_canopy_mean'
-names(dist.to.canopy.max)  <- 'dist_to_canopy_max'
