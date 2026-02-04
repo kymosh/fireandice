@@ -1,4 +1,4 @@
-packages <- c('terra', 'mapview', 'lidR', 'dplyr', 'future', 'future.apply', 'tools', 'terra')
+packages <- c('mapview', 'lidR', 'dplyr', 'future', 'future.apply', 'tools', 'terra')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -183,4 +183,63 @@ hist(values(fd2), breaks = 30)
 summary(values(fd1))
 
 
-chm 
+# read the same CHM tile you used for fd1
+chm <- rast('data/processed/ALS/chm_test_tiles/chm_USGS_LPC_CA_SierraNevada_B22_11SLB0727_norm.tif')
+
+# binary gap (TRUE/FALSE)
+gap.bool <- chm < gap.ht
+
+# gap fraction at 50 m
+gap.frac.50m <- aggregate(
+  gap.bool,
+  fact = 50,
+  fun = mean,
+  na.rm = TRUE
+)
+
+names(gap.frac.50m) <- 'gap_frac'
+compareGeom(fd1, gap.frac.50m, stopOnError = TRUE)
+
+x <- values(gap.frac.50m)
+y <- values(fd1)
+
+keep <- is.finite(x) & is.finite(y)
+
+plot(
+  x[keep], y[keep],
+  pch = 16, cex = 0.6,
+  xlab = 'Gap fraction (CHM < 2 m)',
+  ylab = 'Fractal dimension',
+  main = 'FD vs gap fraction (50 m)'
+)
+
+smoothScatter(
+  x[keep], y[keep],
+  xlab = 'Gap fraction',
+  ylab = 'Fractal dimension'
+)
+
+# -------------- final run ----------------------
+
+# note: should be all ready to run on processing computer
+
+plan(multisession, workers = 12)
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm'
+
+chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
+
+length(chm.files)  # should be 2889
+
+start.time <- Sys.time()
+out.files <- future_lapply(
+  chm.files,
+  process.one.fractal,
+  future.seed = TRUE
+)
+end.time <- Sys.time()
+
+message('\nAll tiles finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
+message('Total elapsed hours: ',
+        round(as.numeric(difftime(end.time, start.time, units = 'hours')), 2))
+
+out.files <- unlist(out.files, use.names = FALSE)

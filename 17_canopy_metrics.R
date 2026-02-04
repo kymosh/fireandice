@@ -166,58 +166,9 @@ vrt.file <- vrt(chm.files)
 
 # NOTE: Individual metrics were moved to their own separate script file
 
-# ==============================================================================
-#  Height Metrics
-# ==============================================================================
 
-height.metrics <- function(z, cl) {
-  z.canopy <- z[z > 2 & cl != 2]
-  
-  if (length(z.canopy) == 0) {
-    example <- stdmetrics_z(1:10)
-    out <- as.list(rep(NA_real_, length(example)))
-    names(out) <- names(example)
-    out$zmax_true <- NA_real_
-    return(out)
-  }
-  
-  std <- stdmetrics_z(z.canopy)
-  out <- as.list(std)
-  
-  out$zmax_true <- max(z.canopy)
-  
-  return(out)
-}
 
-height.stack <- pixel_metrics(ctg.norm, ~ height.metrics(Z, Classification), res = 1)
-# need to get delete pzabove 2 since it's 100%
 
-# reproject to 32611
-height.stack <- project(height.stack, 'EPSG:32611')
-saveRDS(height.stack, 'data/processed/processed/rds/height_test.rds')
-# height.stack <- readRDS('data/processed/processed/rds/height_test.rds')
-
-# ==============================================================================
-#  Cover Metrics
-# ==============================================================================
-
-cover.metrics <- function(z, cl) {
-  n_all = length(z)
-  list(
-    pzabove2 = sum(z > 2) / n_all,
-    pzabove5 = sum(z > 5) / n_all,
-    pzabove10 = sum(z > 10) / n_all,
-    p_open = 1 - (sum(z > 2) / n_all),
-    gap_frac_pc = sum(z < 2) / n_all,
-    ground_frac_pc = sum(cl == 2) / n_all)
-}
-
-cover.stack <- pixel_metrics(ctg.norm, ~ cover.metrics(Z, Classification), res = 1)
-
-# reproject to 32611
-cover.stack <- project(cover.stack, 'EPSG:32611')
-saveRDS(cover.stack, 'data/processed/processed/rds/cover_test.rds')
-# cover.stack <- readRDS('data/processed/processed/rds/cover_test.rds')
 
 # ==============================================================================
 # PAD/PAI Metrics
