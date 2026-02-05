@@ -194,7 +194,7 @@ origin(template) <- c(0, 0)
 
 crs(template, describe = T)$code
 # CRS 
-res(chm.template)
+res(template)
 
 
 # check: res 1 x 1, crs EPSG:32611
