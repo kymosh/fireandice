@@ -151,7 +151,7 @@ end.time <- Sys.time()
 message('Height metrics (50 m) finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
 message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
 
-
+# height metrics took 1894 min (31.56 hours)
 
 
 
