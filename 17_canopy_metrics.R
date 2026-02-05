@@ -1,4 +1,4 @@
-packages <- c('terra', 'sf', 'mapview', 'lidR', 'dplyr', 'raster', 'future', 'future.apply', 'stringr')
+packages <- c('sf', 'mapview', 'lidR', 'dplyr', 'raster', 'future', 'future.apply', 'stringr', 'terra')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -138,15 +138,95 @@ chm <- rasterize_canopy(ctg.norm, res = res.m, algorithm = p2r())
 # ----- check results -----
 chm.test <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB8030_norm.tif')
 
+plot(chm.test)
+
+# ----- reproject -----
+
 # check CRS
 crs(chm.test, describe = T)$code
 # CRS 6340
 res(chm.test)
 # 1 x 1
 
-plot(chm.test)
+in.dir  <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_6340'
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611'
+dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
-# NOTE: CRS is different than what I need for the end result. But will be better to reproject after I've aggregated to 50m. 
+files <- list.files(in.dir, pattern = '\\.tif$', full.names = TRUE)
+length(files)
+
+# --- build one shared 32611 template (1 m) ---
+# Read headers only (fast; does not load full raster values)
+r0 <- rast(files[1])
+
+# Union extent in SOURCE CRS across all tiles
+# ext() is metadata-only; this is still pretty quick over thousands of files.
+ext.list <- lapply(files, function(f) ext(rast(f)))
+
+xmin.src <- min(sapply(ext.list, xmin))
+xmax.src <- max(sapply(ext.list, xmax))
+ymin.src <- min(sapply(ext.list, ymin))
+ymax.src <- max(sapply(ext.list, ymax))
+
+ext.src <- ext(xmin.src, xmax.src, ymin.src, ymax.src)
+
+# Make a polygon of the union extent, assign source CRS, then project it to 32611
+e.poly <- as.polygons(ext.src)
+crs(e.poly) <- crs(r0)
+
+e.poly.32611 <- project(e.poly, 'EPSG:32611')
+ext.tgt <- ext(e.poly.32611)
+
+# Snap extent outward to whole meters to avoid edge clipping
+xmin.tgt <- floor(xmin(ext.tgt))
+ymin.tgt <- floor(ymin(ext.tgt))
+xmax.tgt <- ceiling(xmax(ext.tgt))
+ymax.tgt <- ceiling(ymax(ext.tgt))
+
+template <- rast(
+  ext = ext(xmin.tgt, xmax.tgt, ymin.tgt, ymax.tgt),
+  res = 1,
+  crs = 'EPSG:32611'
+)
+
+# Force a consistent grid origin (UTM meters)
+origin(template) <- c(0, 0)
+
+crs(template, describe = T)$code
+# CRS 
+res(chm.template)
+
+
+# check: res 1 x 1, crs EPSG:32611
+
+# --- function to project + write one tile ---
+project_one <- function(f) {
+  
+  r <- rast(f)
+  
+  # project to shared template; bilinear is appropriate for continuous CHM heights
+  rp <- project(r, template, method = 'bilinear')
+  
+  # output name: keep original base name, but change folder
+  out.name <- file.path(out.dir, basename(f))
+  
+  # Optional: if you want the filename to explicitly say 32611:
+  # out.name <- file.path(out.dir, sub('6340', '32611', basename(f)))
+  
+  writeRaster(
+    rp,
+    filename = out.name,
+    overwrite = TRUE,
+    wopt = list(gdal = c('COMPRESS=LZW'))
+  )
+  
+  TRUE
+}
+
+# --- run (serial, safest) ---
+# For 2889 rasters this will take a while, but it is robust.
+ok <- vapply(files, project_one, logical(1))
+sum(ok)
 
 # ==============================================================================
 # Calculate canopy metrics 
