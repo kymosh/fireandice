@@ -153,5 +153,33 @@ message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, uni
 
 # height metrics took 1894 min (31.56 hours)
 
+# ------- check ------
+test <- rast("data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_6340/height_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif")
 
+crs(test, describe = TRUE)$code
+res(test)
+plot(test)
 
+# -------- reproject -------
+
+dem50 <- rast('data/processed/processed/tif/50m/creek/topo_climate_fire_metrics/nasadem_creek_50m_1524.tif')
+crs(dem50, describe = T)$code
+plot(dem50)
+res(dem50)
+
+height.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_6340'
+height.files <- list.files(height.dir, pattern = '\\.tif$', full.names = TRUE)
+
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_32611'
+dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
+
+terraOptions(progress = 1)
+
+for (f in height.files) {
+  r <- rast(f)
+  
+  r.32611 <- project(r, dem50, method = 'bilinear')
+  
+  out.file <- file.path(out.dir, basename(f))
+  writeRaster(r.32611, out.file, overwrite = TRUE)
+}

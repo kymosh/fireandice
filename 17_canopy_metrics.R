@@ -163,6 +163,7 @@ crs(dem30, describe = T)$code # 32611
 res(dem30)
 origin(dem30)
 
+<<<<<<< HEAD
 # ----- function to project + write one tile -----
 project_one <- function(f, out.dir, dem.origin) {
   
@@ -171,6 +172,41 @@ project_one <- function(f, out.dir, dem.origin) {
   out.name <- file.path(out.dir, basename(f))
   if (file.exists(out.name)) return(out.name)  # skip if already done
   
+=======
+ext.src <- ext(xmin.src, xmax.src, ymin.src, ymax.src)
+
+# Make a polygon of the union extent, assign source CRS, then project it to 32611
+e.poly <- as.polygons(ext.src)
+crs(e.poly) <- crs(r0)
+
+e.poly.32611 <- project(e.poly, 'EPSG:32611')
+ext.tgt <- ext(e.poly.32611)
+
+# Snap extent outward to whole meters to avoid edge clipping
+xmin.tgt <- floor(xmin(ext.tgt))
+ymin.tgt <- floor(ymin(ext.tgt))
+xmax.tgt <- ceiling(xmax(ext.tgt))
+ymax.tgt <- ceiling(ymax(ext.tgt))
+
+template <- rast(
+  ext = ext(xmin.tgt, xmax.tgt, ymin.tgt, ymax.tgt),
+  res = 1,
+  crs = 'EPSG:32611'
+)
+
+# Force a consistent grid origin (UTM meters)
+origin(template) <- c(0, 0)
+
+crs(template, describe = T)$code
+# CRS 
+res(template)
+
+
+# check: res 1 x 1, crs EPSG:32611
+
+# --- function to project + write one tile ---
+project_one <- function(f) {
+>>>>>>> 677b198a017a61b5d119b04c511e16d48b5fef73
   
   r <- rast(f)
   
