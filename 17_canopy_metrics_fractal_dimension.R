@@ -6,7 +6,7 @@ lapply(packages, library, character.only = T)
 # ---------- setup ----------
 
 # inputs
-chm.dir <- 'data/processed/ALS/chm_test_tiles'
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 # 'data/processed/processed/tif/1m/creek_chm' for whole run
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 
@@ -119,15 +119,15 @@ fractal.dim.one.tiles <- function(f) {
 # --------------- test on 5 tiles---------------
 
 # inputs
-chm.dir <- 'data/processed/ALS/chm_test_tiles'
-# 'data/processed/processed/tif/1m/creek_chm' for whole run
+#chm.dir <- 'data/processed/ALS/chm_test_tiles' # for test
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611' # for whole run
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 
 # test on 5 tiles
 test.files <- chm.files[1:5]
 
 # outputs
-out.dir <- 'data/processed/ALS/tif/fractal_dimension_test'
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611_test'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 start.time <- Sys.time()
@@ -224,16 +224,17 @@ smoothScatter(
 # note: should be all ready to run on processing computer
 
 plan(multisession, workers = 12)
-chm.dir <- 'data/processed/processed/tif/1m/creek_chm'
-
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611'
+dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 length(chm.files)  # should be 2889
 
 start.time <- Sys.time()
 out.files <- future_lapply(
   chm.files,
-  process.one.fractal,
+  fractal.dim.one.tiles,
   future.seed = TRUE
 )
 end.time <- Sys.time()
@@ -243,3 +244,4 @@ message('Total elapsed hours: ',
         round(as.numeric(difftime(end.time, start.time, units = 'hours')), 2))
 
 out.files <- unlist(out.files, use.names = FALSE)
+# 14:37 2/5/26 elapsed time: 0.31 hours
