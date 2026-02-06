@@ -68,3 +68,11 @@ plot(ca_boundary)
 # Save the shapefile
 st_write(ca_boundary, here('data', 'raw', 'background_variables', 'shp', 'ca_boundary.shp'))
 
+
+
+# 2/5/26
+
+frac <- rast("J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7733_norm_fractal_dim_50m.tif")
+names(frac)
+gap <- rast("J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/canopy_metrics/gap_dist_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7838_norm_gap_dist_metrics_50m.tif")
+names(gap)
