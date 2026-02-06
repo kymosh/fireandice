@@ -106,6 +106,7 @@ message('Cover metrics (50 m) finished at: ', format(end.time, '%Y-%m-%d %H:%M:%
 message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
 
 # height metrics took 1894 min (31.56 hours)
+# cover metrics took XXX min )started at 3:40pm on 2/6/26
 
 # ------- check ------
 test <- rast("data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_6340/height_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif")
@@ -117,17 +118,13 @@ plot(test)
 # -------- reproject -------
 
 dem50 <- rast('data/processed/processed/tif/50m/creek/topo_climate_fire_metrics/nasadem_creek_50m_1524.tif')
-crs(dem50, describe = T)$code
-plot(dem50)
-res(dem50)
 
 cover.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_6340'
 cover.files <- list.files(covert.dir, pattern = '\\.tif$', full.names = TRUE)
+length(cover.files)
 
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
-
-terraOptions(progress = 1)
 
 for (f in cover.files) {
   r <- rast(f)
