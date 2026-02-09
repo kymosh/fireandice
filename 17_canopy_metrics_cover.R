@@ -102,7 +102,6 @@ cover.stack.50m.full <- pixel_metrics(ctg.norm,
                                        res = 50)
 end.time <- Sys.time()
 
-message('Cover metrics (50 m) finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
 message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
 
 # height metrics took 1894 min (31.56 hours)
@@ -121,23 +120,31 @@ plot(test)
 
 dem50 <- rast('data/processed/processed/tif/50m/creek/other_metrics/nasadem_creek_50m_1524.tif')
 
-cover.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_6340'
+cover.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/6340/cover_metrics_6340'
 cover.files <- list.files(cover.dir, pattern = '\\.tif$', full.names = TRUE)
 length(cover.files)
+cover.files.test <- cover.files[1:5]
 
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
-for (f in cover.files) {
+start.time <- Sys.time()
+for (f in cover.files.test) {
+  
   r <- rast(f)
   
-  r.32611 <- project(r, dem50, method = 'bilinear')
+  r.32611 <- project(r, 'EPSG:32611', method = 'bilinear')
+  
+  # crop dem50 to this tile extent, snapping to dem50grid
+  tmpl.tile <- crop(dem50, ext(r.32611), snap = 'out')
+  
+  r.align <- resample(r.32611, tmpl.tile)
   
   out.file <- file.path(out.dir, basename(f))
-  writeRaster(r.32611, out.file, overwrite = TRUE)
+  writeRaster(r.align, out.file, overwrite = TRUE)
 }
 end.time <- Sys.time()
-# I think this only took a couple hours for the creek data
+message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
 
 # ----- check -----
 test3 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif'))
