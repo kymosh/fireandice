@@ -1,4 +1,4 @@
-packages <- c('lidR', 'dplyr', 'future', 'future.apply')
+packages <- c('lidR', 'dplyr', 'future', 'future.apply', 'terra')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -106,21 +106,23 @@ message('Cover metrics (50 m) finished at: ', format(end.time, '%Y-%m-%d %H:%M:%
 message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
 
 # height metrics took 1894 min (31.56 hours)
-# cover metrics took XXX min )started at 3:40pm on 2/6/26
+# cover metrics took 1795 min 
 
 # ------- check ------
-test <- rast("data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_6340/height_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif")
+test <- rast("data/processed/processed/tif/50m/creek/canopy_metrics/6340/cover_metrics_6340/cover_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif")
+test2 <- rast("data/processed/processed/tif/50m/creek/canopy_metrics/6340/cover_metrics_6340/cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif")
 
 crs(test, describe = TRUE)$code
 res(test)
+plot(test2)
 plot(test)
 
 # -------- reproject -------
 
-dem50 <- rast('data/processed/processed/tif/50m/creek/topo_climate_fire_metrics/nasadem_creek_50m_1524.tif')
+dem50 <- rast('data/processed/processed/tif/50m/creek/other_metrics/nasadem_creek_50m_1524.tif')
 
 cover.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_6340'
-cover.files <- list.files(covert.dir, pattern = '\\.tif$', full.names = TRUE)
+cover.files <- list.files(cover.dir, pattern = '\\.tif$', full.names = TRUE)
 length(cover.files)
 
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
@@ -134,3 +136,12 @@ for (f in cover.files) {
   out.file <- file.path(out.dir, basename(f))
   writeRaster(r.32611, out.file, overwrite = TRUE)
 }
+end.time <- Sys.time()
+# I think this only took a couple hours for the creek data
+
+# ----- check -----
+test3 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif'))
+test4 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif'))
+plot(test3)
+crs(test3, describe = TRUE)$code
+res(test3)

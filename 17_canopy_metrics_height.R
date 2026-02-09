@@ -167,19 +167,38 @@ crs(dem50, describe = T)$code
 plot(dem50)
 res(dem50)
 
-height.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_6340'
+height.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/6340/height_metrics_6340'
 height.files <- list.files(height.dir, pattern = '\\.tif$', full.names = TRUE)
+length(height.files)
+test.height.files <- height.files[1:5]
+length(test.height.files)
 
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_32611'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
-terraOptions(progress = 1)
-
-for (f in height.files) {
+for (f in test.height.files) {
+  
+  out.file <- file.path(out.dir, basename(f))
+  
   r <- rast(f)
   
-  r.32611 <- project(r, dem50, method = 'bilinear')
+  r.32611 <- project(r, 'EPSG:32611', method = 'bilinear')
+  
+  # crop dem50 to this tile extent, snapping to dem50grid
+  tmpl.tile <- crop(dem50, ext(r/32611), snap = 'out')
+  
+  r.align <- resample(r.32611, tmpl.tile, method = 'bilinear')
   
   out.file <- file.path(out.dir, basename(f))
   writeRaster(r.32611, out.file, overwrite = TRUE)
 }
+
+
+# ----- test -----
+height.test <- rast('data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_32611/height_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm.tif')
+plot(height.test)
+origin(height.test)
+origin(dem50)
+fracdim <- rast('data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm_fractal_dim_50m.tif')
+origin(fracdim)
+plot(fracdim)
