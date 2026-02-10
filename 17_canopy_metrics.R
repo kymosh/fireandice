@@ -111,7 +111,7 @@ set_lidr_threads(1) # important to avoid nested parallelism
 # ----- CHM settings and output -----
 res.m <- 1
 
-out.dir <- 'data/processed/processed/tif/1m/creek_chm'
+out.dir <- 'data/processed/processed/tif/1m/creek_chm_6340'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 opt_progress(ctg.norm) <- TRUE
@@ -133,118 +133,136 @@ chm <- rasterize_canopy(ctg.norm, res = res.m, algorithm = p2r())
 # These were my parallel settings:
 # plan(multisession, workers = 10)
 # set_lidr_threads(1) # important to avoid nested parallelism
-# I think in the future I would set plan to sequential and let my lidr threads to 10-12
 
 # ----- check results -----
 chm.test <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB8030_norm.tif')
-
 plot(chm.test)
-
-# ----- reproject -----
-
-# check CRS
 crs(chm.test, describe = T)$code
 # CRS 6340
 res(chm.test)
 # 1 x 1
 
-in.dir  <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_6340'
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611'
+# =================================================================================
+# Reproject CHM
+# =================================================================================
+
+in.dir  <- 'data/processed/processed/tif/1m/creek_chm_6340'
+# in.dir <- 'data/processed/processed/tif/1m/creek_chm_test_36'
+out.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 files <- list.files(in.dir, pattern = '\\.tif$', full.names = TRUE)
 length(files)
 
-# --- build one shared 32611 template (1 m) ---
-# Read headers only (fast; does not load full raster values)
-r0 <- rast(files[1])
+# ----- create template -----
 
-# Union extent in SOURCE CRS across all tiles
-# ext() is metadata-only; this is still pretty quick over thousands of files.
-ext.list <- lapply(files, function(f) ext(rast(f)))
+# load in 30m raster in 32611 of study area
+dem30 <- rast('data/processed/processed/tif/30m/nasadem_creek_30m_1524.tif')
 
-xmin.src <- min(sapply(ext.list, xmin))
-xmax.src <- max(sapply(ext.list, xmax))
-ymin.src <- min(sapply(ext.list, ymin))
-ymax.src <- max(sapply(ext.list, ymax))
+crs(dem30, describe = T)$code # 32611
+res(dem30)
+origin(dem30)
 
-ext.src <- ext(xmin.src, xmax.src, ymin.src, ymax.src)
-
-# Make a polygon of the union extent, assign source CRS, then project it to 32611
-e.poly <- as.polygons(ext.src)
-crs(e.poly) <- crs(r0)
-
-e.poly.32611 <- project(e.poly, 'EPSG:32611')
-ext.tgt <- ext(e.poly.32611)
-
-# Snap extent outward to whole meters to avoid edge clipping
-xmin.tgt <- floor(xmin(ext.tgt))
-ymin.tgt <- floor(ymin(ext.tgt))
-xmax.tgt <- ceiling(xmax(ext.tgt))
-ymax.tgt <- ceiling(ymax(ext.tgt))
-
-template <- rast(
-  ext = ext(xmin.tgt, xmax.tgt, ymin.tgt, ymax.tgt),
-  res = 1,
-  crs = 'EPSG:32611'
-)
-
-# Force a consistent grid origin (UTM meters)
-origin(template) <- c(0, 0)
-
-crs(template, describe = T)$code
-# CRS 
-res(template)
-
-
-# check: res 1 x 1, crs EPSG:32611
-
-# --- function to project + write one tile ---
-project_one <- function(f) {
+# ----- function to project + write one tile -----
+project_one <- function(f, out.dir, dem.origin) {
+  
+  library(terra)
+  
+  out.name <- file.path(out.dir, basename(f))
+  if (file.exists(out.name)) return(out.name)  # skip if already done
+  
   
   r <- rast(f)
   
-  # project to shared template; bilinear is appropriate for continuous CHM heights
+  # convert tile extent -> polygon, project polygon -> target CRS, then get extent
+  tile.poly <- as.polygons(ext(r))
+  crs(tile.poly) <- crs(r)  # assign source CRS
+  tile.poly.32611 <- project(tile.poly, 'EPSG:32611')
+  tile.ext.32611 <- ext(tile.poly.32611)
+  
+  # build 1m template cropped to this tile
+  template <- rast(ext = tile.ext.32611,
+                   res = 1,
+                   crs = 'EPSG:32611')
+  
+  # inherit DEM grid alignment
+  origin(template) <- dem.origin
+  
   rp <- project(r, template, method = 'bilinear')
   
-  # output name: keep original base name, but change folder
-  out.name <- file.path(out.dir, basename(f))
-  
-  # Optional: if you want the filename to explicitly say 32611:
-  # out.name <- file.path(out.dir, sub('6340', '32611', basename(f)))
-  
-  writeRaster(
-    rp,
-    filename = out.name,
-    overwrite = TRUE,
-    wopt = list(gdal = c('COMPRESS=LZW'))
+  writeRaster(rp, out.name,
+              overwrite = TRUE,
+              wopt = list(gdal = c('COMPRESS=LZW'))
   )
   
-  TRUE
+  out.name
 }
 
-# --- run (serial, safest) ---
-# For 2889 rasters this will take a while, but it is robust.
-ok <- vapply(files, project_one, logical(1))
-sum(ok)
 
+# ----- run in parallel -----
+plan(multisession, workers = 8)
+terraOptions(threads = 1)
+
+dem.origin <- origin(dem30)
+#test on 36 tiles first
+
+start.time <- Sys.time()
+out.files <- future_lapply(files,
+                           FUN = project_one,
+                           out.dir = out.dir,
+                           dem.origin = dem.origin,
+                           future.seed = TRUE)
+end.time <- Sys.time()
+message('Reproj finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
+message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
+# elapsed time: 15.78 minutes
+
+# ----- check -----
+outs <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+samp <- outs[1:10]
+x <- rast(sample[1])
+plot(x)
+crs(x, describe = TRUE)$code
+res(x)
+
+
+# alignment check
+rlist <- lapply(samp, rast)
+grid_aligned <- function(r, tol = 1e-6) {
+  o <- origin(r)
+  s <- res(r)
+  e <- ext(r)
+  
+  ax <- abs(((xmin(e) - o[1]) / s[1]) - round((xmin(e) - o[1]) / s[1])) < tol
+  ay <- abs(((ymin(e) - o[2]) / s[2]) - round((ymin(e) - o[2]) / s[2])) < tol
+  
+  ax && ay
+}
+
+aligned <- sapply(rlist, grid_aligned)
+table(aligned)
+
+# ----- build VRT for metric computation -----
+
+chm.files <- list.files('data/processed/processed/tif/1m/creek_chm_32611',
+                        pattern = '\\.tif$',
+                        full.names = T)
+length(chm.files)
+vrt.path <- 'data/processed/processed/tif/1m/creek_chm_32611/creek_chm_1m_32611.vrt'
+vrt(chm.files, filename = vrt.path, overwrite = TRUE)
 # ==============================================================================
 # Calculate canopy metrics 
 # ==============================================================================
 
 
-# ----- Reload CHM -----
-chm.files <- list.files('data/processed/processed/tif/1m/creek_chm',
-                        pattern = '\\.tif$',
-                        full.names = T)
-
-# build virtual mosaic of rasters
-# stores references to all the files without loading everything at once
-vrt.file <- vrt(chm.files)
-
-
-
 # NOTE: Individual metrics were moved to their own separate script file
+
+
+
+
+
+
+
 
 
 
