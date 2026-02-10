@@ -43,8 +43,6 @@ hist(
 
 # test to determine which algorithm for CHM to use is in 00_canopy_height_model_alg_exploration
 
-
-
 # =================================================================================
 # Canopy Height Model
 # =================================================================================
@@ -250,9 +248,7 @@ chm.files <- list.files('data/processed/processed/tif/1m/creek_chm_32611',
 length(chm.files)
 vrt.path <- 'data/processed/processed/tif/1m/creek_chm_32611/creek_chm_1m_32611.vrt'
 vrt(chm.files, filename = vrt.path, overwrite = TRUE)
-# ==============================================================================
-# Calculate canopy metrics 
-# ==============================================================================
+
 
 
 # NOTE: Individual metrics were moved to their own separate script file
@@ -261,147 +257,6 @@ vrt(chm.files, filename = vrt.path, overwrite = TRUE)
 
 
 
-
-
-
-
-
-
-
-# ==============================================================================
-# PAD/PAI Metrics
-# ==============================================================================
-# Compute Plant Area Density (PAD) and Plant Area Index (PAI)
-# from LiDAR point heights "z".
-# LAD/PAD tells us the vertical distribution of plant material.
-
-pad.metrics <- function(z) {
-  # divide the canopy into height bins of size 'dz'
-  pad.profile <- try(lad(z, dz = 1), silent = T) # use 1m vertical slices
-  
-  # If lad() failed OR returned nothing, we return all NAs.
-  if (inherits(pad.profile, "try-error") ||
-      is.null(pad.profile) ||
-      nrow(pad.profile) == 0) {
-    
-    return(list(
-      PAI      = NA_real_,   # total plant area
-      PAD_mean = NA_real_,   # average density
-      PAD_SD   = NA_real_,   # variability in density
-      PAD_CV   = NA_real_,   # relative variability
-      PAD_max  = NA_real_,   # densest canopy layer
-      H_PADmax = NA_real_    # height of densest layer
-    ))
-  }
-  
-  # extract PAD values and corresponding height bins
-  pad_vals <- pad.profile$lad # plant area density at each height
-  heights <- pad.profile$z    # height (in m)
-  
-  keep <- heights >= 1
-  pad_vals <- pad_vals[keep]
-  heights  <- heights[keep]
-  
-  
-  # If nothing left after filtering, return NAs.
-  if (length(pad_vals) == 0) {
-    return(list(
-      PAI      = NA_real_,
-      PAD_mean = NA_real_,
-      PAD_SD   = NA_real_,
-      PAD_CV   = NA_real_,
-      PAD_max  = NA_real_,
-      H_PADmax = NA_real_
-    ))
-  }
-  
-  # compute PAD/PAI metrics
-  pai_val <- sum(pad_vals, na.rm = T)               # total plant area
-  pad_mean_val <- mean(pad_vals, na.rm = T)         # average plant density
-  pad_max_val <- max(pad_vals, na.rm = T)
-  pad_sd_val <- sd(pad_vals, na.rm = T)             # variability
-  pad_cv_val <- pad_sd_val / pad_mean_val           # coefficient of variablity
-  H_padmax_val <- heights[which.max(pad_vals)]      # height where max density occurs
-  
-  # Return named list for rasterization
-  return(list(
-    PAI      = pai_val,
-    PAD_mean = pad_mean_val,
-    PAD_SD   = pad_sd_val,
-    PAD_CV   = pad_cv_val,
-    PAD_max  = pad_max_val,
-    H_PADmax = H_padmax_val
-  ))
-  
-}
-
-pad.stack <- pixel_metrics(ctg.norm, ~ pad.metrics(Z), res = 1)
-
-pad.stack <- project(pad.stack, 'EPSG:32611')
-saveRDS(pad.stack, 'data/processed/processed/rds/pad_test.rds')
-# pad.stack <- readRDS('data/processed/processed/rds/pad_test.rds')
-
-
-# ==============================================================================
-#  Fractal Dimension 
-# ==============================================================================
-
-boxcount.fractal.dim <- function(mat, box.sizes) {
-  
-  # mat: matrix with 1 = gap, NA = no gap
-  # box sizes: vector of box sizes (in pixels)
-  
-  mat[is.na(mat)] <- 0
-  
-  n.box <- is.numeric(length(box.sizes))
-  
-  for (i in seq_along(box.sizes)) {
-    
-    bs <- box.sizes[i]
-    
-    # trim matrix so dimensions divisible by box size
-    nr <- nrow(mat) - (nrow(mat) %% bs)
-    nc <- ncol(mat) - (ncol(mat) %% bs)
-    
-    m <- mat[1:nr, 1:nc, drop = F]
-    
-    # reshape into blocks
-    m <- array(
-      m, dim = c(bs, nr / bs, bs, nc / bs)
-    )
-    
-    # sum within each block
-    block.sum <- apply(m, c(2, 4), sum)
-    
-    # count occupied boxes
-    n.box[i] <- sum(block.sum > 0)
-  }
-  
-  # remove zero-count scales
-  keep <- n.box > 0 
-  
-  if(sum(keep) < 2) return(NA_real_)
-  
-  fit <- lm(log(n.box[keep]) ~ log(1 / box.sizes[keep]))
-  
-  coef(fit)[2]
-  
-}
-
-
-box.sizes <- c(1, 2, 5, 10, 25)
-
-fractal.dim.fun <- function(v, ...) {
-  
-  mat <- matrix(v, nrow = 50, ncol = 50, byrow = TRUE)
-  
-  boxcount.fractal.dim(
-    mat = mat,
-    box.sizes = box.sizes
-  )
-}
-
-fractal.dim.50m <- aggregate(gap.mask.1m, fact = 50, fun = fractal.dim.fun)
 
 
 
@@ -548,43 +403,5 @@ terra::plot(
   col = viridisLite::viridis(100, direction = -1),
   main = 'Dist to Canopy - North: Zoom'
 )
-
-# ------ combine ------
-
-# combine into single 50m stack
-gap.metrics.50m <- c(gap_small, gap_medium, gap_large, gap_xlarge, gap.pct.50, dist.to.gap.mean, dist.to.canopy.mean, dist.to.canopy.max)
-
-
-
-# ==============================================================================
-#                     Aggregate other metrics to 50m
-# ==============================================================================
-# first remove redundant metrics from height.stack (cover.stack metrics are better for theses)
-height.stack <- height.stack[[ !names(height.stack) %in% c('pzabove2','pzabove5','pzabove10') ]]
-
-
-
-
-# ---------- height, cover, and pad stacks ------------
-canopy.metrics.minusgap <- c(height.stack, cover.stack, pad.stack)
-
-mean.vars <- c('zmean', 'zq50', 'zq95', 'zentropy', 'zsd', 'pzabovezmean', 'pzabove2', 'pzabove5', 'pzabove10', 'p_open', 'ground_frac_pc', 'gap_frac_pc')
-max.vars <- c('zmax')
-
-
-cell.size <- res(canopy.metrics.minusgap)[1]
-fact <- res(target.swe)[1] / cell.size
-
-canopy.mean.50m <- aggregate(canopy.metrics.minusgap[[mean.vars]], fact = fact, fun = mean, na.rm = T)
-canopy.max.50m <- aggregate(canopy.metrics.minusgap[[max.vars]], fact = fact, fun = max, na.rm = T)
-
-# sanity check
-plot(canopy.mean.50m$zq95, main = 'Canopy Height (zq95) 50m')
-
-# combine all metrics
-canopy.metrics.50m <- c(canopy.mean.50m, canopy.max.50m, gap.metrics.50m)
-saveRDS(canopy.metrics.50m, 'data/processed/processed/rds/canopy_metrics_50m_test.rds')
-
-plot(canopy.metrics.50m)
 
 
