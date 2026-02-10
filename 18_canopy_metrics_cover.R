@@ -165,7 +165,7 @@ origin(test4)
 # ==============================================================================
 #  Mosaic into single raster
 # ==============================================================================
-###
+
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
 files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
 

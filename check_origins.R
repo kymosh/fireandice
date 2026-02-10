@@ -1,3 +1,5 @@
+library(terra)
+
 dir <- 'data/processed/processed/tif/50m/creek'
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 
@@ -5,20 +7,35 @@ fd <- rast(file.path(dir, 'canopy_metrics/fractal_dim_32611/creek_chm_USGS_LPC_C
 gap <- rast(file.path(dir, 'canopy_metrics/gap_dist_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm_gap_dist_metrics_50m.tif'))
 height <- rast(file.path(dir, 'canopy_metrics/height_metrics_32611/height_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm.tif'))
 dem50 <- rast(file.path(dir, 'other_metrics/nasadem_creek_50m_1524.tif'))
+cover <- rast(file.path(dir, 'canopy_metrics/cover_metrics_32611/cover_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm.tif'))
 
-# CRS is all correct
+ref <- fd
+single.tile <- list(fd, gap, height, cover)
+sapply(single.tile, function(r) {
+  compareGeom(ref, r, stopOnError = F)
+})
+
+# CRS 
 crs(fd) == crs(gap) # TRUE
-crs(gap) == crs(height) # TRUE
+crs(fd) == crs(height) # TRUE
 
-# fd and gap (calc from CHM) have origin of 0, 0
+# Origin
 origin(fd) == origin(gap) # TRUE
-origin(gap) == origin(height) # FALSE
-# height has incorrect origin
+origin(fd) == origin(height) # TRUE
 
-origin(dem50)
-origin(fd)
-origin(height)
+# Res
+res(fd) == res(height)
 
+# Ext
+ext(fd) == ext(height)
+ext(fd)
+ext(height)
+
+ref <- fd
+single.tile <- list(fd, gap, height, cover)
+sapply(single.tile, function(r) {
+  compareGeom(ref, r, stopOnError = F)
+})
 
 snow.metrics <- list.files(
   file.path(dir, 'snow_metrics'), 
