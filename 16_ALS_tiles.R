@@ -105,30 +105,34 @@ test.dest <- dest.files[1:5]
 
 min.size <- 100*1024^2
 
-download.one <- function(url, dest) {
+download.one <- function(url, dest, min.size) {
   
   options(timeout = 600)
   
-  if (file.exists(dest)) {
-    if (file.info(dest)$size > min.size) {
-      return(TRUE)
-    } else {
-      file.remove(dest) # delete corrupted partial
-    }
+  # If file exists and is big enough, keep it
+  if (file.exists(dest) && file.info(dest)$size >= min.size) return(TRUE)
+  if (file.exists(dest)) file.remove(dest)
+  
+  # Attempt download
+  ok <- tryCatch(
+    identical(download.file(url, dest, mode = 'wb', quiet = TRUE), 0L),
+    error = function(e) FALSE
+  )
+  
+  if (!ok) {
+    if (file.exists(dest)) file.remove(dest)
+    return(FALSE)
   }
   
-  tryCatch(
-    {
-      message('Downloading: ', basename(dest))
-      download.file(url, dest, mode = 'wb', quiet = TRUE)
-      TRUE
-    },
-    error = function(e) {
-      message('FAILED: ', basename(dest))
-      FALSE
-    }
-  )
+  # Post-download sanity check (this is the real gate)
+  if (file.info(dest)$size < min.size) {
+    file.remove(dest)
+    return(FALSE)
+  }
+  
+  TRUE
 }
+
     
 
 
