@@ -126,6 +126,7 @@ length(cover.files)
 cover.files.test <- cover.files[1:5]
 
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
+
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 start.time <- Sys.time()
@@ -148,8 +149,15 @@ message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, uni
 # creek data took 23.28 min
 
 # ----- check -----
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
 test3 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif'))
 test4 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif'))
+
 plot(test3)
 crs(test3, describe = TRUE)$code
 res(test3)
+origin(test3)
+plot(test4)
+crs(test4, describe = TRUE)$code
+res(test4)
+origin(test4)
