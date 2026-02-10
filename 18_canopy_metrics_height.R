@@ -214,7 +214,8 @@ raster.collection <- sprc(raster.list)
 
 m <- mosaic(raster.collection)
 
-out.m <- file.path(out.dir, 'creek_height_metrics_50m_32611.tif')
+write.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics'
+out.m <- file.path(write.dir, 'creek_height_metrics_50m_32611.tif')
 writeRaster(m, out.m, overwrite = T, 
             wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
 

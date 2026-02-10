@@ -166,9 +166,9 @@ origin(test4)
 #  Mosaic into single raster
 # ==============================================================================
 
-out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics'
 files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
-
+length(files)
 raster.list <- lapply(files, rast)
 raster.collection <- sprc(raster.list)
 
