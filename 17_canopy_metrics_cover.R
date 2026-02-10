@@ -129,7 +129,7 @@ out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 start.time <- Sys.time()
-for (f in cover.files.test) {
+for (f in cover.files) {
   
   r <- rast(f)
   
@@ -145,6 +145,7 @@ for (f in cover.files.test) {
 }
 end.time <- Sys.time()
 message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
+# creek data took 23.28 min
 
 # ----- check -----
 test3 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif'))

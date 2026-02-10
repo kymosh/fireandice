@@ -196,7 +196,7 @@ end.time <- Sys.time()
 message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
 
 # ----- test -----
-height.test <- rast('data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_32611/height_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm.tif')
+height.test <- rast('data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_32611/height_USGS_LPC_CA_SierraNevada_B22_11SKB8031_norm.tif')
 plot(height.test)
 origin(height.test)
 crs(height.test, describe = T)$code
