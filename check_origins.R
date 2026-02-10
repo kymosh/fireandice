@@ -1,4 +1,5 @@
 dir <- 'data/processed/processed/tif/50m/creek'
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 
 fd <- rast(file.path(dir, 'canopy_metrics/fractal_dim_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm_fractal_dim_50m.tif'))
 gap <- rast(file.path(dir, 'canopy_metrics/gap_dist_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm_gap_dist_metrics_50m.tif'))
