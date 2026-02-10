@@ -428,9 +428,10 @@ hist(mx, breaks = 50, main = 'Max distance to canopy per tile')
 # ==============================================================================
 #  Mosaic into single raster
 # ==============================================================================
+library(terra)
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/gap_dist_32611'
 files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
-
+length(files)
 raster.list <- lapply(files, rast)
 raster.collection <- sprc(raster.list)
 

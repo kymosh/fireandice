@@ -250,6 +250,7 @@ out.files <- unlist(out.files, use.names = FALSE)
 # ==============================================================================
 #  Mosaic into single raster
 # ==============================================================================
+library(terra)
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611'
 files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
 length(files)
