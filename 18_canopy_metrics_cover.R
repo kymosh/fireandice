@@ -161,3 +161,18 @@ plot(test4)
 crs(test4, describe = TRUE)$code
 res(test4)
 origin(test4)
+
+# ==============================================================================
+#  Mosaic into single raster
+# ==============================================================================
+###
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
+files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+
+r <- rast(files)
+
+m <- mosaic(r)
+
+out.m <- file.path(out.dir, 'creek_cover_metrics_50m_32611.tif')
+writeRaster(m, out.m, overwrite = T, 
+            wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
