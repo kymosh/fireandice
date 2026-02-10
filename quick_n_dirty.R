@@ -76,3 +76,41 @@ frac <- rast("J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/can
 names(frac)
 gap <- rast("J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/canopy_metrics/gap_dist_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7838_norm_gap_dist_metrics_50m.tif")
 names(gap)
+
+# ------------------------ raster alignment --------------------------------------
+# I want to check and make sure the 50m rasters I have (for the creek study area) are aligned correctly, specifically with the same origin
+library(terra)
+base.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+
+dem <- file.path(base.dir, 'other_metrics', 'nasadem_creek_50m_1524.tif')
+swe <- file.path(base.dir, 'snow_metrics', 'ASO_SanJoaquin_2021_0226_swe_50m_1524.tif')
+cbi <- file.path(base.dir, 'other_metrics', 'creek_cbibc_50m_1524.tif')
+clim <- file.path(base.dir, 'other_metrics', 'creek_terraclimate_wy2021_50m_1524.tif')
+aspect <- file.path(base.dir, 'other_metrics', 'creek_topo_slope_50m_1524.tif')
+
+frac <-  file.path(base.dir, 'canopy_metrics', 'fractal_dim_32611', 'creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm_fractal_dim_50m.tif')
+gap <- file.path(base.dir, 'canopy_metrics', 'gap_dist_32611', 'creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm_gap_dist_metrics_50m.tif')
+height <- file.path(base.dir, 'canopy_metrics', 'height_metrics_32611', 'height_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif')
+                 
+full.files <- c(dem, swe, cbi, clim, aspect)
+tile.files <- c(frac, gap, height)
+
+full <- lapply(full.files, rast)
+tile <- lapply(tile.files, rast)
+ref <- full[[1]]
+
+sapply(tile, function(r) compareGeom(ref, r, stopOnError = F))
+
+origin(ref) # dem
+origin(full[[2]]) # swe <---- this is a different origin!  
+origin(full[[3]])
+origin(full[[4]])  
+origin(full[[5]])  
+
+origin(tile[[1]])  
+origin(tile[[2]])  
+origin(tile[[3]])  
+
+crs(ref) == crs(tile[[1]])
+crs(ref) == crs(tile[[2]])
+
