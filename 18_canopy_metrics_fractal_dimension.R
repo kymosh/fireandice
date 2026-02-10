@@ -245,3 +245,71 @@ message('Total elapsed hours: ',
 
 out.files <- unlist(out.files, use.names = FALSE)
 # 14:37 2/5/26 elapsed time: 0.31 hours
+
+
+# ==============================================================================
+#  Mosaic into single raster
+# ==============================================================================
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611'
+files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+length(files)
+raster.list <- lapply(files, rast)
+raster.collection <- sprc(raster.list)
+
+m <- mosaic(raster.collection)
+
+out.m <- file.path(out.dir, 'creek_fractal_dim_50m_32611.tif')
+writeRaster(m, out.m, overwrite = T, 
+            wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
+
+plot(m)
+
+
+
+# problem solving - can delete later
+library(terra)
+
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611'
+files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+
+res.mat <- t(sapply(files, function(f) res(rast(f))))
+colnames(res.mat) <- c('xres', 'yres')
+
+# what unique resolutions exist?
+unique(res.mat)
+
+# show the offenders (anything not ~50)
+bad <- which(abs(res.mat[,1] - 50) > 1e-6 | abs(res.mat[,2] - 50) > 1e-6)
+length(bad)
+files[bad][1:10]
+res.mat[bad, , drop = FALSE][1:10, ]
+bad
+
+'data/processed/processed/tif/1m/creek_chm_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB9468_norm.tif'
+'data/processed/processed/tif/1m/creek_chm_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB9469_norm.tif'
+
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics'
+
+files <- c('data/processed/processed/tif/1m/creek_chm_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB9468_norm.tif',
+           'data/processed/processed/tif/1m/creek_chm_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB9469_norm.tif')
+
+out.files <- lapply(files, fractal.dim.one.tiles)
+
+r1 <- rast('data/processed/processed/tif/50m/creek/canopy_metrics/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB9468_norm_fractal_dim_50m.tif')
+chm1 <- rast('data/processed/processed/tif/1m/creek_chm_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB9468_norm.tif')
+res(chm1)             
+plot(chm1)
+crs(chm1, describe = T)$code
+origin(chm1)
+ext(chm1)
+
+global(chm1, function(x) c(n = length(x), nNA = sum(is.na(x))), na.rm = FALSE)
+global(chm1, range, na.rm = TRUE)
+
+na_frac <- global(is.na(chm1), 'mean', na.rm = TRUE)[1,1]
+na_frac
+
+las <- readLAS('data/processed/processed/laz/normalized/creek/USGS_LPC_CA_SierraNevada_B22_11SKB9468_norm.laz')
+plot(las)
+las.raw <- readLAS('data/raw/ALS/laz_creek/USGS_LPC_CA_SierraNevada_B22_11SKB7737.laz')
+plot(las.raw)

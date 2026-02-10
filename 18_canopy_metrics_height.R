@@ -202,3 +202,21 @@ origin(height.test)
 crs(height.test, describe = T)$code
 res(height.test)
 
+
+# ==============================================================================
+#  Mosaic into single raster
+# ==============================================================================
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_32611'
+files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+length(files)
+raster.list <- lapply(files, rast)
+raster.collection <- sprc(raster.list)
+
+m <- mosaic(raster.collection)
+
+out.m <- file.path(out.dir, 'creek_height_metrics_50m_32611.tif')
+writeRaster(m, out.m, overwrite = T, 
+            wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
+
+plot(m$zmax)
+

@@ -423,3 +423,22 @@ hist(mx, breaks = 50, main = 'Max distance to canopy per tile')
 
 # dominant canopy-gap length is ~30-40m
 
+
+
+# ==============================================================================
+#  Mosaic into single raster
+# ==============================================================================
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/gap_dist_32611'
+files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+
+raster.list <- lapply(files, rast)
+raster.collection <- sprc(raster.list)
+
+m <- mosaic(raster.collection)
+
+out.m <- file.path(out.dir, 'creek_fractal_dim_50m_32611.tif')
+writeRaster(m, out.m, overwrite = T, 
+            wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
+
+plot(m)
+
