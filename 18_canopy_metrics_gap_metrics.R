@@ -311,7 +311,7 @@ plot(m)
 plot(m$dist_to_canopy_max)
 
 write.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics'
-out.m <- file.path(write.dir, 'creek_gap_50m_32611.tif')
+out.m <- file.path(write.dir, 'creek_gap_50m_32611_masked.tif')
 writeRaster(m, out.m, overwrite = T)
 
 
