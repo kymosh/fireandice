@@ -221,15 +221,13 @@ smoothScatter(
 
 # -------------- final run ----------------------
 
-# note: should be all ready to run on processing computer
-
 plan(multisession, workers = 12)
 chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
-length(chm.files)  # should be 2889
+length(chm.files)  # should be 2887
 
 start.time <- Sys.time()
 out.files <- future_lapply(

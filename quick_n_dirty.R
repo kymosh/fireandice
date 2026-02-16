@@ -3,8 +3,34 @@ packages <- c( 'here', 'dplyr', 'stringr', 'terra', 'tibble', 'ggplot2', 'sf')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
-tif <- rast(here('data', 'raw', 'ASO', 'tif', 'ASO_SanJoaquin_Mosaic_2021May03_swe_50m.tif'))
-res(tif)
+#-------- 2/11/2026 -------- 
+# trouble shooting weird strip in fractal_dim and gap code
+
+library(terra)
+
+chm.vrt <- rast('data/processed/processed/tif/1m/creek_chm_32611/creek_chm_1m_32611.vrt')
+
+# extent you gave (UTM meters)
+strip.ext <- ext(280000, 310000, 4160000, 4180000)
+
+chm.strip <- crop(chm.vrt, strip.ext)
+
+# quick diagnostics
+na_frac <- global(is.na(chm.strip), 'mean', na.rm = TRUE)[1,1]
+rng <- global(chm.strip, range, na.rm = TRUE)
+
+na_frac
+rng
+
+# plot fast (downsample to 10 m so it renders quickly)
+plot(aggregate(chm.strip, fact = 50, fun = 'mean', na.rm = TRUE))
+
+
+
+
+
+
+
 
 #test change
 # test again

@@ -240,6 +240,53 @@ grid_aligned <- function(r, tol = 1e-6) {
 aligned <- sapply(rlist, grid_aligned)
 table(aligned)
 
+# 
+is_full_1km <- vapply(chm.files, function(f) {
+  r <- rast(f)
+  e <- ext(r)
+  w <- xmax(e) - xmin(e)
+  h <- ymax(e) - ymin(e)
+  isTRUE(all.equal(w, 1000)) && isTRUE(all.equal(h, 1000))
+}, logical(1))
+
+table(is_full_1km)
+
+chm.full <- chm.files[is_full_1km]
+chm.partial <- chm.files[!is_full_1km]
+
+length(chm.full)
+length(chm.partial)
+
+
+# =================================================================================
+# Trim away partial tiles
+# =================================================================================
+# for some reason the NW corner of the Creek study area contains partial tiles that are messing up the metrics being calculated from the CHM.
+# this code trims those away.
+
+is_full_1km <- vapply(chm.files, function(f) {
+  r <- rast(f)
+  e <- ext(r)
+  w <- xmax(e) - xmin(e)
+  h <- ymax(e) - ymin(e)
+  isTRUE(all.equal(w, 1000)) && isTRUE(all.equal(h, 1000))
+}, logical(1))
+
+table(is_full_1km)
+
+chm.full <- chm.files[is_full_1km]
+chm.partial <- chm.files[!is_full_1km]
+
+length(chm.full)
+length(chm.partial)
+
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
+trash.dir <- file.path(chm.dir, 'partial_tiles_removed')
+dir.create(trash.dir, showWarnings = F)
+
+file.rename(chm.partial, file.path(trash.dir, basename(chm.partial)))
+
+
 # ----- build VRT for metric computation -----
 
 chm.files <- list.files('data/processed/processed/tif/1m/creek_chm_32611',
