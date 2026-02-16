@@ -174,8 +174,11 @@ raster.collection <- sprc(raster.list)
 
 m <- mosaic(raster.collection)
 
-out.m <- file.path(out.dir, 'creek_cover_metrics_50m_32611.tif')
-writeRaster(m, out.m, overwrite = T, 
-            wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
+# ----- mask out bodies of water -----
+# read in shape file of study area
+creek <- read_sf('data/processed/processed/shp/mosher_creek_studyarea/study_extent_creek_32611.shp')
+# download nhd water data
+water <- get_nhdphr(AOI = creek, type = 'nhdwaterbody')
 
-plot(m$pzabove10)
+cover.masked <- mask(m, water, inverse = TRUE)
+writeRaster(cover.masked, 'data/processed/processed/tif/50m/creek/canopy_metrics/creek_cover_metrics_50m_32611_masked.tif', overwrite = TRUE)

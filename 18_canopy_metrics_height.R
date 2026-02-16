@@ -214,10 +214,14 @@ raster.collection <- sprc(raster.list)
 
 m <- mosaic(raster.collection)
 
-write.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics'
-out.m <- file.path(write.dir, 'creek_height_metrics_50m_32611.tif')
-writeRaster(m, out.m, overwrite = T, 
-            wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
+# ----- mask out bodies of water -----
+# read in shape file of study area
+creek <- read_sf('data/processed/processed/shp/mosher_creek_studyarea/study_extent_creek_32611.shp')
+# download nhd water data
+water <- get_nhdphr(AOI = creek, type = 'nhdwaterbody')
+m.masked <- mask(m, water, inverse = TRUE)
 
-plot(m$zmax)
+# save
+writeRaster(m.masked, 'data/processed/processed/tif/50m/creek/canopy_metrics/creek_height_metrics_50m_32611_masked.tif', overwrite = TRUE)
+
 
