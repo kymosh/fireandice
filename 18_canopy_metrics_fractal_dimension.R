@@ -1,5 +1,5 @@
 packages <- c('mapview', 'lidR', 'dplyr', 'future', 'future.apply', 'tools', 'terra')
-install.packages(setdiff(packages, rownames(installed.packages())))
+#install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
 
@@ -21,55 +21,44 @@ dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 #  Fractal Dimension 
 # ==============================================================================
 
+box.sizes <- c(1, 2, 5, 10, 25)
+
 boxcount.fractal.dim <- function(mat, box.sizes) {
   
-  # mat: matrix with 1 = gap, NA = no gap
-  # box sizes: vector of box sizes (in pixels)
+  # coverage gate: require enough valid pixels
+  cov <- mean(!is.na(mat))
+  if (cov < 0.9) return(NA_real_)  # adjust 0.9 -> 0.8 if needed
   
+  # structure gate: avoid almost-all-0 or almost-all-1
+  v <- mat[!is.na(mat)]
+  p1 <- mean(v == 1)
+  if (p1 < 0.05 || p1 > 0.95) return(NA_real_)
+  
+  # treat missing as background after gating
   mat[is.na(mat)] <- 0
   
   n.box <- numeric(length(box.sizes))
   
   for (i in seq_along(box.sizes)) {
-    
     bs <- box.sizes[i]
     
-    # trim matrix so dimensions divisible by box size
     nr <- nrow(mat) - (nrow(mat) %% bs)
     nc <- ncol(mat) - (ncol(mat) %% bs)
-    
-    if (nr < bs || nc < bs) {
-      n.box[i] <- 0
-      next
-    }
+    if (nr < bs || nc < bs) { n.box[i] <- 0; next }
     
     m <- mat[1:nr, 1:nc, drop = FALSE]
-    
-    # reshape into blocks
-    m <- array(
-      m, dim = c(bs, nr / bs, bs, nc / bs)
-    )
-    
-    # sum within each block
+    m <- array(m, dim = c(bs, nr / bs, bs, nc / bs))
     block.sum <- apply(m, c(2, 4), sum)
-    
-    # count occupied boxes
     n.box[i] <- sum(block.sum > 0)
   }
   
-  # remove zero-count scales
-  keep <- n.box > 0 
-  
-  if(sum(keep) < 2) return(NA_real_)
+  keep <- n.box > 0
+  if (sum(keep) < 2) return(NA_real_)
   
   fit <- lm(log(n.box[keep]) ~ log(1 / box.sizes[keep]))
-  
   unname(coef(fit)[2])
-  
 }
 
-
-box.sizes <- c(1, 2, 5, 10, 25)
 
 
 fractal.dim.fun <- function(v, ...) {
@@ -77,9 +66,11 @@ fractal.dim.fun <- function(v, ...) {
   if (all(is.na(v))) return(NA_real_)
   
   n <- sqrt(length(v))
+  
   if (!isTRUE(all.equal(n, round(n)))) return(NA_real_)
   
   n <- as.integer(round(n))
+  
   mat <- matrix(v, nrow = n, ncol = n, byrow = TRUE)
   
   boxcount.fractal.dim(mat = mat, box.sizes = box.sizes)
@@ -94,8 +85,8 @@ fractal.dim.one.tiles <- function(f) {
   t0 <- Sys.time()
   message('\n--- Fractal dim (from CHM): ', basename(f), ' ---')
   
-  # gap mask: 1 = gap, NA = not gap
-  gap.mask <- ifel(r < gap.ht, 1, NA)
+  # gap mask: 1 = gap, 0 = not gap, NA = missing data
+  gap.mask <- ifel(is.na(r), NA, ifel(r < gap.ht, 1, 0))
   
   fd <- aggregate(gap.mask, fact = 50, fun = fractal.dim.fun,
                   expand = FALSE,
@@ -119,8 +110,8 @@ fractal.dim.one.tiles <- function(f) {
 # --------------- test on 5 tiles---------------
 
 # inputs
-#chm.dir <- 'data/processed/ALS/chm_test_tiles' # for test
-chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611' # for whole run
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm_test_36' # for test
+#chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611' # for whole run
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 
 # test on 5 tiles
@@ -131,7 +122,7 @@ out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 start.time <- Sys.time()
-out.files <- lapply(test.files, fractal.dim.one.tiles)
+out.files <- lapply(chm.files, fractal.dim.one.tiles)
 end.time <- Sys.time()
 
 message('\nAll 5 test tiles finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
@@ -147,6 +138,11 @@ global(fd1, range, na.rm = TRUE)
 hist(values(fd1))
 plot(fd1)
 
+raster.list <- list.files(out.dir, full.names = TRUE)
+test.files.col <- sprc(raster.list)
+
+m <- mosaic(test.files.col)
+plot(m)
 # --------------- test on 36 tiles---------------
 
 # inputs
@@ -227,7 +223,7 @@ chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
-length(chm.files)  # should be 2887
+length(chm.files)  # should be 2860
 
 start.time <- Sys.time()
 out.files <- future_lapply(
@@ -256,14 +252,15 @@ raster.list <- lapply(files, rast)
 raster.collection <- sprc(raster.list)
 
 m <- mosaic(raster.collection)
+plot(m)
 
-out.m <- file.path(out.dir, 'creek_fractal_dim_50m_32611.tif')
+out.m <- file.path(out.dir, 'creek_fractal_dim_50m_32611_2.tif')
 writeRaster(m, out.m, overwrite = T, 
             wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
 
-plot(m)
 
 
 
-# problem solving - can delete later
+
+
 
