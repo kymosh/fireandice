@@ -1,4 +1,4 @@
-packages <- c('sf', 'mapview', 'lidR', 'dplyr', 'raster', 'future', 'future.apply', 'stringr', 'terra')
+packages <- c('sf', 'mapview', 'lidR', 'dplyr', 'raster', 'future', 'future.apply', 'stringr', 'nhdplusTools', 'terra')
 # install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -19,20 +19,22 @@ chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 vrt.file <- 'data/processed/processed/tif/1m/creek_chm_32611/creek_chm_1m_32611.vrt'
 chm.vrt <- rast(vrt.file)
 
+water.path <- 'data/processed/processed/shp/nhd_water_creek_32611.shp'
+
 
 # ----- one-tile processing function -----
 gap.metric.single.tile <- function(vrt.file,
                                    out.dir,
+                                   water.path,
                                    gap.ht.m = 2,
-                                   gap.breaks = c(0, 10, 100, 1000, Inf),
                                    buffer.m = 100,
                                    out.res.m = 50) {
   
   chm.vrt <- rast(vrt.file)
   
-  # helper: aggregate mean on 0/1 rasters but keep NA if a cell is all-NA
-  agg.mean <- function(r, fact) {
-    x <- aggregate(r, fact = fact, fun = mean, na.rm = TRUE)
+  # helper: aggregate with NA-safe (NaN -> NA)
+  agg.clean <- function(r, fact, fun) {
+    x <- aggregate(r, fact = fact, fun = fun, na.rm = TRUE)
     v <- values(x, mat = FALSE)
     v[is.nan(v)] <- NA_real_
     values(x) <- v
@@ -41,9 +43,7 @@ gap.metric.single.tile <- function(vrt.file,
   
   function(f) {
     
-    chm.core.tile <- rast(f)
-    ext.core <- ext(chm.core.tile)
-    
+    ext.core <- ext(rast(f))
     ext.buf <- ext(
       ext.core$xmin - buffer.m, ext.core$xmax + buffer.m,
       ext.core$ymin - buffer.m, ext.core$ymax + buffer.m
@@ -52,174 +52,71 @@ gap.metric.single.tile <- function(vrt.file,
     chm.buf  <- crop(chm.vrt, ext.buf)
     chm.core <- crop(chm.vrt, ext.core)
     
+    # ------ water mask -----
+    water <- vect(water.path)
+    water <- crop(water, ext.buf)
+    chm.buf <- mask(chm.buf, water, inverse = TRUE)
+    chm.core <- mask(chm.core, water, inverse = TRUE)
+    
     fact <- as.integer(round(out.res.m / res(chm.buf)[1]))
     if (fact < 1) stop('Aggregation factor < 1. Check CHM resolution for file: ', f)
     
     base <- tools::file_path_sans_ext(basename(f))
     
+    # template aligned to core at 50m
+    template50 <- agg.clean(chm.core, fact, mean)
+    
     # ---------------- GAP BOOLEAN (preserve NA) ----------------
-    # logical TRUE/FALSE, but NA where CHM is NA
-    gap.bool.buf  <- ifel(is.na(chm.buf),  NA, chm.buf <  gap.ht.m)
+    gap.bool.buf    <- ifel(is.na(chm.buf),  NA, chm.buf <  gap.ht.m)
     canopy.bool.buf <- ifel(is.na(chm.buf), NA, chm.buf >= gap.ht.m)
-    
-    # For patches(): ONLY gaps should be non-NA
-    gap.features.buf <- ifel(gap.bool.buf == 1, 1, NA)
-    
-    # ---------------- PATCH IDS + GAP SIZE CLASSES ----------------
-    gap.id.buf <- patches(gap.features.buf, directions = 8)
-    names(gap.id.buf) <- 'gap_id'
-    
-    gaps <- values(gap.id.buf, mat = FALSE)
-    gaps <- gaps[!is.na(gaps)]
-    
-    # templates aligned to core at 50m
-    template50 <- aggregate(chm.core, fact = fact, fun = mean, na.rm = TRUE)
-    
-    # handle tiles with no gaps
-    if (length(gaps) == 0) {
-      
-      # gap % is 0 where CHM exists, NA where CHM is NA
-      gap.pct.50 <- agg.mean(as.numeric(crop(gap.bool.buf, ext.core)), fact)
-      gap.pct.50 <- ifel(is.na(template50), NA, gap.pct.50)
-      
-      zero <- gap.pct.50 * 0
-      
-      na50 <- template50
-      values(na50) <- NA_real_
-      
-      gap.dist.metrics.50 <- c(
-        gap.pct.50,
-        zero, zero, zero, zero,
-        na50, na50, na50
-      )
-      
-      names(gap.dist.metrics.50) <- c(
-        'gap_pct','gap_small_pct','gap_medium_pct','gap_large_pct','gap_xlarge_pct',
-        'dist_to_gap_mean','dist_to_canopy_mean','dist_to_canopy_max'
-      )
-      
-      writeRaster(
-        gap.dist.metrics.50,
-        filename = file.path(out.dir, paste0(base, '_gap_dist_metrics_50m.tif')),
-        overwrite = TRUE
-      )
-      
-      return(data.frame(tile = base, n.gaps = 0))
-    }
-    
-    # area per gap id (m2)
-    gap.areas <- table(gaps) * prod(res(gap.id.buf))
-    
-    gap.df <- data.frame(
-      gap_id = as.integer(names(gap.areas)),
-      gap_area_m2 = as.numeric(gap.areas)
-    )
-    
-    gap.df$gap_class <- cut(
-      gap.df$gap_area_m2,
-      breaks = gap.breaks,
-      labels = c('small', 'medium', 'large', 'xlarge')
-    )
-    
-    gap.lookup <- as.matrix(data.frame(
-      from = gap.df$gap_id,
-      to   = as.integer(gap.df$gap_class)   # 1..4
-    ))
-    
-    gap.class.buf <- classify(gap.id.buf, rcl = gap.lookup)
-    names(gap.class.buf) <- 'gap_class'
-    
-    # crop to core for aggregation
-    gap.id.core    <- crop(gap.id.buf, ext.core)
-    gap.class.core <- crop(gap.class.buf, ext.core)
     
     gap.bool.core <- crop(gap.bool.buf, ext.core)
     
-    # helper: 1 where condition TRUE, 0 where FALSE, NA where CHM is NA
-    bin01_na <- function(cond, chm) {
-      ifel(is.na(chm), NA_real_, ifel(cond, 1, 0))
-    }
-    
-    
-    # ---------------- GAP % (0/1 with NA preserved) ----------------
-    gap.pct.50 <- agg.mean(as.numeric(gap.bool.core), fact)
+    # ---------------- GAP % ----------------
+    gap.pct.50 <- agg.clean(as.numeric(gap.bool.core), fact, mean)
     gap.pct.50 <- mask(gap.pct.50, template50)
     names(gap.pct.50) <- 'gap_pct'
     
-    # IMPORTANT: class % should be relative to ALL valid pixels, not just gap pixels
-    gap.small  <- agg.mean(bin01_na(gap.class.core == 1, chm.core), fact)
-    gap.medium <- agg.mean(bin01_na(gap.class.core == 2, chm.core), fact)
-    gap.large  <- agg.mean(bin01_na(gap.class.core == 3, chm.core), fact)
-    gap.xlarge <- agg.mean(bin01_na(gap.class.core == 4, chm.core), fact)
-    
-    gap.small  <- mask(gap.small,  template50)
-    gap.medium <- mask(gap.medium, template50)
-    gap.large  <- mask(gap.large,  template50)
-    gap.xlarge <- mask(gap.xlarge, template50)
-    
-    names(gap.small)  <- 'gap_small_pct'
-    names(gap.medium) <- 'gap_medium_pct'
-    names(gap.large)  <- 'gap_large_pct'
-    names(gap.xlarge) <- 'gap_xlarge_pct'
-    
-    
     # ---------------- DISTANCE METRICS ----------------
     # distance() computes distance to nearest non-NA cell
-    gap.feature.dist   <- ifel(gap.bool.buf == 1,    1, NA)
-    canopy.feature.dist <- ifel(canopy.bool.buf == 1, 1, NA)
+    gap.feature.dist     <- ifel(gap.bool.buf == 1,    1, NA)
+    canopy.feature.dist  <- ifel(canopy.bool.buf == 1, 1, NA)
     
-    dist.to.gap.all    <- distance(gap.feature.dist)
-    dist.to.canopy.all <- distance(canopy.feature.dist)
+    dist.to.gap.all      <- distance(gap.feature.dist)
+    dist.to.canopy.all   <- distance(canopy.feature.dist)
     
-    # dist to gap is meaningful only for canopy pixels
-    dist.to.gap.buf <- mask(dist.to.gap.all, canopy.feature.dist)
+    # dist to gap meaningful only for canopy pixels
+    dist.to.gap.buf      <- mask(dist.to.gap.all, canopy.feature.dist)
     
-    # dist to canopy is meaningful only for gap pixels
-    dist.to.canopy.buf <- mask(dist.to.canopy.all, gap.feature.dist)
+    # dist to canopy meaningful only for gap pixels
+    dist.to.canopy.buf   <- mask(dist.to.canopy.all, gap.feature.dist)
     
-    dist.to.gap.core    <- crop(dist.to.gap.buf, ext.core)
-    dist.to.canopy.core <- crop(dist.to.canopy.buf, ext.core)
+    dist.to.gap.core     <- crop(dist.to.gap.buf, ext.core)
+    dist.to.canopy.core  <- crop(dist.to.canopy.buf, ext.core)
     
-    dist.to.gap.mean <- aggregate(dist.to.gap.core, fact = fact, fun = mean, na.rm = TRUE)
-    dist.to.canopy.mean <- aggregate(dist.to.canopy.core, fact = fact, fun = mean, na.rm = TRUE)
-    dist.to.canopy.max  <- aggregate(dist.to.canopy.core, fact = fact, fun = max,  na.rm = TRUE)
+    dist.to.gap.mean     <- agg.clean(dist.to.gap.core,    fact, mean)
+    dist.to.canopy.mean  <- agg.clean(dist.to.canopy.core, fact, mean)
+    dist.to.canopy.max   <- agg.clean(dist.to.canopy.core, fact, max)
     
-    # NaN -> NA safety
-    fix.nan <- function(r) {
-      v <- values(r, mat = FALSE)
-      v[is.nan(v)] <- NA_real_
-      values(r) <- v
-      r
-    }
-    
-    dist.to.gap.mean    <- fix.nan(dist.to.gap.mean)
-    dist.to.canopy.mean <- fix.nan(dist.to.canopy.mean)
-    dist.to.canopy.max  <- fix.nan(dist.to.canopy.max)
-    
-    dist.to.gap.mean    <- mask(dist.to.gap.mean,    template50)
-    dist.to.canopy.mean <- mask(dist.to.canopy.mean, template50)
-    dist.to.canopy.max  <- mask(dist.to.canopy.max,  template50)
-    
+    dist.to.gap.mean     <- mask(dist.to.gap.mean,    template50)
+    dist.to.canopy.mean  <- mask(dist.to.canopy.mean, template50)
+    dist.to.canopy.max   <- mask(dist.to.canopy.max,  template50)
     
     names(dist.to.gap.mean)    <- 'dist_to_gap_mean'
     names(dist.to.canopy.mean) <- 'dist_to_canopy_mean'
     names(dist.to.canopy.max)  <- 'dist_to_canopy_max'
     
     # ---------------- WRITE OUTPUT ----------------
-    gap.dist.metrics.50 <- c(
-      gap.pct.50, gap.small, gap.medium, gap.large, gap.xlarge,
-      dist.to.gap.mean, dist.to.canopy.mean, dist.to.canopy.max
-    )
-    
-    gap.dist.metrics.50 <- mask(gap.dist.metrics.50, template50)
+    out <- c(gap.pct.50, dist.to.gap.mean, dist.to.canopy.mean, dist.to.canopy.max)
+    out <- mask(out, template50)
     
     writeRaster(
-      gap.dist.metrics.50,
+      out,
       filename = file.path(out.dir, paste0(base, '_gap_dist_metrics_50m.tif')),
       overwrite = TRUE
     )
     
-    data.frame(tile = base, n.gaps = nrow(gap.df))
+    data.frame(tile = base)
   }
 }
 
@@ -230,20 +127,22 @@ gap.metric.single.tile <- function(vrt.file,
 # Calculate metrics
 # ==============================================================================
 
+
 # -------------- test run on 5 tiles -------------
-gap.fun <- gap.metric.single.tile(vrt.file, out.dir, buffer.m = 100)
+out.dir <- "data/processed/processed/tif/50m/creek/canopy_metrics/gap_dist_32611_test"
+gap.fun <- gap.metric.single.tile(vrt.file, out.dir, water.path, buffer.m = 100)
 summary.5 <- lapply(chm.files[1:5], gap.fun) 
 summary.5 <- do.call(rbind, summary.5)
 summary.5
 
 # visually inspect
 r1 <- rast(file.path(out.dir,
-                     'chm_USGS_LPC_CA_SierraNevada_B22_11SLB0727_norm_gap_dist_metrics_50m.tif'))
+                     'creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm_gap_dist_metrics_50m.tif'))
 r2 <- rast(file.path(out.dir,
-                           'chm_USGS_LPC_CA_SierraNevada_B22_11SLB0728_norm_gap_dist_metrics_50m.tif'))
+                           'creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7733_norm_gap_dist_metrics_50m.tif'))
 
 plot(r1)  
-plot(r2$gap_large_pct)  
+plot(r2$dist_to_gap_mean)  
 
 summary(values(r1$gap_pct))
 summary(values(r1$dist_to_gap_mean))
@@ -266,13 +165,11 @@ chm.dir <- 'data/processed/processed/tif/1m/creek_chm_test_36'
 test.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 vrt.file <- 'data/processed/processed/tif/1m/creek_chm_32611/creek_chm_1m_32611.vrt'
 
-
 # outputs
-out.dir <- 'data/processed/processed/tif/50m/gap_test'
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/gap_dist_32611_test'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
-# ----- test 36 tile block in parallel -----
-
+# run
 plan(multisession, workers = 10)
 
 start <- Sys.time()
@@ -281,6 +178,7 @@ summary.36 <- future_lapply(test.files, function(f){
   gap.fun <- gap.metric.single.tile(
     vrt.file = vrt.file,
     out.dir  = out.dir,
+    water = water.path,
     buffer.m = 100
   )
   
@@ -294,7 +192,7 @@ summary.36 <- future_lapply(test.files, function(f){
       )
     )
   
-})
+}, future.seed = TRUE)
 
 
 summary.36 <- do.call(rbind, summary.36)
@@ -305,26 +203,27 @@ summary.36
 # 2.07 minutes
 
 
+r1 <- rast(file.path(out.dir,
+                     'chm_USGS_LPC_CA_SierraNevada_B22_11SLB0727_norm_gap_dist_metrics_50m.tif'))
+r2 <- rast(file.path(out.dir,
+                     'chm_USGS_LPC_CA_SierraNevada_B22_11SLB0728_norm_gap_dist_metrics_50m.tif'))
 
-
-
-
-
+plot(r1)  
+plot(r2$dist_to_gap_mean)  
 
 
 
 # -------------- FINAL RUN ----------------------
 plan(multisession, workers = 10)
-
-out.dir.gap.dist <- file.path(out.dir)
-dir.create(out.dir.gap.dist, recursive = TRUE, showWarnings = FALSE)
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/gap_dist_32611'
 
 start <- Sys.time()
 summary.all <- future_lapply(chm.files, function(f){
   
   gap.fun <- gap.metric.single.tile(
     vrt.file = vrt.file,
-    out.dir  = out.dir.gap.dist,
+    out.dir  = out.dir,
+    water = water.path,
     buffer.m = 100
   )
   
@@ -338,17 +237,14 @@ summary.all <- future_lapply(chm.files, function(f){
     )
   )
   
-})
+}, future.seed = TRUE)
 
 
 summary.all <- do.call(rbind, summary.all)
 end <- Sys.time()
 message('Full run finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
-# ran on 2/2/26 and finished in 126 minutes
-
-# save summary
-saveRDS(summary.all, file.path(out.dir.gap.dist, 'summary_all.rds'))
-write.csv(summary.all, file.path(out.dir.gap.dist, 'summary_all.csv'), row.names = FALSE)
+# ran on 2/2/26 and finished in 126 minutes - that was with % gap metrics
+# rerun on 2/16 w/out % gap metrics and finished in 19 minutes
 
 
 # ==============================================================================
@@ -359,7 +255,7 @@ table(is.na(summary.all$n.gaps))
 subset(summary.all, !is.na(error))
 summary(summary.all$n.gaps)
 
-out.files <- list.files(out.dir.gap.dist,
+out.files <- list.files(out.dir,
                         pattern = '_gap_dist_metrics_50m\\.tif$',
                         full.names = TRUE)
 
@@ -415,187 +311,44 @@ plot(m)
 plot(m$dist_to_canopy_max)
 
 write.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics'
-out.m <- file.path(write.dir, 'creek_fractal_dim_50m_32611.tif')
-writeRaster(m, out.m, overwrite = T, 
-            wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
-
-
-
-r <- rast(file.path(out.dir, 'creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB9567_norm_gap_dist_metrics_50m.tif'))
-plot(r)
-# 11SKB9567
-
-
+out.m <- file.path(write.dir, 'creek_gap_50m_32611.tif')
+writeRaster(m, out.m, overwrite = T)
 
 
 # ------ trouble shooting --------
+mx <- m$dist_to_canopy_mean
+hi <- which(values(mx) > 200)
+length(hi)
+xy <- xyFromCell(mx, hi)
 
-gap.ht.m = 2
-gap.breaks = c(0, 10, 100, 1000, Inf)
-buffer.m = 100
-out.res.m = 50
+plot(mx)
+points(xy, pch = 20, cex = 0.5, col = 'red')
 
-chm.core.tile <- rast('data/processed/processed/tif/1m/creek_chm_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7835_norm.tif')
-ext.core <- ext(chm.core.tile)
+worst.cell <- which.max(values(mx))
+worst.xy <- xyFromCell(mx, worst.cell)
+worst.xy
 
-vrt.file <- 'data/processed/processed/tif/1m/creek_chm_32611/creek_chm_1m_32611.vrt'
-chm.vrt <- rast(vrt.file)
+e <- ext(worst.xy[1] - 5000, worst.xy[1] + 5000,
+         worst.xy[2] - 5000, worst.xy[2] + 5000)
 
-ext.buf <- ext(
-  ext.core$xmin - buffer.m, ext.core$xmax + buffer.m,
-  ext.core$ymin - buffer.m, ext.core$ymax + buffer.m
-)
+plot(crop(mx, e), main = 'dist_to_gap_mean (zoom)')
+plot(st_geometry(nhd), add = T, border = 'blue', lwd = 2)
 
-chm.buf  <- crop(chm.vrt, ext.buf)
-chm.core <- crop(chm.vrt, ext.core)
+cover <- rast('data/processed/processed/tif/50m/creek/canopy_metrics/creek_cover_metrics_50m_32611.tif')
+height <- rast('data/processed/processed/tif/50m/creek/canopy_metrics/creek_height_metrics_50m_32611.tif')
+plot(crop(cover$cover_2m, e))
+plot(crop(height$zmean, e))
+plot(nhd, add = T)
 
-fact <- as.integer(round(out.res.m / res(chm.buf)[1]))
-if (fact < 1) stop('Aggregation factor < 1. Check CHM resolution for file: ', f)
+creek <- read_sf('data/processed/processed/shp/mosher_creek_studyarea/study_extent_creek_32611.shp')
 
-
-# ---------------- GAP BOOLEAN (preserve NA) ----------------
-# logical TRUE/FALSE, but NA where CHM is NA
-gap.bool.buf  <- ifel(is.na(chm.buf),  NA, chm.buf <  gap.ht.m)
-canopy.bool.buf <- ifel(is.na(chm.buf), NA, chm.buf >= gap.ht.m)
-
-# For patches(): ONLY gaps should be non-NA
-gap.features.buf <- ifel(gap.bool.buf == 1, 1, NA)
-
-# --- convert to numeric 0/1 ---
-gap01 <- ifel(is.na(chm.buf), NA_real_, as.numeric(chm.buf < gap.ht.m))
-
-# 3x3 window
-w <- matrix(1, 5, 5)
-
-# --- erode: remove thin connections ---
-gap.erode <- focal(gap01, w = w, fun = min, na.rm = TRUE, expand = FALSE)
-
-# --- dilate: regrow main blobs ---
-gap.open <- focal(gap.erode, w = w, fun = max, na.rm = TRUE, expand = FALSE)
-
-# restore NA footprint
-gap.bool.buf <- ifel(is.na(gap01), NA, gap.open == 1)
+# ----- download water polygons -----
+# read in shape file of study area
+creek <- read_sf('data/processed/processed/shp/mosher_creek_studyarea/study_extent_creek_32611.shp')
+# download nhd water data
+water <- get_nhdphr(AOI = creek, type = 'nhdwaterbody')
 
 
-# ---------------- PATCH IDS + GAP SIZE CLASSES ----------------
-gap.id.buf <- patches(gap.features.buf, directions = 8)
-names(gap.id.buf) <- 'gap_id'
-
-gaps <- values(gap.id.buf, mat = FALSE)
-gaps <- gaps[!is.na(gaps)]
-
-# templates aligned to core at 50m
-template50 <- aggregate(chm.core, fact = fact, fun = mean, na.rm = TRUE)
-
-# handle tiles with no gaps
-if (length(gaps) == 0) {
-  
-  # gap % is 0 where CHM exists, NA where CHM is NA
-  gap.pct.50 <- agg.mean(as.numeric(crop(gap.bool.buf, ext.core)), fact)
-  gap.pct.50 <- ifel(is.na(template50), NA, gap.pct.50)
-  
-  zero <- gap.pct.50 * 0
-  
-  na50 <- template50
-  values(na50) <- NA_real_
-  
-  gap.dist.metrics.50 <- c(
-    gap.pct.50,
-    zero, zero, zero, zero,
-    na50, na50, na50
-  )
-  
-  names(gap.dist.metrics.50) <- c(
-    'gap_pct','gap_small_pct','gap_medium_pct','gap_large_pct','gap_xlarge_pct',
-    'dist_to_gap_mean','dist_to_canopy_mean','dist_to_canopy_max'
-  )
-  
-  writeRaster(
-    gap.dist.metrics.50,
-    filename = file.path(out.dir, paste0(base, '_gap_dist_metrics_50m.tif')),
-    overwrite = TRUE
-  )
-  
-  return(data.frame(tile = base, n.gaps = 0))
-}
-
-# area per gap id (m2)
-gap.areas <- table(gaps) * prod(res(gap.id.buf))
-
-gap.df <- data.frame(
-  gap_id = as.integer(names(gap.areas)),
-  gap_area_m2 = as.numeric(gap.areas)
-)
-
-gap.df$gap_class <- cut(
-  gap.df$gap_area_m2,
-  breaks = gap.breaks,
-  labels = c('small', 'medium', 'large', 'xlarge')
-)
-
-gap.lookup <- as.matrix(data.frame(
-  from = gap.df$gap_id,
-  to   = as.integer(gap.df$gap_class)   # 1..4
-))
-
-gap.class.buf <- classify(gap.id.buf, rcl = gap.lookup)
-names(gap.class.buf) <- 'gap_class'
-
-# crop to core for aggregation
-gap.id.core    <- crop(gap.id.buf, ext.core)
-gap.class.core <- crop(gap.class.buf, ext.core)
-
-gap.bool.core <- crop(gap.bool.buf, ext.core)
-
-# check
-freq(gap.class.core)
-gap.area.total <- sum(values(gap.bool.core == 1, mat = FALSE), na.rm = TRUE) * prod(res(chm.core))
-
-# area by class (m2)
-tab <- freq(gap.class.core)
-tab$area_m2 <- tab$count * prod(res(chm.core))
-tab$area_frac_of_gap <- tab$area_m2 / sum(tab$area_m2)
-
-gap.area.total
-tab
-
-plot(gap.bool.core,
-     main = '1m gap mask (core)',
-     col = c('darkgreen', 'yellow'),
-     legend = FALSE)
-
-
-gap.id.core <- crop(gap.id.buf, ext.core)
-
-plot(gap.id.core,
-     main = '8 directions',
-     col = rainbow(50))
-
-
-
-# helper: 1 where condition TRUE, 0 where FALSE, NA where CHM is NA
-bin01_na <- function(cond, chm) {
-  ifel(is.na(chm), NA_real_, ifel(cond, 1, 0))
-}
-
-
-# ---------------- GAP % (0/1 with NA preserved) ----------------
-gap.pct.50 <- agg.mean(as.numeric(gap.bool.core), fact)
-gap.pct.50 <- mask(gap.pct.50, template50)
-names(gap.pct.50) <- 'gap_pct'
-
-# IMPORTANT: class % should be relative to ALL valid pixels, not just gap pixels
-gap.small  <- agg.mean(bin01_na(gap.class.core == 1, chm.core), fact)
-gap.medium <- agg.mean(bin01_na(gap.class.core == 2, chm.core), fact)
-gap.large  <- agg.mean(bin01_na(gap.class.core == 3, chm.core), fact)
-gap.xlarge <- agg.mean(bin01_na(gap.class.core == 4, chm.core), fact)
-
-gap.small  <- mask(gap.small,  template50)
-gap.medium <- mask(gap.medium, template50)
-gap.large  <- mask(gap.large,  template50)
-gap.xlarge <- mask(gap.xlarge, template50)
-
-names(gap.small)  <- 'gap_small_pct'
-names(gap.medium) <- 'gap_medium_pct'
-names(gap.large)  <- 'gap_large_pct'
-names(gap.xlarge) <- 'gap_xlarge_pct'
+plot(st_geometry(creek))
+plot(st_geometry(nhd), add = T, border = 'blue', lwd = 1)
+unique(nhd$ftype)
