@@ -10,17 +10,10 @@ chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 # 'data/processed/processed/tif/1m/creek_chm' for whole run
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 
-# test on 5 tiles
-test.files <- chm.files[1:5]
-
-# outputs
-out.dir <- 'data/processed/ALS/tif/fractal_dimension_test'
-dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
-
 # ==============================================================================
 #  Fractal Dimension 
 # ==============================================================================
-
+water.path <- 'data/processed/processed/shp/nhd_water_creek_32611.shp'
 box.sizes <- c(1, 2, 5, 10, 25)
 
 boxcount.fractal.dim <- function(mat, box.sizes) {
@@ -78,14 +71,21 @@ fractal.dim.fun <- function(v, ...) {
 
 gap.ht <- 2
 
-fractal.dim.one.tiles <- function(f) {
+fractal.dim.one.tiles <- function(f, water.path, out.dir, gap.ht = 2) {
+  
+  library(terra)
   
   r <- rast(f)
   
   t0 <- Sys.time()
   message('\n--- Fractal dim (from CHM): ', basename(f), ' ---')
   
-  # gap mask: 1 = gap, 0 = not gap, NA = missing data
+  # ---- mask water ----
+  water <- vect(water.path)
+  water <- crop(water, ext(r))
+  r <- mask(r, water, inverse = TRUE)
+  
+  # gap mask: 1 = gap, 0 = not gap, NA = missing data and water
   gap.mask <- ifel(is.na(r), NA, ifel(r < gap.ht, 1, 0))
   
   fd <- aggregate(gap.mask, fact = 50, fun = fractal.dim.fun,
@@ -122,7 +122,7 @@ out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 start.time <- Sys.time()
-out.files <- lapply(chm.files, fractal.dim.one.tiles)
+out.files <- lapply(test.files, fractal.dim.one.tiles)
 end.time <- Sys.time()
 
 message('\nAll 5 test tiles finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
@@ -132,7 +132,7 @@ out.files
 
 # --------- check -----------
 
-fd1 <- rast(out.files[1])
+fd1 <- rast(file.path(out.dir, 'creek_chm_USGS_LPC_CA_SierraNevada_B22_11SLB0727_norm_fractal_dim_50m.tif'))
 fd1
 global(fd1, range, na.rm = TRUE)
 hist(values(fd1))
@@ -143,25 +143,33 @@ test.files.col <- sprc(raster.list)
 
 m <- mosaic(test.files.col)
 plot(m)
+
+summary(values(m))
 # --------------- test on 36 tiles---------------
 
 # inputs
-chm.dir <- 'data/processed/ALS/chm_test_tiles'
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm_test_36'
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
 
 # test on 36 tiles
 test.files <- chm.files
 
 # outputs
-out.dir <- 'data/processed/ALS/tif/fractal_dimension_test'
+out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/fractal_dim_32611_test'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 # --- parallel setup ---
 plan(multisession, workers = 12)
-terraOptions(progress = 1)
 
 start.time <- Sys.time()
-out.files <- future_lapply(test.files, fractal.dim.one.tiles, future.seed = TRUE)
+out.files <- future_lapply(test.files, function(f){
+  fractal.dim.one.tiles(
+    f,
+    water.path = water.path,
+    out.dir  = out.dir,
+    gap.ht = 2)
+})
+  
 end.time <- Sys.time()
 
 message('\nAll 36 test tiles finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
@@ -226,11 +234,14 @@ dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 length(chm.files)  # should be 2860
 
 start.time <- Sys.time()
-out.files <- future_lapply(
-  chm.files,
-  fractal.dim.one.tiles,
-  future.seed = TRUE
-)
+out.files <- future_lapply(chm.files, function(f){
+  fractal.dim.one.tiles(
+    f,
+    water.path = water.path,
+    out.dir  = out.dir,
+    gap.ht = 2)
+})
+
 end.time <- Sys.time()
 
 message('\nAll tiles finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
@@ -254,9 +265,8 @@ raster.collection <- sprc(raster.list)
 m <- mosaic(raster.collection)
 plot(m)
 
-out.m <- file.path(out.dir, 'creek_fractal_dim_50m_32611_2.tif')
-writeRaster(m, out.m, overwrite = T, 
-            wopt = list(gdal = c('COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=YES')))
+out.m <- file.path(out.dir, 'creek_fractal_dim_50m_32611_masked.tif')
+writeRaster(m, out.m, overwrite = T)
 
 
 
