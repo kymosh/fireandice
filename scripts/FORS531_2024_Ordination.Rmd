@@ -1,0 +1,322 @@
+
+---
+title: "FORS531_2024_Ordination"
+author: "Cansler"
+date: "2024-09-27"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+*Data source:*
+This is Cansler's script to ordinate data collected by University of Montana Forest Community Ecology (FORS 531/595) in fall 2024. Data was collected at three sites--low, moderate, and high elevations--in the Gold Creek drainage, dominated by the following overstory species: (1) ponderosa pine, (2) Douglas-fir, and (3) lodgepole pine, following respective elevations. 
+
+This scrip uses dataframes created in the *FORS531_2024_DataCleaning.Rmd* script
+
+#This script is in R Markdown. 
+To run the current code chunk press ctrl + alt + c
+To run the next code chunk press ctrl + alt + n
+To insert a code chunk press ctrl + alt + i
+
+# install and load packages
+######HOW TO INSTALL PACKAGES###########
+Every analysis in R besides very simple plotting and arithmetic needs an associated package or library. For ordination we are going to use the package called vegan. Vegan is a community ecology package that is often used in multivariate analysis
+
+for plotting and reshaping data we are using packages from the tidyverse 
+
+```{r}
+#install.packages("vegan")
+#install.packages("tidyverse")
+
+```
+
+
+You can also do this in R studio by going to the package tab on the bottom right window. Click on Install Packages and then type the name of the package in the white box and then scroll down until you see the name of the package and check the box next to it. This code is equal to checking the box
+
+```{r}
+require(tidyverse) 
+require(vegan)
+```
+
+
+```{r}
+setwd("C:/Users/alina.cansler/Documents/RProjects/FORS531_2024_R")
+```
+
+# Read in the data 
+
+```{r}
+load("Data/Clean/li_cov_wide.rda")
+load("Data/Clean/li_cov_long.rda")
+
+summary(li_cov_wide)
+summary(li_cov_long)
+
+```
+
+Can you calculate percent cover below 2 m for each plot? 
+```{r}
+cov_below_2m <- data.frame(Site = li_cov_wide$Site,
+                  Team = li_cov_wide$Team,
+                  Cov = 1-li_cov_wide$bare)
+cov_below_2m
+
+```
+
+
+Can you make a table or graph of the number of species < 2 m at each plot? At each site? 
+This is *richness*
+
+```{r}
+li_cov_long_species <- li_cov_long[li_cov_long$Item!="bare",]
+li_cov_long_species
+table(li_cov_long_species$Site, li_cov_long_species$Team)
+
+table(li_cov_long_species$Site)
+
+```
+
+
+Can you plot the frequency of each species at each site and plot? Use “li_cov_long” and ggplot. 
+```{r}
+
+names(li_cov_long_species)
+p1 <- ggplot(data=li_cov_long_species, aes(x=cov_prop, y=Item, color = Team)) +  
+  geom_point() +
+  facet_wrap(.~ Site)
+p1
+
+```
+
+Now use the list_cov_wide dataset for ordination
+drop  bare
+```{r}
+li_cov_wide$bare = NULL
+
+```
+
+combine site and team for a unique plot identifier
+need to move these names to row names, so dataframe contains only species data
+```{r}
+li_cov_wide <- li_cov_wide %>% unite("site_team", Site:Team, remove = TRUE)
+li_cov_wide <- as.data.frame(li_cov_wide)
+row.names(li_cov_wide) <- li_cov_wide$site_team
+li_cov_wide$site_team <- NULL
+summary(li_cov_wide)
+
+```
+
+use the "vegdist" function in vegan package to make distance matrices. Save them and take a look
+```{r}
+spp_distmat_1 <- vegdist(li_cov_wide, method = "euclidean")
+spp_distmat_1 <- as.matrix(spp_distmat_1, labels = T)
+write.csv(spp_distmat_1, "Results/li_cov_euclidean.csv")
+
+spp_distmat_2 <- vegdist(li_cov_wide, method = "bray")
+spp_distmat_2 <- as.matrix(spp_distmat_2, labels = T)
+write.csv(spp_distmat_2, "Results/li_cov_bray.csv")
+
+#Bray-Curtis distance on presence-absence data is known as the Sørensen distance
+# binary = T --> converts data to presence absence
+spp_distmat_3 <- vegdist(li_cov_wide, method = "bray", binary = T)
+spp_distmat_3 <- as.matrix(spp_distmat_3, labels = T)
+write.csv(spp_distmat_3, "Results/li_cov_jaccard.csv")
+
+
+```
+
+###PRINCIPAL COMPONENTS ANALYSIS###
+
+#now we are going to run the PCA calculations using the function named rda that is in vegan
+#the dataset we are doing this on is the east.data. This is the species cover data.
+#we are saving the results of the PCA to a new object named "pca.output"
+# by saving the results this way we can plot pieces of it, and look at it in different ways
+
+this formation of PCA is using euclidean distance. Other options, for using ray Curtis distance also exist. I topically use MDS, via the metaMDS function in Vegan. You can put a distance martix, as calculated above directly into that function, or specify your distance measurement. But for short environmental gradients, with a few plots and a small set of species, a basic PCA will be a fine way to look at the data. 
+
+we need to convert the data into a matrix
+Then we standardization the values accros rows (sites) and species using the function decostand -- actually using the function wisconsin, which is described in the function decostand
+```{r}
+
+help(rda)
+li_cov <- as.matrix(li_cov_wide) # need a matrix, not a dataframe
+li_cov_w <- wisconsin(li_cov)
+
+```
+
+
+```{r}
+
+pca.output<- rda(li_cov_w )
+
+#now look at the object
+pca.output
+# Eigenvalues--which are actually a linear algebra term--can be used by you to see how much variation is being explained by each axis
+#you can also look at it a different way by using the summary function
+summary(pca.output) # proportion explained is better for understanding how much variation is explained by each axis
+
+#now plot the object - this is where the utility of PCA becomes evident
+#THIS IS WHAT WE ARE LOOKING AT FOR THE ASSIGNMENT###
+#plot is the function
+#pca.output is the object
+#we are plotting the object called pca.output
+plot(pca.output)
+
+#another way to plot it is using the biplot function
+biplot(pca.output)
+
+```
+
+
+you will notice that these plots are cluttered and it can be hard to make sense of them we can use coding to allow us to plot only the species or only the sites or both
+
+#let's look at the differences among SPECIES first
+here we are using a different function called ordiplot that is available in vegan to plot ordinations. we are still plotting the same object, that is called pca.output
+
+There is another command called "display" that we are using to specify that we only want to see the species
+
+we can specify type ="n" and this tells the plot to be blank - you will see why this is useful in a moment
+```{r}
+ordiplot(pca.output, display ="species", type ="n")
+
+```
+
+
+now we add the data to the blank plots using the text function, and we made the color of the text red with the "col" command
+```{r}
+text(pca.output, display="species", col="red")
+
+```
+
+#curious abot the colors in R?
+#type in colors() in the R console and you will get the entire list - try making them some shade of purple!
+
+#now plot sites
+```{r}
+ordiplot(pca.output, display = "sites", type = "n")
+
+```
+
+#let's label thes sites with text
+```{r}
+text(pca.output, display="sites", labels = row.names(li_cov_wide))
+
+```
+
+
+#if you want to make it pretty, use the function orditorp
+the function won't allow overlapping words, so you can always read what is on the plot. "trop" stands for text or point - it's too cluttered to see
+```{r}
+ordiplot(pca.output, display = "sites", type = "n")
+orditorp(pca.output, dis="sites", cex=1.5, font=3, col="black", 
+         labels = row.names(li_cov_wide))
+
+```
+
+
+
+#this code will allow you to plot the species and sites together
+#trust us- it works
+#change the pch or cex or titles to your liking
+```{r}
+ordiplot(pca.output, type="n", main="PCA of Gold Creek Field Data", 
+         xlab="PC1 (Elevation?)",
+         ylab="PC2 (Aspect? Stand age or density?)")
+orditorp(pca.output, dis="sites", cex=1.5, font=3, col="black", 
+         labels = row.names(li_cov_wide))
+text(pca.output, display="species", col="red")
+```
+
+
+
+
+#sometimes we want to plot different PC axes
+let's plot different axis (PC2 against PC3)
+in the ordiplot function you can specify this using the command "choices"
+below you will see I specified 2 and 3 <-- choices = c(2,3)
+
+```{r}
+ordiplot(pca.output, choices = c(1,3),main="PCA of Gold Creek Field Data")
+#overlay text of the species names
+text(pca.output, choices = c(1,3), display="species", col="red")
+text(pca.output, choices = c(1,3), display="sites", col="black")
+```
+
+#this will plot PC1 and PC3
+```{r}
+
+ordiplot(pca.output, choices = c(1,3),main="PCA of Gold Creek Field Data")
+text(pca.output, choices = c(1,3), display="species", col="red")
+text(pca.output, choices = c(1,3), display="sites", col="black")
+
+```
+
+
+
+#do you want to only look at species?
+they are hard to see with the sites on there
+```{r}
+ordiplot(pca.output, choices = c(1,3),display = "species",
+         main="PCA of Gold Creek Field Data")
+text(pca.output, choices = c(1,3), display="species", col="red")
+```
+
+
+
+# interactively identify what the points are on the plot
+# this time you need to name the figure (create an object) to interact with
+> sometimes this works, sometimes it does not!
+
+
+we can use the identify function to identify what the species or sites are
+run this line of code and then put the cursor over the points and click
+press esc when you are done and then the labels will pop up
+you can do this with the species
+
+```{r}
+windows()
+fig<-ordiplot(pca.output, choices = c(1,3),main="PCA of Gold Creek Field Data")
+
+##identify(fig, "species")
+
+#or you can do this with the sites
+##identify(fig, "sites")
+```
+
+
+
+
+#####BONUS HINTS FOR R######
+#combining two data frames of the same number of rows, and that are in the same order
+df.combined<-cbind(li_cov_wide, trees_ba_wide_live)
+
+ > how different is the ordination if you include the overstory trees in the data frame? 
+ > what about including seedlings? 
+ 
+
+#to remove an object from your workspace
+rm(li_cov_wide)
+#remove everything
+rm(list=ls())
+#writing csv file, this will automatically save in your working directory
+write.csv(li_cov_wide, "li_cov_wide.csv")
+#discover your working directory 
+getwd()
+#access help files
+?par
+??par
+?rda
+#make simple two plotting window
+#pty=m specifies using the maximum plotting region
+par(mfrow=c(1,2), pty="m")
+plot(li_cov_wide$acmi, li_cov_wide$amal)
+plot(li_cov_wide$bugr, li_cov_wide$cest)
+
+
+#plot in an external window
+#note that these plots will show up in a seperate window and you will NOT see them in RStudio
+#but you can click on the window and see them (think dual monitors!)
+windows()
+par(mfrow=c(1,2), pty ="s")
+plot(li_cov_wide$acmi, li_cov_wide$amal)
+plot(li_cov_wide$bugr, li_cov_wide$cest)
