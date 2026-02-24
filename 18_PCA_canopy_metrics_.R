@@ -1,4 +1,4 @@
-packages <- c('dplyr', 'vegan', 'terra')
+packages <- c('dplyr', 'vegan', 'exactextractr', 'raster', 'terra')
 lapply(packages, library, character.only = T)
 
 # ------------------------------------------------------------------
@@ -59,6 +59,34 @@ plot(canopy.stack)
 
 # save
 writeRaster(canopy.stack, file.path(dir, 'canopy_metrics_50m.tif'))
+
+
+
+# ------------------------------------------------------------------
+# Aggregate to 50m
+# ------------------------------------------------------------------
+
+# SDD data at ~500m res
+target <- rast('data/processed/processed/tif/500m/creek/creek_sdd_wy2021_32611_1524.tif')
+# canopy metric data at 50 m res
+canopy <- rast('data/processed/processed/tif/50m/creek/creek_canopy_metricS_50m.tif')
+
+
+# check CRS# check CRScanopy.stack
+crs(target) == crs(canopy)
+# TRUE
+
+# convert for exactextractr
+canopy.r <- raster::stack(canopy)
+target.r <- raster::stack(target)
+
+canopy.500m <- exact_resample(canopy.r, target.r, fun = 'mean')
+
+
+
+
+
+
 
 # ------------------------------------------------------------------
 # Principal Component Analysis
