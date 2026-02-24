@@ -1,18 +1,20 @@
-packages <- c('terra', 'dplyr', 'here', 'tidyverse')
+packages <- c('terra', 'dplyr', 'tidyverse')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
 
 #### this is preliminary code to create dfs out of all my variables. as of 10/1 it works, but there is currently no forest metrics included. 
 
-#### SDD ####
+# ====================================================================================================================
+# SDD Dataframe
+# ====================================================================================================================
 
-tif.dir <- here('data', 'processed', 'processed', 'tif')
-sdd.files <- list.files(here(tif.dir, '500m'), pattern = '\\.tif$', full.names = T)
+tif.dir <- 'data/processed/processed/tif/500m/creek'
+files <- list.files(tif.dir, pattern = '\\.tif$', full.names = T)
 sdd.stack <- rast(sdd.files)
 
 # simplify names
-clean.names <- sdd.files %>%
+clean.names <- files %>%
   basename() %>%
   gsub('^creek_', '', .) %>%
   gsub('(_(\\d+m|32611))?_1524', '', ., perl = TRUE) %>%
