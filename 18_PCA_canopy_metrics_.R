@@ -64,7 +64,9 @@ writeRaster(canopy.stack, file.path(dir, 'canopy_metrics_50m.tif'))
 # Principal Component Analysis
 # ------------------------------------------------------------------
 
+canopy.stack <- rast(file.path(dir, 'canopy_metrics_50m.tif'))
 df <- as.data.frame(canopy.stack, cells = TRUE, na.rm = TRUE)
+#write.csv(df, file.path(dir, 'canopy_metrics_50m_df.csv'))
 
 pca <- rda(df[ , -1], scale = TRUE)
 summary(pca)
@@ -102,3 +104,23 @@ biplot(pca, scaling = 2)
 
 ordiplot(pca, type = "none", scaling = 2)
 text(pca, display = "species", scaling = 2, cex = 0.7)
+
+# plot zq and zpcum
+zq.vars     <- grep("zq", names(df), value = TRUE)
+zpcum.vars  <- grep("zpcum", names(df), value = TRUE)
+
+df.vert <- df[, c(zq.vars, zpcum.vars)]
+pca.vert <- rda(df.vert, scale = TRUE)
+
+scores.vert <- scores(pca.vert, display = "sites")
+
+set.seed(1)
+idx <- sample(nrow(scores.vert), 50000)
+
+plot(scores.vert[idx,1],
+     scores.vert[idx,2],
+     pch = 16,
+     cex = 0.3,
+     col = rgb(0,0,0,0.2),
+     xlab = "PC1 (Vertical)",
+     ylab = "PC2 (Vertical)")
