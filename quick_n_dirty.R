@@ -172,3 +172,9 @@ sdd20 <- rast(file.path(base.dir, 'creek_sdd_wy2020_32611_1524.tif'))
 sdd21 <- rast(file.path(base.dir, 'creek_sdd_wy2021_32611_1524.tif'))
 sdd22 <- rast(file.path(base.dir, 'creek_sdd_wy2022_32611_1524.tif'))
 sdd23 <- rast(file.path(base.dir, 'creek_sdd_wy2023_32611_1524.tif'))
+
+sdd <- c(sdd20, sdd21, sdd22, sdd23)
+
+sapply(sdd, res)
+sapply(sdd, origin)
+sapply(sdd, function(f) crs(f, describe = T)$code)
