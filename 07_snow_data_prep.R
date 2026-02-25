@@ -192,5 +192,29 @@ for (f in aso.files) {
   r <- rast(f)
   print(origin(r))
 }
+ 
+# check extent
+for (f in aso.files) {
+  r <- rast(f)
+  print(ext(r))
+}
 
+# ------- combine into single SWE rasterstack -------
+swe.stack <- rast(aso.files)
 
+# --- fix names
+
+fn <- basename(aso.files) # list all file names
+dates <- sub('ASO_SanJoaquin_(\\d{4}_\\d{4}).*', '\\1', fn) # extract dates
+dates <- gsub('_', '', dates)   # 2020_0414 to 20200414
+date.vec <- as.Date(dates, format = '%Y%m%d') # format as date
+
+# set layer names with swe prefix
+names(swe.stack) <- paste0('swe_', format(date.vec, '%Y%m%d'))
+
+#store true time dimension
+time(swe.stack) <- date.vec
+
+names(swe.stack)
+
+writeRaster(swe.stack, file.path(out.dir, 'creek_swe_50m.tif'))
