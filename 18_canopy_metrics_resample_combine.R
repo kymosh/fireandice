@@ -60,28 +60,23 @@ plot(canopy.stack)
 # save
 writeRaster(canopy.stack, file.path(dir, 'canopy_metrics_50m.tif'))
 
-
-
 # ------------------------------------------------------------------
-# Aggregate to 50m
+# Aggregate Canopy Metrics to 500m
 # ------------------------------------------------------------------
+
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
+in.dir <- file.path(dir, '50m/creek')
+out.dir <- file.path(dir, '500m/creek/canopy_metrics')
 
 # SDD data at ~500m res
-target <- rast('data/processed/processed/tif/500m/creek/creek_sdd_wy2021_32611_1524.tif')
+target <- rast(file.path(out.dir, 'creek_sdd_wy2021_32611_1524.tif'))
 # canopy metric data at 50 m res
-canopy <- rast('data/processed/processed/tif/50m/creek/creek_canopy_metricS_50m.tif')
-
+canopy <- rast(file.path(in.dir, 'creek_canopy_metricS_50m.tif'))
 
 # check CRS# check CRScanopy.stack
 crs(target) == crs(canopy)
 # TRUE
 
-# loop through each layer in canopy_metrics rasterstack and resample using area-weighted resampling
-# 
-
-# 3) Output folder
-out.dir <- 'data/processed/processed/tif/500m/creek'
-dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 # 4) Loop through layers
 out.list <- vector('list', length = nlyr(canopy))
@@ -116,6 +111,8 @@ crs(canopy.500m) <- crs(target)
 origin(target) == origin(canopy.500m)
 res(target) == res(canopy.500m)
 crs(target) == crs(canopy.500m)
+
+out.dir <- file.path(dir, '500m/creek')
 
 # save output
 writeRaster(canopy.500m, file.path(out.dir, 'canopy_metrics_500m.tif'), overwrite = TRUE)
