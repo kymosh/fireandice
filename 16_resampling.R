@@ -1,5 +1,4 @@
 packages <- c('tidyverse', 'terra')
-install.packages(set.diff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
 # resample all data to SWE resolution
@@ -34,7 +33,7 @@ for (f in topo.cbi) {
 # resample to 50m to match swe
 for (f in topo.cbi) {
   r <- rast(f)
-  r.50m <- resample(r, swe, method = 'average')
+  r.50m <- resample(r, swe, method = 'mean') # changed to "mean" from "average"
   
   new.name <- sub('30m', '50m', basename(f))
   new.path <- file.path(out.dir.50, new.name)

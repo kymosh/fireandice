@@ -3,6 +3,29 @@ packages <- c( 'here', 'dplyr', 'stringr', 'terra', 'tibble', 'ggplot2', 'sf')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
+
+
+# ----- 2/24/26 --------
+# comparing using terra's resample with exactexractr's exact_resample when going from 30 to 50 and then from 50 to 452
+dir <- 'data/processed/processed/tif'
+
+# test
+test.topo <- rast(file.path(dir, '30m/creek_topo_slope_30m_1524.tif'))
+sdd <- rast(file.path(dir, '500m/creek/creek_sdd_wy2020_32611_1524.tif'))
+plot(test.topo)
+test.topo.500m <- resample(test.topo, sdd, method = 'mean')
+plot(test.topo.500m)
+
+
+
+
+
+
+
+
+
+
+
 #-------- 2/11/2026 -------- 
 # trouble shooting weird strip in fractal_dim and gap code
 
@@ -130,7 +153,7 @@ sapply(tile, function(r) compareGeom(ref, r, stopOnError = F))
 origin(ref) # dem
 origin(full[[2]]) # swe <---- this is a different origin!  
 origin(full[[3]])
-origin(full[[4]])  
+origin(full[[4]]) 
 origin(full[[5]])  
 
 origin(tile[[1]])  
@@ -140,3 +163,12 @@ origin(tile[[3]])
 crs(ref) == crs(tile[[1]])
 crs(ref) == crs(tile[[2]])
 
+# ---- do same for 500m rasters -----
+# I want to check and make sure the 50m rasters I have (for the creek study area) are aligned correctly, specifically with the same origin
+library(terra)
+base.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+
+sdd20 <- rast(file.path(base.dir, 'creek_sdd_wy2020_32611_1524.tif'))
+sdd21 <- rast(file.path(base.dir, 'creek_sdd_wy2021_32611_1524.tif'))
+sdd22 <- rast(file.path(base.dir, 'creek_sdd_wy2022_32611_1524.tif'))
+sdd23 <- rast(file.path(base.dir, 'creek_sdd_wy2023_32611_1524.tif'))
