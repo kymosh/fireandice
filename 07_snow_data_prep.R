@@ -239,3 +239,90 @@ names(swe.peak) <- paste0('swe_peak_wy', years)
 names(swe.peak)
 
 writeRaster(swe.peak, file.path(out.dir, 'creek_swe_peak_50m_1524.tif'))
+
+# ---- aggregate PEAK swe to 500m for sdd -------
+
+target <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/snow_metrics/creek_sdd_wy2021_32611_1524.tif')
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+
+out.list <- vector('list', length = nlyr(swe.peak))
+
+for (i in seq_len(nlyr(swe.peak))) {
+  
+  nm <- names(swe.peak)[i]
+  message('Exact resampling: ', i, '/', nlyr(swe.peak), '  ', nm)
+  
+  # single-layer SpatRaster
+  x <- swe.peak[[i]]
+  
+  # exact area-weighted mean to target grid
+  y <- exactextractr::exact_resample(x, target, fun = 'mean')
+  
+  names(y) <- paste0(nm, '_500m')
+  
+  # write immediately (safer)
+  f <- file.path(out.dir, paste0(nm, '_500m.tif'))
+  writeRaster(y, f, overwrite = TRUE)
+  
+  out.list[[i]] <- y
+}
+
+# stack back together
+swe.500m <- rast(out.list)
+
+# restore missing CRS
+crs(swe.500m) <- crs(target)
+
+# check
+origin(target) == origin(swe.500m)
+res(target) == res(swe.500m)
+crs(target) == crs(swe.500m)
+
+plot(swe.500m)
+# save output
+writeRaster(swe.500m, file.path(out.dir, 'creek_swe_peak_500m.tif'), overwrite = TRUE)
+
+
+
+# ---- aggregate swe to 500m for sdd -------
+swe <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/creek_swe_50m.tif')
+
+target <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/snow_metrics/creek_sdd_wy2021_32611_1524.tif')
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+
+out.list <- vector('list', length = nlyr(swe))
+
+for (i in seq_len(nlyr(swe))) {
+  
+  nm <- names(swe)[i]
+  message('Exact resampling: ', i, '/', nlyr(swe.peak), '  ', nm)
+  
+  # single-layer SpatRaster
+  x <- swe[[i]]
+  
+  # exact area-weighted mean to target grid
+  y <- exactextractr::exact_resample(x, target, fun = 'mean')
+  
+  names(y) <- paste0(nm, '_500m')
+  
+  # write immediately (safer)
+  f <- file.path(out.dir, paste0(nm, '_500m.tif'))
+  writeRaster(y, f, overwrite = TRUE)
+  
+  out.list[[i]] <- y
+}
+
+# stack back together
+swe.500m <- rast(out.list)
+
+# restore missing CRS
+crs(swe.500m) <- crs(target)
+
+# check
+origin(target) == origin(swe.500m)
+res(target) == res(swe.500m)
+crs(target) == crs(swe.500m)
+
+plot(swe.500m)
+# save output
+writeRaster(swe.500m, file.path(out.dir, 'creek_swe_500m.tif'), overwrite = TRUE)
