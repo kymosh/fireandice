@@ -218,3 +218,24 @@ time(swe.stack) <- date.vec
 names(swe.stack)
 
 writeRaster(swe.stack, file.path(out.dir, 'creek_swe_50m.tif'))
+
+# --------------------------------------------------------------------------------
+# find peak swe for each year
+# --------------------------------------------------------------------------------
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+swe <- rast(file.path(out.dir, 'creek_swe_50m.tif'))
+
+# extract WY from dates
+wy <- format(time(swe), '%Y')
+
+years <- unique(wy)
+
+swe.peak <- rast(lapply(years, function(y) {
+  app(swe[[wy == y]], max, na.rm = TRUE)
+}))
+
+names(swe.peak) <- paste0('swe_peak_wy', years)
+
+names(swe.peak)
+
+writeRaster(swe.peak, file.path(out.dir, 'creek_swe_peak_50m_1524.tif'))

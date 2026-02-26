@@ -1,0 +1,64 @@
+
+# combine like files into single raster stack
+
+# ------ terraclimate ------
+
+# 50m or 500m just change in our dir
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+
+clim.files <- list.files(out.dir, 'creek_terraclimate', full.names = T)
+
+clim.stack <- rast(clim.files)
+
+# get WY tag per file
+fn <- basename(clim.files)
+wy <- sub('.*(wy\\d{4}).*', '\\1', fn)   # wy2018, wy2019, ...
+
+# get variable names inside each file (assume consistent across files)
+vars <- names(rast(clim.files[1]))       # pr, swe, tmmx, tmmn
+
+# make full names in the same order terra stacks them:
+# (terra stacks file1 layers, then file2 layers, etc.)
+new.names <- as.vector(sapply(wy, function(w) paste0('clim_', vars, '_', w)))
+
+names(clim.stack) <- new.names
+names(clim.stack)
+
+writeRaster(clim.stack, file.path(out.dir, 'creek_terraclimate_500m_1524.tif'))
+
+# ------ topo --------
+
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+topo.files <- list.files(out.dir, 'creek_topo|nasadem', full.names = T)
+topo.stack  <- rast(topo.files)
+
+fn <- basename(topo.files)
+
+# extract everything after "creek_topo_" and before "_500m"
+nm <- sub('creek_topo_(.*)_50m.*', '\\1', fn)
+
+# handle DEM separately (nasadem file)
+nm[grepl('nasadem', fn)] <- 'elev'
+
+# add topo prefix
+names(topo.stack) <- paste0('topo_', nm)
+
+names(topo.stack)
+
+writeRaster(topo.stack, file.path(out.dir, 'creek_topo_50m_1524.tif'))
+
+# ------ sdd (500m only) ------
+
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+sdd.files <- list.files(out.dir, 'creek_sdd', full.names = T)
+sdd.stack <- rast(sdd.files)
+
+fn <- basename(sdd)
+# extract wyYYYY
+wy <- sub('.*(wy\\d{4}).*', '\\1', fn)
+# assign names
+names(sdd.stack) <- paste0('sdd_', wy)
+
+names(sdd.stack)
+
+writeRaster(sdd.stack, file.path(out.dir, 'creek_sdd_500m_1524.tif'))

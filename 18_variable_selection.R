@@ -22,4 +22,6 @@ height <- df %>%
  cor.height <- cor(height) 
 
  corrplot(cor.height)
-  
+
+ plot(canopy.500m)  
+ 
