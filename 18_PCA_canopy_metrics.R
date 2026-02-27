@@ -1,10 +1,11 @@
-packages <- c('dplyr', 'vegan', 'terra')
+packages <- c('dplyr', 'vegan', 'e1071', 'corrplot', 'terra')
 lapply(packages, library, character.only = T)
-
 
 # ------------------------------------------------------------------
 # Principal Component Analysis
 # ------------------------------------------------------------------
+
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 
 canopy.stack <- rast(file.path(dir, 'canopy_metrics_50m.tif'))
 df <- as.data.frame(canopy.stack, cells = TRUE, na.rm = TRUE)
@@ -66,3 +67,118 @@ plot(scores.vert[idx,1],
      col = rgb(0,0,0,0.2),
      xlab = "PC1 (Vertical)",
      ylab = "PC2 (Vertical)")
+
+
+# ------------------------------------------------------------------
+# Fuzzy C-Clustering
+# ------------------------------------------------------------------
+
+# ----- prep data -----
+
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+canopy <- rast(file.path(dir, 'creek_canopy_metrics_50m.tif'))
+
+# convert to df
+df <- as.data.frame(canopy, cells = TRUE, na.rm = FALSE)
+
+# remove NAs
+vars <- setdiff(names(df), 'cell')
+# keep only rows where *all* canopy metrics are present
+ok <- complete.cases(df[, vars])
+df.ok <- df[ok, c('cell', vars)]
+
+# scale predictors
+x <- scale(df.ok[, vars])
+
+# ----- run fuzzy c-means ------
+
+set.seed(14)
+k <- 4
+
+fc <- cmeans(
+  x,
+  centers = k,
+  m = 2,
+  iter.max = 200,
+  method = 'cmeans'
+)
+
+# ----- map membership back to rasters -----
+# template raster for geometry
+template <- canopy[[1]]
+
+# initialize a full-length membership matrix (all cells)
+mem.full <- matrix(NA_real_, nrow = ncell(template), ncol = k)
+
+# fill only the valid cells
+mem.full[df.ok$cell, ] <- fc$membership
+
+# membership rasters
+mem.rasters <- lapply(1:k, function(i) {
+  r <- template
+  values(r) <- mem.full[, i]
+  names(r) <- paste0('memb_c', i)
+  r
+})
+
+membership.stack <- rast(mem.rasters)
+
+# hard cluster (max membership)
+hard.full <- rep(NA_integer_, ncell(template))
+hard.full[df.ok$cell] <- fc$cluster
+
+hard.raster <- template
+values(hard.raster) <- hard.full
+names(hard.raster) <- 'cluster_hard'
+
+plot(membership.stack)
+plot(hard.raster)
+# ----- map clusters in PCA space ------
+
+pca <- prcomp(x, center = FALSE, scale. = FALSE)
+
+# build plotting df
+plot.df <- data.frame(
+  PC1 = pca$x[ , 1],
+  PC2 = pca$x[ , 2],
+  cluster = factor(fc$cluster),
+  max_membership = apply(fc$membership, 1, max)
+)
+
+library(ggplot2)
+
+ggplot(plot.df, aes(PC1, PC2, color = cluster)) +
+  geom_point(alpha = 0.4, size = 0.6) +
+  theme_minimal() +
+  labs(title = 'Fuzzy C-Means Clusters in PCA Space')
+
+# add membership strength
+ggplot(plot.df, aes(PC1, PC2, color = cluster, alpha = max_membership)) +
+  geom_point(size = 0.6) +
+  scale_alpha(range = c(0.2, 1)) +
+  theme_minimal() +
+  labs(title = 'Cluster Separation with Membership Strength')
+
+
+# ------------------------------------------------------------------
+# Variable Clustering
+# ------------------------------------------------------------------
+
+# build correlelogram
+vars <- setdiff(names(df.ok), 'cell')
+cor.mat <- cor(df.ok[, vars], use = 'pairwise.complete.obs')
+
+# convert correlation to distance 
+dist.mat <- as.dist(1 - abs(cor.mat))
+
+# hierarchal clustering
+hc <- hclust(dist.mat, method = 'average')
+plot(hc, main = 'Variable Clustering Dendrogram')
+
+# cut into clusters
+threshold <- 0.75
+cut.height <- 1 - threshold
+
+var.clusters <- cutree(hc, h = cut.height)
+
+split(names(var.clusters), var.clusters)

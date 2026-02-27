@@ -101,8 +101,6 @@ ggplot(terrain.sample.df, aes(x = tpi510, y = elev, color = cluster)) +
 
 
 
-
-
 ######### use PCA results to cluster (all variables)
 pca <- prcomp(terrain.scaled, center = FALSE, scale. = FALSE) 
 pc.mat <- pca$x[, 1:3] # use PC1-PC3
