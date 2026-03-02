@@ -105,7 +105,7 @@ plot(test)
 
 # ----- check all origins/res/crs -----
 
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/snow_metrics'
 aso.files <- list.files(out.dir, pattern = '^ASO_', full.names = TRUE)
 
 # check CRS

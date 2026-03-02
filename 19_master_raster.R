@@ -1,9 +1,10 @@
-packages <- c('dplyr', 'tools', 'terra')
+packages <- c('dplyr', 'tidyr', 'tools', 'terra')
 lapply(packages, library, character.only = T)
 
 # ===========================================================================================
 # Create master raster
 # ===========================================================================================
+
 
 # read in all raster stacks and combine into single one for modeling
 
@@ -11,13 +12,14 @@ lapply(packages, library, character.only = T)
 # this is just a test so far to see if everthing matches and is able to be stacked. 
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
 files <- list.files(dir, 'creek', full.names = TRUE)
-
+files <- files[!grepl('master', files)]
+files
 sdd.stack <- rast(files)
 # it worked!
 
 names(sdd.stack)
 
-writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'))
+writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
 
 # ----- 50m master-raster -----
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
@@ -97,6 +99,97 @@ df.500 <- as.data.frame(r.500, cells = T)
 df.50 <- df.50[complete.cases(df.50), ] 
 df.500 <- df.500[complete.cases(df.500), ] 
 
+# ----- 50m raster -----
+
+# pivot long for swe
+df.long.0 <- df.50 %>%
+  pivot_longer(
+    cols = starts_with('swe_peak_wy'),
+    names_to = 'wy',
+    values_to = 'swe_peak' 
+  )
+
+# clean wy column
+df.long.0$wy <- as.numeric(gsub('swe_peak_wy', '', df.long.0$wy))
+
+
+# pivot long for climate variables
+clim.long <- df.50 %>%
+  select(cell, starts_with('clim')) %>%
+  pivot_longer(
+    cols = -cell,
+    names_to = c('.value', 'wy'),
+    names_pattern = 'clim_(.*)_wy(\\d+)'
+  )
+
+clim.long$wy <- as.numeric(clim.long$wy)
+clim.long <- clim.long[clim.long$wy >= 2020, ]
+
+df.long.0 <- left_join(df.long.0, clim.long, by = c('cell', 'wy'))
+
+range(df.long$wy, na.rm = TRUE)
+
+df.long <- df.long.0 %>%
+  select(-starts_with('clim')) %>%
+  select(-starts_with('swe_20'))
+
+saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_df_50m.rds')
+  
+
+# ----- 500m raster -----
+
+# pivot long for swe
+names(df.500)
+
+df.long.0 <- df.500 %>%
+  pivot_longer(
+    cols = starts_with('swe_peak_wy'),
+    names_to = 'wy',
+    values_to = 'swe_peak' 
+  )
+
+# clean wy column
+df.long.0$wy <- as.numeric(gsub('swe_peak_wy|_500m', '', df.long.0$wy))
+
+
+# pivot long for climate variables
+clim.long <- df.500 %>%
+  select(cell, starts_with('clim')) %>%
+  pivot_longer(
+    cols = -cell,
+    names_to = c('.value', 'wy'),
+    names_pattern = 'clim_(.*)_wy(\\d+)'
+  )
+
+clim.long$wy <- as.numeric(clim.long$wy)
+clim.long <- clim.long[clim.long$wy >= 2020, ]
+
+# pivot long for sdd
+sdd.long <- df.500 %>%
+  select(cell, matches('^sdd_wy\\d{4}$')) %>%
+  pivot_longer(
+    cols = -cell,
+    names_to = 'wy',
+    values_to = 'sdd'
+  )
+
+sdd.long$wy <- as.numeric(gsub('sdd_wy', '', sdd.long$wy))
+
+# join back in to df.long
+df.long.0 <- left_join(df.long.0, sdd.long, by = c('cell', 'wy'))
+
+df.long.0 <- left_join(df.long.0, clim.long, by = c('cell', 'wy'))
+
+df.long <- df.long.0 %>%
+  select(-starts_with('clim')) %>% # remove duplicate clim cols
+  select(-starts_with('swe_20')) %>% # remove duplicate swe cols
+  select(-starts_with('sdd_')) %>% # remove duplicate sdd cols
+  rename(clim_swe = swe) %>% # rename climate swe column to avoid confusion
+  mutate(cbibc = ifelse(wy == 2020 & !is.na(cbibc), 0, cbibc)) # change cbibc in 2020 to 0 because wy2020 was before the creek fire
+
+
+saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_df_500m.rds')
+names(df.long)
 # ----- exploration -----
 
 # -- visualize peak swe by year ----
@@ -135,3 +228,30 @@ hist(df.50$swe_peak_wy2024,
 
 hist(log1p(df.50$swe_peak_wy2023))
 
+
+
+
+
+
+
+
+
+
+## troubleshooting
+
+x <- rast(files[2])
+y <- rast(files[3])
+names(x)
+names(y)
+
+for (f in files) {
+  r <- rast(f)
+  cat('\nFILE:', basename(f), '\n')
+  print(names(r))
+}
+
+names(x) <- 'cbibc'
+names(y) <- 'landcover'
+
+writeRaster(x, file.path(dir, 'creek_cbibc_500m_2.tif'))
+writeRaster(y, file.path(dir, 'creek_landcover_500m_2.tif'))

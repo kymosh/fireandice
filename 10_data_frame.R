@@ -2,6 +2,7 @@ packages <- c('terra', 'dplyr', 'tidyverse')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
+# NOTE!! I don't think this code is really necessary anymore; I have updated code in 19_master_raster
 
 #### this is preliminary code to create dfs out of all my variables. as of 10/1 it works, but there is currently no forest metrics included. 
 
