@@ -157,7 +157,7 @@ plot(landcover.frac.500m)
 plot(landcover.frac.500m$Temperate_subpolar_needleleaf_forest)
 
 # Save raster stack 
-writeRaster(landcover.frac.500m, file.path(tif.dir, '500m/creek/landcover_fractional_groups_500m_1524.tif'), overwrite = TRUE)
+writeRaster(landcover.frac.500m, file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m_1524.tif'), overwrite = TRUE)
 
 #### SWE ####
 
@@ -192,4 +192,4 @@ plot(landcover.frac.50m$Temperate_subpolar_needleleaf_forest)
 
 
 # Save raster stack 
-writeRaster(landcover.frac.50m, file.path(tif.dir, '50m/creek/landcover_fractional_groups_50m_1524.tif'), overwrite = TRUE)
+writeRaster(landcover.frac.50m, file.path(tif.dir, '50m/creek/creek_landcover_fractional_groups_50m_1524.tif'), overwrite = TRUE)
