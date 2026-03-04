@@ -21,10 +21,14 @@ names(sdd.stack)
 
 writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
 
+#sdd <- rast(file.path(dir, 'creek_master_500m.tif'))
+
+
 # ----- 50m master-raster -----
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 files <- list.files(dir, 'creek', full.names = TRUE)
-
+files <- files[!grepl('master', files)]
+files
 swe.stack <- rast(files)
 # extents don't match, unable to be stacked :(
 
@@ -34,9 +38,10 @@ for (f in files) {
   print(ext(r))
 }
 
-files[1] # has different extent than others
+# files[x] # has different extent than others
 
-# --- crop to limiting extent -----
+# ------ crop to limiting extent -------
+# ---- for multiple files ---- 
 rasters <- lapply(files, rast)
 ref <- rast(files[1]) # chose the raster that has the smallest extent
 
@@ -54,16 +59,36 @@ out.files <- vapply(files, function(f) {
   out
 }, character(1))
 
+# ---- if just needing to crop 1 file ----
+ref <- rast(files[1]) # chose the raster that has the smallest extent
+old <- rast(files[3]) # chose the raster that needs to be cropped
+new <- crop(old, ref) # crop
+
+# rename old file and move to old_versions folder so new file can be written
+old.file <- file.path(dir, 'creek_landcover_fractional_groups_50m.tif')
+new.file <- file.path(dir, 'old_versions/creek_landcover_fractional_groups_50m_before_crop_beforefixingsnow.tif')
+file.rename(old.file, new.file)
+
+# write new raster
+writeRaster(new, file.path(dir, 'creek_landcover_fractional_groups_50m.tif'))
+
+# move old master file to old_version
+old.file <- file.path(dir, 'creek_master_50m.tif')
+new.file <- file.path(dir, 'old_versions/creek_master_50m_before_fixinglandcover_before_fixingsnowice.tif')
+file.rename(old.file, new.file)
+
 # try stacking again
 files <- list.files(dir, pattern = '\\.tif$', full.names = T)
 swe.stack <- rast(files) # now it works!
-plot(swe.stack)
 
-# save swe.stack
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
-writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'))
+# save swe.stack again
+writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
+
+
 
 # ----- clean up -----
+# some of this may not be necessary since doing the file.rename thing. 
+
 # go back to OG files
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 files <- list.files(dir, 'creek', full.names = TRUE)
@@ -95,11 +120,34 @@ r.500 <- rast(file.path(dir, '500m/creek/creek_master_500m.tif'))
 df.50 <- as.data.frame(r.50, cells = T)
 df.500 <- as.data.frame(r.500, cells = T)
 
+# quick sanity check
+lc.sum <- rowSums(df.500[, forest.cols], na.rm = TRUE)
+summary(lc.sum)
+
+
 # keep only cells that have no NAs
 df.50 <- df.50[complete.cases(df.50), ] 
 df.500 <- df.500[complete.cases(df.500), ] 
 
 # ----- 50m raster -----
+
+# filter out undesirable forest type * before pivoting *
+
+forest.cols <- c(
+  'Undesirable',
+  'Temperate_subpolar_needleleaf_forest',
+  'Temperate_subpolar_broadleaf_deciduous_forest',
+  'Mixed_forest',
+  'Temperate_subpolar_shrubland',
+  'Temperate_subpolar_grassland',
+  'Wetland'
+)
+
+df.50 <- df.50 %>%
+  filter(Undesirable <= 0.30) %>%
+  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')],
+         forest_type = as.factor(forest_type))
+  
 
 # pivot long for swe
 df.long.0 <- df.50 %>%
@@ -134,12 +182,20 @@ df.long <- df.long.0 %>%
   select(-starts_with('swe_20'))
 
 saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_df_50m.rds')
-  
+df.50 <- readRDS('J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_df_50m.rds')
+summary(df.50$landcover)
+unique(df.50$landcover)
 
 # ----- 500m raster -----
 
 # pivot long for swe
-names(df.500)
+df.500 <- df.500 %>%
+  filter(Undesirable <= 0.30) %>%
+  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')],
+         forest_type = as.factor(forest_type))
+
+
+
 
 df.long.0 <- df.500 %>%
   pivot_longer(
@@ -242,6 +298,7 @@ hist(log1p(df.50$swe_peak_wy2023))
 x <- rast(files[2])
 y <- rast(files[3])
 names(x)
+plot(y)
 names(y)
 
 for (f in files) {
@@ -255,3 +312,13 @@ names(y) <- 'landcover'
 
 writeRaster(x, file.path(dir, 'creek_cbibc_500m_2.tif'))
 writeRaster(y, file.path(dir, 'creek_landcover_500m_2.tif'))
+
+lc <- as.data.frame(y, cell = T)
+head(lc)
+plot(y)
+unique(values(y))
+
+z <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/30m/creek/creek_landcover_30m_1524.tif')
+z.df <- as.data.frame(z, cells = T)
+head(z.df)
+unique(values(z))
