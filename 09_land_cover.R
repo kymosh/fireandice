@@ -154,7 +154,7 @@ landcover.frac.500m <- rast(frac.list)
 
 # Check result
 plot(landcover.frac.500m)
-plot(landcover.frac.500m$Temperate_subpolar_needleleaf_forest)
+plot(landcover.frac.500m$Undesirable)
 
 # Save raster stack 
 writeRaster(landcover.frac.500m, file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m.tif'), overwrite = TRUE)
@@ -193,3 +193,34 @@ plot(landcover.frac.50m$Temperate_subpolar_needleleaf_forest)
 
 # Save raster stack 
 writeRaster(landcover.frac.50m, file.path(tif.dir, '50m/creek/creek_landcover_fractional_groups_50m.tif'), overwrite = TRUE)
+
+
+
+# troubleshooting
+snow <- rast(file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m_nosnow_temp.tif'))
+nosnow <- rast(file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m.tif'))
+
+# 3) basic global summaries (min/max/mean per layer)
+global(snow, fun = c('min','max','mean'), na.rm = TRUE)
+global(nosnow, fun = c('min','max','mean'), na.rm = TRUE)
+
+# 4) difference raster + per-layer stats
+d <- snow - nosnow
+
+# How different, per layer?
+diff.stats <- global(d, fun = c('min','max','mean'), na.rm = TRUE)
+print(diff.stats)
+
+# 5) how many cells changed (tolerance helps avoid tiny float noise)
+tol <- 1e-8
+changed <- global(abs(d) > tol, fun = 'sum', na.rm = TRUE)
+print(changed)
+
+# 6) overall max absolute difference (quick sanity)
+maxabs <- global(abs(d), fun = 'max', na.rm = TRUE)
+print(maxabs)
+
+# 7) optional: look at where differences occur for a specific layer
+# e.g., if you suspect 'Undesirable' should differ
+# plot(d[['Undesirable']])
+# hist(values(d[['Undesirable']]), breaks = 50)

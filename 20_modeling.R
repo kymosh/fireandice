@@ -4,13 +4,7 @@ lapply(packages, library, character.only = T)
 
 # get dataframe
 
-#### NOTE ######
-# SOMETHING MAY BE WRONG WITH THIS DF. I SHOULD HAVE 6 COPIES OF EACH PIXEL, EACH FOR A DIFFERENT YEAR 
-# SUCCESSFUL PIVOT LONG CODE FOUND IN THE TIME SERIES CODE
-df <- readRDS('data/processed/dataframes/swe_df_1524_long.rds')
 
-summary(df)
-colnames(df)
 
 # ---------------- filter dataframe --------------------------------------------
 set.seed(44)
