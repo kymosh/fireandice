@@ -3,11 +3,13 @@ install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
 # create directory 
-tif.dir <- here('data', 'processed', 'processed', 'tif')
+
+tif.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
 
 # read in necessary data
-lc <- rast(here('data', 'raw', 'background_variables', 'tif', 'creek_NALCMS_2020.tif'))
-dem.30 <- rast(here(tif.dir, '30m', 'nasadem_creek_30m_1524.tif'))
+lc <- rast('J:/Fire_Snow/fireandice/data/raw/background_variables/tif/creek_NALCMS_2020.tif')
+
+dem.30 <- rast(file.path(tif.dir, '30m/creek/nasadem_creek_30m_1524.tif'))
 
 # mask to correct elevations and mask out surrounding pixels
 
@@ -104,13 +106,13 @@ creek.scar <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'
 
 
 #######################  resample  #############################
+tif.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
 
-
-landcover <- rast(here(in.dir, '30m', 'creek_landcover_30m_1524.tif'))
+landcover <- rast(file.path(tif.dir, '30m/creek/creek_landcover_30m_1524.tif'))
 
 # Define landcover groupings
 lc.groups <- list(
-  Undesirable = c(16, 17, 18),
+  Undesirable = c(16, 17, 18, 19),
   Temperate_subpolar_needleleaf_forest = c(1),
   Temperate_subpolar_broadleaf_deciduous_forest = c(5),
   Mixed_forest = c(6),
@@ -120,8 +122,8 @@ lc.groups <- list(
 )
 
 # target resolution
-swe <- rast(here(in.dir, '50m', 'ASO_SanJoaquin_2024_0127_swe_50m_1524.tif'))
-sdd <- rast(here(in.dir, '500m', 'creek_sdd_wy2020_32611_1524.tif'))
+swe <- rast(file.path(tif.dir, '50m/creek/snow_metrics/ASO_SanJoaquin_2024_0127_swe_50m_1524.tif'))
+sdd <- rast(file.path(tif.dir, '500m/creek/snow_metrics/creek_sdd_wy2020_32611_1524.tif'))
 
 #### SDD ####
 
@@ -155,7 +157,7 @@ plot(landcover.frac.500m)
 plot(landcover.frac.500m$Temperate_subpolar_needleleaf_forest)
 
 # Save raster stack 
-writeRaster(landcover.frac.500m, here('data', 'processed', 'processed', 'tif', '500m', 'landcover_fractional_groups_500m_1524.tif'), overwrite = TRUE)
+writeRaster(landcover.frac.500m, file.path(tif.dir, '500m/creek/landcover_fractional_groups_500m_1524.tif'), overwrite = TRUE)
 
 #### SWE ####
 
@@ -190,4 +192,4 @@ plot(landcover.frac.50m$Temperate_subpolar_needleleaf_forest)
 
 
 # Save raster stack 
-writeRaster(landcover.frac.50m, here('data', 'processed', 'processed', 'tif', '50m', 'landcover_fractional_groups_50m_1524.tif'), overwrite = TRUE)
+writeRaster(landcover.frac.50m, file.path(tif.dir, '50m/creek/landcover_fractional_groups_50m_1524.tif'), overwrite = TRUE)
