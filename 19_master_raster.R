@@ -61,24 +61,25 @@ out.files <- vapply(files, function(f) {
 
 # ---- if just needing to crop 1 file ----
 ref <- rast(files[1]) # chose the raster that has the smallest extent
-old <- rast(files[3]) # chose the raster that needs to be cropped
+old <- rast(files[7]) # chose the raster that needs to be cropped
 new <- crop(old, ref) # crop
 
 # rename old file and move to old_versions folder so new file can be written
-old.file <- file.path(dir, 'creek_landcover_fractional_groups_50m.tif')
-new.file <- file.path(dir, 'old_versions/creek_landcover_fractional_groups_50m_before_crop_beforefixingsnow.tif')
+old.file <- file.path(dir, 'creek_topo_50m.tif')
+new.file <- file.path(dir, 'old_versions/creek_topo_50m_before_crop.tif')
 file.rename(old.file, new.file)
 
 # write new raster
-writeRaster(new, file.path(dir, 'creek_landcover_fractional_groups_50m.tif'))
+writeRaster(new, file.path(dir, 'creek_topo_50m.tif'))
 
 # move old master file to old_version
 old.file <- file.path(dir, 'creek_master_50m.tif')
-new.file <- file.path(dir, 'old_versions/creek_master_50m_before_fixinglandcover_before_fixingsnowice.tif')
+new.file <- file.path(dir, 'old_versions/creek_master_50m_before_fixinglandcover_before_fixingsnowice_andNAs.tif')
 file.rename(old.file, new.file)
 
 # try stacking again
 files <- list.files(dir, pattern = '\\.tif$', full.names = T)
+files
 swe.stack <- rast(files) # now it works!
 
 # save swe.stack again
@@ -109,8 +110,9 @@ moved.files <- vapply(files, function(f) {
 
 
 # ===========================================================================================
-# convert to df
+# convert to df and filter
 # ===========================================================================================
+
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
 
 r.50 <- rast(file.path(dir, '50m/creek/creek_master_50m.tif'))
@@ -120,21 +122,9 @@ r.500 <- rast(file.path(dir, '500m/creek/creek_master_500m.tif'))
 df.50 <- as.data.frame(r.50, cells = T)
 df.500 <- as.data.frame(r.500, cells = T)
 
-# quick sanity check
-lc.sum <- rowSums(df.500[, forest.cols], na.rm = TRUE)
-summary(lc.sum)
-
-
-# keep only cells that have no NAs
-df.50 <- df.50[complete.cases(df.50), ] 
-df.500 <- df.500[complete.cases(df.500), ] 
-
-# ----- 50m raster -----
-
 # filter out undesirable forest type * before pivoting *
-
 forest.cols <- c(
-  'Undesirable',
+  'Undesirable', # barren land, urban/built-up, water, snow/ice
   'Temperate_subpolar_needleleaf_forest',
   'Temperate_subpolar_broadleaf_deciduous_forest',
   'Mixed_forest',
@@ -143,14 +133,67 @@ forest.cols <- c(
   'Wetland'
 )
 
-df.50 <- df.50 %>%
-  filter(Undesirable <= 0.30) %>%
-  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')],
-         forest_type = as.factor(forest_type))
+df.50.f <- df.50 %>%
   
+  # --- create QC columns to evaluate landcover validity ---
+  mutate(
+    lc.all.na = rowSums(is.na(across(all_of(forest.cols)))) == length(forest.cols), # identify pixels that don't have any landcover classification
+    lc.sum = rowSums(across(all_of(forest.cols)), na.rm = TRUE) # for each pixel, sum of all % landcover classes (should be ~1)
+  ) %>%
+  
+  # ---- remove pixels that are not valid landcover ----
+  filter(
+    !lc.all.na, # remove pixels outside of study area
+    lc.sum > 0.25 # remove rare pixels where landcover fractions sum to 0
+  ) %>%
+  
+  # ---- remove pixels where >30% is classified as "undesirable" landcover class
+  filter(Undesirable <= 0.30) %>% 
+  
+  # ---- assign dominant forest type for each pixel ----
+  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')],
+         # --- convert to factor for modeling ---
+         forest_type = as.factor(forest_type),
+         forest_dom_frac = do.call(pmax, c(across(all_of(forest.cols)), na.rm = TRUE))
+         ) %>%
+  # drop QAQC columns
+  select(-lc.all.na, -lc.sum)
+
+
+df.500.f <- df.500 %>%
+  
+  # --- create QC columns to evaluate landcover validity ---
+  mutate(
+    lc.all.na = rowSums(is.na(across(all_of(forest.cols)))) == length(forest.cols), # identify pixels that don't have any landcover classification
+    lc.sum = rowSums(across(all_of(forest.cols)), na.rm = TRUE) # for each pixel, sum of all % landcover classes (should be ~1)
+  ) %>%
+  
+  # ---- remove pixels that are not valid landcover ----
+  filter(
+  !lc.all.na, # remove pixels outside of study area
+  lc.sum > .25 # remove rare pixels where landcover fractions sum to 0
+  ) %>%
+  
+  # ---- remove pixels where >30% is classified as "undesirable" landcover class
+  filter(Undesirable <= 0.30) %>% 
+  
+  # ---- assign dominant forest type for each pixel ----
+  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')],
+       # --- convert to factor for modeling ---
+       forest_type = as.factor(forest_type),
+       forest_dom_frac = do.call(pmax, c(across(all_of(forest.cols)), na.rm = TRUE))
+       ) %>%
+  # drop QAQC columns
+  select(-lc.all.na, -lc.sum)
+
+# ===========================================================================================
+# pivot to long
+# ===========================================================================================
+
+# ----- 50m raster -----
 
 # pivot long for swe
-df.long.0 <- df.50 %>%
+df.long.0 <- df.50.f %>%
   pivot_longer(
     cols = starts_with('swe_peak_wy'),
     names_to = 'wy',
@@ -162,7 +205,7 @@ df.long.0$wy <- as.numeric(gsub('swe_peak_wy', '', df.long.0$wy))
 
 
 # pivot long for climate variables
-clim.long <- df.50 %>%
+clim.long <- df.50.f %>%
   select(cell, starts_with('clim')) %>%
   pivot_longer(
     cols = -cell,
@@ -182,21 +225,16 @@ df.long <- df.long.0 %>%
   select(-starts_with('swe_20'))
 
 saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_df_50m.rds')
-df.50 <- readRDS('J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_df_50m.rds')
-summary(df.50$landcover)
-unique(df.50$landcover)
+
 
 # ----- 500m raster -----
 
+
+
+
+# check data here
+
 # pivot long for swe
-df.500 <- df.500 %>%
-  filter(Undesirable <= 0.30) %>%
-  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')],
-         forest_type = as.factor(forest_type))
-
-
-
-
 df.long.0 <- df.500 %>%
   pivot_longer(
     cols = starts_with('swe_peak_wy'),
@@ -295,7 +333,7 @@ hist(log1p(df.50$swe_peak_wy2023))
 
 ## troubleshooting
 
-x <- rast(files[2])
+x <- rast(files[7])
 y <- rast(files[3])
 names(x)
 plot(y)
@@ -322,3 +360,50 @@ z <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/30m/creek/creek_
 z.df <- as.data.frame(z, cells = T)
 head(z.df)
 unique(values(z))
+
+# how many rows have ALL landcover group columns NA?
+all.na.50 <- rowSums(is.na(df.50[, forest.cols])) == length(forest.cols)
+sum(all.na.50)
+
+# and for the 452m one
+all.na.500 <- rowSums(is.na(df.500[, forest.cols])) == length(forest.cols)
+sum(all.na.500)
+
+lc50 <- rast(file.path(dir, '50m/creek/creek_landcover_fractional_groups_50m.tif'))
+
+compareGeom(r.50[[1]], lc50[[1]], stopOnError = FALSE)
+ext(r.50); ext(lc50)
+res(r.50); res(lc50)
+origin(r.50); origin(lc50)
+
+# proportion of NA in landcover sum raster
+lc.sum.r <- sum(lc50[[forest.cols]])
+global(is.na(lc.sum.r), 'mean', na.rm = FALSE)
+
+# same but for the master’s landcover layers (what you actually used)
+lc.sum.master <- sum(r.50[[forest.cols]])
+global(is.na(lc.sum.master), 'mean', na.rm = FALSE)
+
+all.na.50 <- rowSums(is.na(df.50[, forest.cols])) == length(forest.cols)
+sum(all.na.50)
+
+lc.sum.r <- sum(lc50[[forest.cols]])
+
+global(lc.sum.r, fun = c('min','mean','max'), na.rm = TRUE)  # only where not NA
+
+lc.sum.50 <- rowSums(df.50[, forest.cols], na.rm = TRUE)
+all.na.50 <- rowSums(is.na(df.50[, forest.cols])) == length(forest.cols)
+
+summary(lc.sum.50[!all.na.50])
+sum(all.na.50)  # number of outside-mask pixels
+
+sum(lc.sum.50[!all.na.50] == 0)
+
+n.valid <- sum(!all.na.50)
+n.zero  <- sum(lc.sum.50[!all.na.50] == 0)
+
+n.zero / n.valid
+
+r <- x[[ -which(names(x) == 'topo_elev')[1] ]]
+plot(r)
+writeRaster(r, file.path(dir, 'topo_50m.tif'))

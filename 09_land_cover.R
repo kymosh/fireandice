@@ -1,9 +1,8 @@
-packages <- c( 'here', 'terra', 'tidyverse', 'ggplot2', 'RColorBrewer')
-install.packages(setdiff(packages, rownames(installed.packages())))
+packages <- c( 'here', 'exactextractr', 'terra', 'tidyverse', 'ggplot2', 'RColorBrewer')
+# install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
 # create directory 
-
 tif.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
 
 # read in necessary data
@@ -16,15 +15,9 @@ dem.30 <- rast(file.path(tif.dir, '30m/creek/nasadem_creek_30m_1524.tif'))
 ext(lc)
 ext(dem.30)
 lc.crop <- crop(lc, dem.30)
-lc.mask <- mask(lc.crop, dem.30)
-
-
-
-writeRaster(lc.mask, here(tif.dir, '30m', 'creek_landcover_30m_1524.tif'))
-
-# explore landcover
-lc.df <- as.data.frame(lc.mask)
-plot(lc.mask)
+landcover <- mask(lc.crop, dem.30)
+# convert NALCMS class 0 (background) to NA
+landcover[landcover == 0] <- NA
 
 # Define landcover class names
 landcover_labels <- c(
@@ -40,7 +33,7 @@ landcover_labels <- c(
   '19' = 'Snow and ice'
 )
 
-
+# ----- data exploration -----
 # Create a distinct color palette with enough contrast
 # Here we use 19 qualitative colors from RColorBrewer
 palette_colors <- brewer.pal(12, 'Paired')  # 12 distinct colors
@@ -105,10 +98,9 @@ creek.scar <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'
 
 
 
-#######################  resample  #############################
-tif.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
 
-landcover <- rast(file.path(tif.dir, '30m/creek/creek_landcover_30m_1524.tif'))
+#------------------  resample / aggregation  ------------------
+tif.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
 
 # Define landcover groupings
 lc.groups <- list(
@@ -124,40 +116,6 @@ lc.groups <- list(
 # target resolution
 swe <- rast(file.path(tif.dir, '50m/creek/snow_metrics/ASO_SanJoaquin_2024_0127_swe_50m_1524.tif'))
 sdd <- rast(file.path(tif.dir, '500m/creek/snow_metrics/creek_sdd_wy2020_32611_1524.tif'))
-
-#### SDD ####
-
-# Initialize list for fractional layers
-frac.list <- list()
-
-# Loop over each landcover group
-for (grp in names(lc.groups)) {
-  classes <- lc.groups[[grp]]
-  
-  # Binary mask for this group (1 if pixel belongs to any of these classes)
-  lc.bin <- landcover %in% classes
-  
-  # Fractional cover at sdd resolution (mean of 1's = proportion)
-  lc.frac <- resample(lc.bin, sdd, method = 'average')
-  
-  # Mask to study area
-  lc.frac <- mask(lc.frac, sdd)
-  
-  # Rename layer
-  names(lc.frac) <- grp
-  
-  frac.list[[grp]] <- lc.frac
-}
-
-# Combine all fractional cover layers
-landcover.frac.500m <- rast(frac.list)
-
-# Check result
-plot(landcover.frac.500m)
-plot(landcover.frac.500m$Undesirable)
-
-# Save raster stack 
-writeRaster(landcover.frac.500m, file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m.tif'), overwrite = TRUE)
 
 #### SWE ####
 
@@ -195,32 +153,31 @@ plot(landcover.frac.50m$Temperate_subpolar_needleleaf_forest)
 writeRaster(landcover.frac.50m, file.path(tif.dir, '50m/creek/creek_landcover_fractional_groups_50m.tif'), overwrite = TRUE)
 
 
+#### SDD ####
+# resample from the 50m raster we just made
+
+lc.names <- names(landcover.frac.50m)
+
+lc.500.list <- lapply(lc.names, function(nm) {
+  r <- landcover.frac.50m[[nm]]
+  out <- exact_resample(r, sdd, fun = 'mean')
+  names(out) <- nm
+  out
+})
+
+landcover.frac.500 <- rast(lc.500.list)
+landcover.frac.500 <- mask(landcover.frac.500, sdd)
+
+# check to makes sure for most cells, the sum of the %s = 1
+global(sum(landcover.frac.500), fun = c('min','mean','max'), na.rm = TRUE)
+lc.sum <- sum(landcover.frac.500)
+# how many sum == 0
+global(lc.sum == 0, 'sum', na.rm = TRUE)
+global(lc.sum < 0.3, 'sum', na.rm = TRUE)
+
+
+# Save raster stack 
+writeRaster(landcover.frac.500, file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m.tif'), overwrite = TRUE)
+
 
 # troubleshooting
-snow <- rast(file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m_nosnow_temp.tif'))
-nosnow <- rast(file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m.tif'))
-
-# 3) basic global summaries (min/max/mean per layer)
-global(snow, fun = c('min','max','mean'), na.rm = TRUE)
-global(nosnow, fun = c('min','max','mean'), na.rm = TRUE)
-
-# 4) difference raster + per-layer stats
-d <- snow - nosnow
-
-# How different, per layer?
-diff.stats <- global(d, fun = c('min','max','mean'), na.rm = TRUE)
-print(diff.stats)
-
-# 5) how many cells changed (tolerance helps avoid tiny float noise)
-tol <- 1e-8
-changed <- global(abs(d) > tol, fun = 'sum', na.rm = TRUE)
-print(changed)
-
-# 6) overall max absolute difference (quick sanity)
-maxabs <- global(abs(d), fun = 'max', na.rm = TRUE)
-print(maxabs)
-
-# 7) optional: look at where differences occur for a specific layer
-# e.g., if you suspect 'Undesirable' should differ
-# plot(d[['Undesirable']])
-# hist(values(d[['Undesirable']]), breaks = 50)
