@@ -19,7 +19,7 @@ sdd.stack <- rast(files)
 
 names(sdd.stack)
 
-writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
+#writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
 
 #sdd <- rast(file.path(dir, 'creek_master_500m.tif'))
 
@@ -215,39 +215,35 @@ clim.long <- df.50.f %>%
 
 clim.long$wy <- as.numeric(clim.long$wy)
 clim.long <- clim.long[clim.long$wy >= 2020, ]
+names(clim.long)[names(clim.long) == 'swe'] <- 'clim_swe' # rename climate swe for clarity
 
+# join dataframes
 df.long.0 <- left_join(df.long.0, clim.long, by = c('cell', 'wy'))
 
-range(df.long$wy, na.rm = TRUE)
+range(df.long.0$wy, na.rm = TRUE)
 
 df.long <- df.long.0 %>%
-  select(-starts_with('clim')) %>%
-  select(-starts_with('swe_20'))
+  select(-starts_with('clim')) %>% # get rid up duplicate clim variables
+  select(-starts_with('swe_20')) # get rid of monthly swe data
 
-saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_df_50m.rds')
+saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
 
 
 # ----- 500m raster -----
 
-
-
-
-# check data here
-
 # pivot long for swe
-df.long.0 <- df.500 %>%
+df.long.0 <- df.500.f %>%
   pivot_longer(
     cols = starts_with('swe_peak_wy'),
     names_to = 'wy',
     values_to = 'swe_peak' 
   )
 
-# clean wy column
-df.long.0$wy <- as.numeric(gsub('swe_peak_wy|_500m', '', df.long.0$wy))
 
+df.long.0$wy <- as.numeric(clim.long$wy)
 
 # pivot long for climate variables
-clim.long <- df.500 %>%
+clim.long <- df.500.f %>%
   select(cell, starts_with('clim')) %>%
   pivot_longer(
     cols = -cell,
@@ -257,9 +253,10 @@ clim.long <- df.500 %>%
 
 clim.long$wy <- as.numeric(clim.long$wy)
 clim.long <- clim.long[clim.long$wy >= 2020, ]
+names(clim.long)[names(clim.long) == 'swe'] <- 'clim_swe'
 
 # pivot long for sdd
-sdd.long <- df.500 %>%
+sdd.long <- df.500.f %>%
   select(cell, matches('^sdd_wy\\d{4}$')) %>%
   pivot_longer(
     cols = -cell,
@@ -278,11 +275,10 @@ df.long <- df.long.0 %>%
   select(-starts_with('clim')) %>% # remove duplicate clim cols
   select(-starts_with('swe_20')) %>% # remove duplicate swe cols
   select(-starts_with('sdd_')) %>% # remove duplicate sdd cols
-  rename(clim_swe = swe) %>% # rename climate swe column to avoid confusion
   mutate(cbibc = ifelse(wy == 2020 & !is.na(cbibc), 0, cbibc)) # change cbibc in 2020 to 0 because wy2020 was before the creek fire
 
 
-saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_df_500m.rds')
+saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_500m.rds')
 names(df.long)
 # ----- exploration -----
 
