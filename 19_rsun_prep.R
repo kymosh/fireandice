@@ -55,9 +55,13 @@ writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dem_9tile.tif')
 dem.dir <- dem.dir <- 'data/raw/DEM/creek'
 dem.files <- list.files(dem.dir, pattern = '\\.tif$', full.names = TRUE)
 
+
 # read as raster
+start <- Sys.time()
 dem.rasters <- lapply(dem.files, rast)
-dem.r <- do.call(mosaic, dem.rasters) #9:06
+dem.r <- do.call(mosaic, dem.rasters)
+end <- Sys.time()
+message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
 
 # template
 # get template grid from chms
