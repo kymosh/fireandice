@@ -12,7 +12,7 @@ tiles <- c(
 )
 
 # file directory
-dem.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/creek'
+dem.dir <- 'data/raw/DEM/creek'
 
 # all files in directory
 all.files <- list.files(dem.dir, pattern= '\\.tif$', full.names = TRUE)
@@ -30,7 +30,7 @@ plot(dem.test)
 res(dem.test) #0.5 0.5
 
 # get template grid from chms
-temp.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611'
+temp.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 temp.files <- list.files(temp.dir, pattern = '\\.tif$', full.names = T)
 temp.files <- temp.files[grepl(paste(tiles, collapse = '|'), basename(temp.files))]   
 template <- lapply(temp.files, rast)
@@ -44,7 +44,7 @@ res(dem.32611)
 crs(dem.32611, describe = T)$code
 origin(dem.32611)
 
-writeRaster(dem.32611, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dem_9tile.tif')
+writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dem_9tile.tif')
 
 
 # ===========================================================================================
@@ -52,7 +52,7 @@ writeRaster(dem.32611, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/
 # ===========================================================================================
 
 # file directory
-dem.dir <- dem.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/creek'
+dem.dir <- dem.dir <- 'data/raw/DEM/creek'
 dem.files <- list.files(dem.dir, pattern = '\\.tif$', full.names = TRUE)
 
 # read as raster
@@ -61,7 +61,7 @@ dem.r <- do.call(mosaic, dem.rasters) #9:06
 
 # template
 # get template grid from chms
-temp.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611'
+temp.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 temp.files <- list.files(temp.dir, pattern = '\\.tif$', full.names = T)
 template <- lapply(temp.files, rast)
 template <- do.call(mosaic, template)
@@ -69,7 +69,7 @@ template <- do.call(mosaic, template)
 # project dem onto grid
 dem.32611 <- project(dem.test, template, method = 'bilinear')
 
-writeRaster(dem.32611, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dem_mosaic.tif')
+writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dem_mosaic.tif')
 
 
 
