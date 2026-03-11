@@ -39,12 +39,12 @@ template <- do.call(mosaic, template)
 # project dem onto grid
 dem.32611 <- project(dem.test, template, method = 'bilinear')
 
-
+# check
 res(dem.32611)
 crs(dem.32611, describe = T)$code
 origin(dem.32611)
 
-
+writeRaster(dem.32611, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dem_9tile.tif')
 
 
 # ===========================================================================================
@@ -66,6 +66,10 @@ temp.files <- list.files(temp.dir, pattern = '\\.tif$', full.names = T)
 template <- lapply(temp.files, rast)
 template <- do.call(mosaic, template)
 
+# project dem onto grid
+dem.32611 <- project(dem.test, template, method = 'bilinear')
+
+writeRaster(dem.32611, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dem_mosaic.tif')
 
 
 
