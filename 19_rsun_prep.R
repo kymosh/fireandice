@@ -127,7 +127,14 @@ dsm.files <- lapply(chm.files, dsm.from.dem.chm)
 x <- rast(dsm.files[1])  
 plot(x)
 
+# combine into single mosaic
+dsm <- do.call(mosaic, dsm.files)
+plot(dsm)
+
+writeRaster(dsm, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dsm_test_9.tif')
+
 # ----- full mosaic -----
+
 # full 1m raster dem
 dem <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dem_1m.tif')
 
@@ -143,7 +150,8 @@ dir.create(out.dir, recursive = T, showWarnings = F)
 # apply function
 dsm.files <- lapply(chm.files, dsm.from.dem.chm)
 
-
+# combine into single mosaic
+dsm <- do.call(mosaic, dsm.files)
 
 
 
