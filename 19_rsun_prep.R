@@ -62,6 +62,7 @@ dem.rasters <- lapply(dem.files, rast)
 dem.r <- do.call(mosaic, dem.rasters)
 end <- Sys.time()
 message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
+# 136 minutes (just the mosaic)
 
 # template
 # get template grid from chms
@@ -71,7 +72,7 @@ template <- lapply(temp.files, rast)
 template <- do.call(mosaic, template)
 
 # project dem onto grid
-dem.32611 <- project(dem.test, template, method = 'bilinear')
+dem.32611 <- project(dem.r, template, method = 'bilinear')
 
 writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dem_mosaic.tif')
 
