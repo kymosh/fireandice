@@ -3,6 +3,28 @@ packages <- c( 'here', 'dplyr', 'stringr', 'terra', 'tibble', 'ggplot2', 'sf')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
+# ------ 3/11/26 ------
+# move partial tiles from raw dem folder
+src.dir  <- 'J:/Fire_Snow/fireandice/data/raw/DEM/creek'
+id.dir   <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611/partial_tiles_removed'
+dest.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/creek/partial_tiles_removed'
+
+# list problem files
+partial.files <- list.files(id.dir)
+# extract ID
+tile.ids <- unique(sub('.*_(11[A-Z]{3}[0-9]{4}).*', '\\1', partial.files))
+tile.pattern <- paste(tile.ids, collapse = '|')
+
+# list DEM files
+dem.files <- list.files(src.dir, pattern = '\\.tif$', full.names = T)
+# find only problem DEMs
+move.files <- dem.files[grepl(tile.pattern, dem.files)]
+
+file.rename(move.files, file.path(dest.dir, basename(move.files)))
+
+
+
+
 
 
 # ----- 2/24/26 --------
@@ -15,15 +37,6 @@ sdd <- rast(file.path(dir, '500m/creek/creek_sdd_wy2020_32611_1524.tif'))
 plot(test.topo)
 test.topo.500m <- resample(test.topo, sdd, method = 'mean')
 plot(test.topo.500m)
-
-
-
-
-
-
-
-
-
 
 
 #-------- 2/11/2026 -------- 
