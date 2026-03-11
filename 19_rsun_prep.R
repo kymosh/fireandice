@@ -29,20 +29,51 @@ plot(dem.test)
 # check res
 res(dem.test) #0.5 0.5
 
-dem.32611 <- project(dem.test, 'EPSG:32611')
-dem.test.1m <- aggregate(dem.32611, fact = 2, fun = mean)
+# get template grid from chms
+temp.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611'
+temp.files <- list.files(temp.dir, pattern = '\\.tif$', full.names = T)
+temp.files <- temp.files[grepl(paste(tiles, collapse = '|'), basename(temp.files))]   
+template <- lapply(temp.files, rast)
+template <- do.call(mosaic, template)
+
+# project dem onto grid
+dem.32611 <- project(dem.test, template, method = 'bilinear')
 
 
-res(dem.test.1m)
-crs(dem.test.1m, describe = T)$code
-origin(dem.test.1m)
+res(dem.32611)
+crs(dem.32611, describe = T)$code
+origin(dem.32611)
 
 
 
 
+# ===========================================================================================
+# Reproject DEM to correct res and origin
+# ===========================================================================================
+
+# file directory
+dem.dir <- dem.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/creek'
+dem.files <- list.files(dem.dir, pattern = '\\.tif$', full.names = TRUE)
+
+# read as raster
+dem.rasters <- lapply(dem.files, rast)
+dem.r <- do.call(mosaic, dem.rasters) #9:06
+
+# template
+# get template grid from chms
+temp.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611'
+temp.files <- list.files(temp.dir, pattern = '\\.tif$', full.names = T)
+template <- lapply(temp.files, rast)
+template <- do.call(mosaic, template)
 
 
 
+
+# troubleshooting
+x <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm.tif')
+origin(x)
+crs(x, describe = T)$code
+res(x)
 
 
 
