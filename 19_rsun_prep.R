@@ -79,8 +79,8 @@ origin(x)
 crs(x, describe = T)$code
 res(x)
 
-
-
+x <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dem_9tile.tif')
+plot(x)
 
 
 
