@@ -161,9 +161,8 @@ start <- Sys.time()
 dsm <- do.call(mosaic, dsm.files)
 end <- Sys.time()
 message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
-
 writeRaster(dsm, 'data/processed/processed/tif/1m/creek_dsm_1m.tif')
-
+# 30 minutes
 
 
 # troubleshooting
