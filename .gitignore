@@ -14,6 +14,9 @@
 !*.R
 !*.Rmd
 
+# Track python code
+!*.py
+
 # Track documentation
 !README.md
 !LICENSE
