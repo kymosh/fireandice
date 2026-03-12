@@ -1,61 +1,73 @@
 import os
-import subprocess
 import sys
+import subprocess
+import rsun_params as p
 
-# --------------------------------------------------
-# USER INPUTS
-# --------------------------------------------------
+grass_python = subprocess.check_output(
+    [p.grass_bin, '--config', 'python_path'],
+    text=True
+).strip()
 
-grass_bin = r"C:\Program Files\GRASS GIS 8.4\grass84.bat"
+if grass_python not in sys.path:
+    sys.path.append(grass_python)
 
-gisdb = r"C:\grassdata"
-location = "rsun_test_location"
-mapset = "PERMANENT"
+import grass.script as gs
 
-dem = r"J:\Fire_Snow\fireandice\data\processed\processed\tif\1m\creek_dem_test_9.tif"
 
-out_dir = r"J:\Fire_Snow\fireandice\data\processed\processed\tif\rsun_test_outputs"
+def main():
+    os.makedirs(p.out_dir, exist_ok=True)
 
-os.makedirs(out_dir, exist_ok=True)
+    print('Starting r.sun run')
+    print(f'GISDB: {p.gisdb}')
+    print(f'Location: {p.location}')
+    print(f'Mapset: {p.mapset}')
+    print(f'Days: {p.days}')
 
-# --------------------------------------------------
-# CREATE LOCATION FROM DEM
-# --------------------------------------------------
+    with gs.setup.init(p.gisdb, p.location, p.mapset):
+        print('GRASS session started')
 
-subprocess.run([
-    grass_bin,
-    "-c", dem,
-    os.path.join(gisdb, location),
-    "--exec",
-    "g.region",
-    "raster=" + dem
-])
+        # make sure region matches DEM
+        gs.run_command(
+            'g.region',
+            raster=p.dem_name
+        )
 
-# --------------------------------------------------
-# RUN r.sun INSIDE GRASS
-# --------------------------------------------------
+        for day in p.days:
+            print(f'\nRunning r.sun for day {day}')
 
-cmd = [
-    grass_bin,
-    os.path.join(gisdb, location, mapset),
-    "--exec",
+            beam_name = f'beam_{day}'
+            diff_name = f'diff_{day}'
+            glob_name = f'glob_{day}'
 
-    "bash", "-c",
+            gs.run_command(
+                'r.sun',
+                elevation=p.dem_name,
+                slope=p.slope_name,
+                aspect=p.aspect_name,
+                day=day,
+                step=p.step,
+                linke_value=p.linke_value,
+                albedo_value=p.albedo_value,
+                beam_rad=beam_name,
+                diff_rad=diff_name,
+                glob_rad=glob_name,
+                overwrite=True
+            )
 
-    f"""
-    r.in.gdal input="{dem}" output=dem_test --overwrite
-    g.region raster=dem_test
+            out_file = os.path.join(p.out_dir, f'rsun_global_day{day}.tif')
 
-    r.slope.aspect elevation=dem_test slope=slope aspect=aspect --overwrite
+            gs.run_command(
+                'r.out.gdal',
+                input=glob_name,
+                output=out_file,
+                format='GTiff',
+                overwrite=True
+            )
 
-    r.sun elevation=dem_test slope=slope aspect=aspect day=172 \
-    beam_rad=beam diff_rad=diff glob_rad=glob insol_time=insol \
-    --overwrite
+            print(f'Exported: {out_file}')
 
-    r.out.gdal input=glob output="{out_dir}/rsun_global_test.tif" format=GTiff --overwrite
-    """
-]
+    print('\nr.sun run finished successfully')
 
-subprocess.run(cmd)
 
-print("Finished r.sun test")
+if __name__ == '__main__':
+    main()
