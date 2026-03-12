@@ -138,22 +138,28 @@ writeRaster(dsm, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_
 # ----- full mosaic -----
 
 # full 1m raster dem
-dem <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dem_1m.tif')
+dem <- rast('data/processed/processed/tif/1m/creek_dem_1m.tif')
 
 # chm files
 # keep chm files by tile
-chm.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611'
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = T)
 
 # output directory
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dsm'
+out.dir <- 'data/processed/processed/tif/1m/creek_dsm'
 dir.create(out.dir, recursive = T, showWarnings = F)
 
 # apply function
+start <- Sys.time()
 dsm.files <- lapply(chm.files, dsm.from.dem.chm)
+end <- Sys.time()
+message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
 
 # combine into single mosaic
+start <- Sys.time()
 dsm <- do.call(mosaic, dsm.files)
+end <- Sys.time()
+message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
 
 
 
