@@ -71,10 +71,12 @@ template <- lapply(temp.files, rast)
 template <- do.call(mosaic, template)
 
 # project dem onto grid
-dem.32611 <- project(dem.test, template, method = 'bilinear')
-
-writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dem_mosaic.tif')
-
+start <- Sys.time()
+dem.32611 <- project(dem.r, template, method = 'bilinear')
+writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dem_1m.tif')
+end <- Sys.time()
+message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
+# took 5.3 hours
 
 
 # ===========================================================================================
