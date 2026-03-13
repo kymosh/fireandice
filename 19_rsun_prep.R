@@ -44,7 +44,7 @@ res(dem.32611)
 crs(dem.32611, describe = T)$code
 origin(dem.32611)
 
-writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dem_9tile.tif')
+writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dtm_9tile.tif')
 
 
 # ===========================================================================================
@@ -73,7 +73,7 @@ template <- do.call(mosaic, template)
 # project dem onto grid
 start <- Sys.time()
 dem.32611 <- project(dem.r, template, method = 'bilinear')
-writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dem_1m.tif')
+writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dtm_1m.tif')
 end <- Sys.time()
 message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
 # took 5.3 hours
@@ -138,7 +138,7 @@ writeRaster(dsm, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_
 # ----- full mosaic -----
 
 # full 1m raster dem
-dem <- rast('data/processed/processed/tif/1m/creek_dem_1m.tif')
+dem <- rast('data/processed/processed/tif/1m/creek_dtm_1m.tif')
 
 # chm files
 # keep chm files by tile
@@ -163,6 +163,27 @@ end <- Sys.time()
 message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
 writeRaster(dsm, 'data/processed/processed/tif/1m/creek_dsm_1m.tif')
 # 30 minutes
+
+
+
+
+
+# ===========================================================================================
+# Check data
+# ===========================================================================================
+
+dir <- 'data/processed/processed/tif/rsun_test_outputs'
+beam <- rast(file.path(dir, 'rsun_beam_day15.tif'))
+diff <- rast(file.path(dir, 'rsun_diff_day15.tif'))
+global <- rast(file.path(dir, 'rsun_global_day15.tif'))
+plot(beam)
+plot(diff)
+plot(global)
+
+
+
+
+
 
 
 # troubleshooting
