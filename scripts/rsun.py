@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import rsun_params as p
+import datetime
 
 # This script runs r.sun in GRASS GIS for the specified days and processes the outputs. It exports the global radiation maps as GeoTIFFs to the specified output directory.
 
@@ -19,6 +20,10 @@ import grass.script as gs
 
 
 def main():
+
+    start_time = datetime.datetime.now()
+    print(f'Start time: {start_time}')
+
     os.makedirs(p.out_dir, exist_ok=True) # ensure output directory exists
 
     print('Starting r.sun run')
@@ -94,6 +99,10 @@ def main():
             print(f'Exported: {diff_file}')
 
     print('\nr.sun run finished successfully')
+
+    end_time = datetime.datetime.now()
+    print(f'End time: {end_time}')
+    print(f'Total runtime: {end_time - start_time}')
 
 if __name__ == '__main__':
     main()
