@@ -16,10 +16,12 @@ out_dir = r'J:\Structure_Data\Fire_Snow\fireandice\data\processed\processed\tif\
 dem_name = surface # name of the imported DEM raster
 slope_name = f'{surface}_slope' # name of the slope raster
 aspect_name = f'{surface}_aspect' # name of the aspect raster
+horizon_basename = f'{surface}_horizon' # base name for horizon rasters, which will have the format {horizon_basename}_{azimuth}
+horizon_step = 15 # step size for horizon rasters in degrees (e.g., 15 means rasters will be generated for azimuths 0, 15, 30, ..., 360)
 
-days = [75] # start with just one day for testing, then add more to the list. 
+days = [75] # start with just one day for testing, then add more to the list. S
 step = 0.5
 linke_value = 1.8
-albedo_value = 0.2
+albedo_value = 0.6
 
-nprocs = 16 # number of processors for parallel processing
+nprocs = 35 # number of processors for parallel processing

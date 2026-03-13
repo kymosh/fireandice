@@ -3,7 +3,7 @@ import sys
 import subprocess
 import rsun_params as p
 
-# This script prepares the terrain data for running r.sun. It imports the DEM into GRASS GIS, calculates slope and aspect, and prints out info about the generated maps. The outputs are used as inputs for the r.sun runs in rsun.py.
+# This script prepares the terrain data for running r.sun. It imports the DEM into GRASS GIS, calculates slope, aspect, and horizon rasters, and prints out info about the generated maps. The outputs are used as inputs for the r.sun runs in rsun.py.
 
 # Specify path where GRASS Python is located and add it to sys.path
 grass_python = subprocess.check_output(
@@ -53,6 +53,15 @@ def main():
             overwrite=True
         )
 
+        # calculate horizon rasters
+        gs.run_command(
+            'r.horizon',
+            elevation=p.dem_name,
+            output=p.horizon_basename,
+            step=p.horizon_step,
+            overwrite=True
+        )
+
         print('\nDEM info:')
         print(gs.read_command('r.info', map=p.dem_name))
 
@@ -62,6 +71,9 @@ def main():
         print('\nAspect info:')
         print(gs.read_command('r.info', map=p.aspect_name))
 
+        print('\nExample horizon map info:')
+        print(gs.read_command('r.info', map=f'{p.horizon_basename}_0'))
+        
     print('\nTerrain prep finished successfully')
 
 

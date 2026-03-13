@@ -58,6 +58,8 @@ def main():
                 step=p.step,
                 linke_value=p.linke_value,
                 albedo_value=p.albedo_value,
+                horizon=p.horizon_basename, 
+                horizon_step=p.horizon_step,
                 beam_rad=beam_name, # output names for the radiation components
                 diff_rad=diff_name,
                 glob_rad=glob_name,
@@ -66,7 +68,7 @@ def main():
             )
             # define output file paths for the radiation maps
             glob_file = os.path.join(p.out_dir, f'rad_global_{p.surface}_day{day}.tif') 
-            beam_file = os.path.join(p.out_dir, f'rad_beam_{p.surface}_day{day}.tif')
+            beam_file = os.path.join(p.out_dir, f'rad_beam_{p.surface}_day_{day}.tif')
             diff_file = os.path.join(p.out_dir, f'rad_diff_{p.surface}_day{day}.tif')
 
             # export the radiation maps to GeoTIFFs

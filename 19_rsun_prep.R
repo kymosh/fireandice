@@ -185,6 +185,16 @@ plot(global)
 
 
 
+# ------- Sensitivity analysis for albedo -------
+dir <- 'data/processed/processed/tif/rsun_test_outputs'
+a.2 <- rast(file.path(dir, 'rad_global_dtm_day75_02alb.tif'))
+a.6 <- rast(file.path(dir, 'rad_global_dtm_day75_06alb.tif'))
+
+diff.abs <- a.6 - a.2
+diff.pct <- (a.6 - a.2) / a.2 * 100
+
+global(diff.abs, c('mean', 'min', 'max'), na.rm = TRUE)
+global(diff.pct, c('mean', 'min', 'max'), na.rm = TRUE)
 
 # troubleshooting
 x <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611/creek_chm_USGS_LPC_CA_SierraNevada_B22_11SKB7732_norm.tif')
@@ -201,10 +211,12 @@ dem.test <- crop(dem, test.chm)
 
 compareGeom(dem.test, test.chm)
 
+files <- list.files('data/processed/processed/tif/rsun_test_outputs', pattern = '\\.tif$', full.names = T)
+new <- sub('\\.tif$', '_02alb.tif', files)
+file.rename(files, new)
 
-
-
-
+summary(values(a.6))
+global(a.6, c('min', 'max', 'mean'), na.rm = TRUE)
 
 
 
