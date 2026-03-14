@@ -58,7 +58,7 @@ def main():
                 step=p.step,
                 linke_value=p.linke_value,
                 albedo_value=p.albedo_value,
-                horizon=p.horizon_basename, 
+                horizon_basename=p.horizon_basename, 
                 horizon_step=p.horizon_step,
                 beam_rad=beam_name, # output names for the radiation components
                 diff_rad=diff_name,
