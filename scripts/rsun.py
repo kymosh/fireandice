@@ -30,6 +30,9 @@ def main():
     print(f'GISDB: {p.gisdb}')
     print(f'Location: {p.location}')
     print(f'Mapset: {p.mapset}')
+    print(f'Mode: {p.mode}')
+    print(f'Surface: {p.surface}')
+    print(f'Resolution: {p.res}m')
     print(f'Days: {p.days}')
 
     with gs.setup.init(p.gisdb, p.location, p.mapset): # start GRASS session
@@ -38,7 +41,10 @@ def main():
         # make sure region matches DEM
         gs.run_command(
             'g.region',
-            raster=p.dem_name
+            raster=p.dem_name,
+            res=p.res, # set resolution
+            flags='a' # align to the DEM
+
         )
         # loop through specified days and run r.sun
         for day in p.days:
@@ -51,6 +57,7 @@ def main():
             # run r.sun with specified parameters
             gs.run_command( 
                 'r.sun',
+                flags='m', # use low memory version
                 elevation=p.dem_name, # these were generated in the terrain prep script
                 slope=p.slope_name,
                 aspect=p.aspect_name,
@@ -58,8 +65,6 @@ def main():
                 step=p.step,
                 linke_value=p.linke_value,
                 albedo_value=p.albedo_value,
-                horizon_basename=p.horizon_basename, 
-                horizon_step=p.horizon_step,
                 beam_rad=beam_name, # output names for the radiation components
                 diff_rad=diff_name,
                 glob_rad=glob_name,
@@ -67,9 +72,9 @@ def main():
                 overwrite=True
             )
             # define output file paths for the radiation maps
-            glob_file = os.path.join(p.out_dir, f'rad_global_{p.surface}_day{day}.tif') 
-            beam_file = os.path.join(p.out_dir, f'rad_beam_{p.surface}_day_{day}.tif')
-            diff_file = os.path.join(p.out_dir, f'rad_diff_{p.surface}_day{day}.tif')
+            glob_file = os.path.join(p.out_dir, f'rad_global_{p.surface}_day{day}_{p.res}m.tif') 
+            beam_file = os.path.join(p.out_dir, f'rad_beam_{p.surface}_day_{day}_{p.res}m.tif')
+            diff_file = os.path.join(p.out_dir, f'rad_diff_{p.surface}_day{day}_{p.res}m.tif')
 
             # export the radiation maps to GeoTIFFs
             gs.run_command(
