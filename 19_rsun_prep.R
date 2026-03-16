@@ -218,9 +218,39 @@ file.rename(files, new)
 summary(values(a.6))
 global(a.6, c('min', 'max', 'mean'), na.rm = TRUE)
 
+# ------- Sensitivity analysis for resolution  -------
 
+res.1 <- rast(files[8])
+res.5 <- rast(files[9])
 
+res(res.1)
+res(res.5)
+crs(res.1, describe = T)$code
 
+res.1to5 <- aggregate(res.1, fact = 5, fun = mean, na.rm = TRUE)
+
+diff <- res.1to5 - res.5
+
+global(diff, c('mean', 'min', 'max'), na.rm = TRUE)
+global(abs(diff), c('mean', 'min', 'max'), na.rm = TRUE)
+
+diff.pct <- (res.1to5 - res.5) / res.1to5 * 100
+
+global(diff.pct, c('mean', 'min', 'max'), na.rm = TRUE)
+global(diff.pct, quantile, probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE)
+
+res.1to50 <- aggregate(res.1, fact = 50, fun = mean, na.rm = TRUE)
+res.5to50 <- aggregate(res.5, fact = 10, fun = mean, na.rm = TRUE)
+
+diff <- res.1to50 - res.5to50
+
+global(diff, c('mean', 'min', 'max'), na.rm = TRUE)
+global(abs(diff), c('mean', 'min', 'max'), na.rm = TRUE)
+
+diff.pct <- (res.1to50 - res.5to50) / res.1to50 * 100
+
+global(diff.pct, c('mean', 'min', 'max'), na.rm = TRUE)
+global(diff.pct, quantile, probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE)
 
 
 

@@ -1,29 +1,12 @@
-packages <- c('here', 'terra', 'tidymodels', 'dplyr', 'tidyr', 'stringr', 'sf')
+packages <- c('tidymodels', 'dplyr', 'tidyr')
 install.packages(setdiff(packages, row.names(installed.packages())))
 lapply(packages, library, character.only = T)
 
 # get dataframe
+df <- readRDS('data/processed/processed/rds/creek_long_df_50m.rds')
 
 
 
-# ---------------- filter dataframe --------------------------------------------
-set.seed(44)
-
-forest.cols <- c('undesirable',
-                 'temperate_subpolar_needleleaf_forest',
-                 'temperate_subpolar_broadleaf_deciduous_forest',
-                 'mixed_forest',
-                 'temperate_subpolar_shrubland',
-                 'temperate_subpolar_grassland',
-                 'wetland')
-
-df.filtered <- df %>%
-  filter(peak_swe > 0, # remove pixels that have peak swe of 0
-         undesirable <= .30) %>% # remove pixels that are >30% water, building, or barren
-  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')]) %>%
-  select(-swe) # remove swe column from clim data
-
-saveRDS(df.filtered, 'data/processed/dataframes/filtered_swe_df.rds')
 
 # ---------------- EDA ---------------------------------------------------------
 topo.vars <- c('aspect', 'slope', 'tpi1200', 'tpi150', 'tpi2010', 'tpi510', 'hli', 'elev')
