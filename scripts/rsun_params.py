@@ -1,7 +1,7 @@
 # Parameters for running r.sun in GRASS GIS. These are imported into rsun.py, which is the main script for running r.sun and processing outputs.
 
 # set settings for either a test or full run
-mode = 'test'   # 'test' or 'full'
+mode = 'full'   # 'test' or 'full'
 
 # Specify path where GRASS Python is located and add it to sys.path
 grass_bin = r'C:\Program Files\GRASS GIS 8.4\grass84.bat'
@@ -16,13 +16,12 @@ surface = 'dtm' # either 'dtm' or 'dsm' - this is used to specify which DEM to u
 if mode == 'test':
     location = "rsun_test_location" # name of GRASS location 
     dem_in = rf'J:\Structure_Data\Fire_Snow\fireandice\data\processed\processed\tif\1m\creek_dtm_test_9.tif'
-    out_dir = r'J:\Structure_Data\Fire_Snow\fireandice\data\processed\processed\tif\creek_rsun_test_outputs'
+    out_dir = r'J:\Structure_Data\Fire_Snow\fireandice\data\processed\processed\tif\rsun_test_outputs'
 
 elif mode == 'full':
     location = "rsun_full_location" # name of GRASS location 
     dem_in = rf'J:\Structure_Data\Fire_Snow\fireandice\data\processed\processed\tif\1m\creek_dtm_1m.tif'
     out_dir = r'J:\Structure_Data\Fire_Snow\fireandice\data\processed\processed\tif\5m\creek_rad'
-
 
 
 

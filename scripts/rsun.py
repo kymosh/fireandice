@@ -57,7 +57,6 @@ def main():
             # run r.sun with specified parameters
             gs.run_command( 
                 'r.sun',
-                flags='m', # use low memory version
                 elevation=p.dem_name, # these were generated in the terrain prep script
                 slope=p.slope_name,
                 aspect=p.aspect_name,
