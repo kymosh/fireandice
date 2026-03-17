@@ -96,7 +96,7 @@ tiles <- c(
 dem <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dem_test_9.tif')
 
 # chm files
-chm.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_chm_32611'
+chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = T)
 chm.files <- chm.files[grepl(paste(tiles, collapse = '|'), basename(chm.files))]
 
@@ -180,9 +180,27 @@ plot(beam)
 plot(diff)
 plot(global)
 
+x <- rast('data/processed/processed/tif/5m/creek_rad/rad_global_dtm_day15_5m.tif')
+plot(x)
 
+x <- rast('data/processed/processed/tif/5m/creek_rad/rad_global_dsm_day15_5m.tif')
+plot(x)
 
+files <- list.files('data/processed/processed/tif/rsun_test_outputs', pattern = '\\.tif$', full.names = T)
+dsm <- rast(files[9])
+dtm <- rast(files[10])
+plot(dsm)
+plot(dtm)
 
+# plot with fixed scale
+rng <- range(c(values(dsm), values(dtm)), na.rm = TRUE)
+plot(dsm, range = rng)
+plot(dtm, range = rng)
+
+# compare with chm
+chm.list <- lapply(chm.files, rast)
+chm <- do.call(mosaic, chm.list)
+plot(chm)
 
 
 # ------- Sensitivity analysis for albedo -------
@@ -252,7 +270,9 @@ diff.pct <- (res.1to50 - res.5to50) / res.1to50 * 100
 global(diff.pct, c('mean', 'min', 'max'), na.rm = TRUE)
 global(diff.pct, quantile, probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE)
 
-
+# ===========================================================================================
+# Compute Radiation Metrics from Rsun Outputs
+# ===========================================================================================
 
 
 
