@@ -19,7 +19,7 @@ sdd.stack <- rast(files)
 
 names(sdd.stack)
 
-#writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
+writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
 
 #sdd <- rast(file.path(dir, 'creek_master_500m.tif'))
 
@@ -30,7 +30,11 @@ files <- list.files(dir, 'creek', full.names = TRUE)
 files <- files[!grepl('master', files)]
 files
 swe.stack <- rast(files)
-# extents don't match, unable to be stacked :(
+names(swe.stack)
+writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
+
+
+# ----- if extents don't match, unable to be stacked :( -----
 
 # check extents
 for (f in files) {
@@ -40,75 +44,10 @@ for (f in files) {
 
 # files[x] # has different extent than others
 
-# ------ crop to limiting extent -------
-# ---- for multiple files ---- 
-rasters <- lapply(files, rast)
-ref <- rast(files[1]) # chose the raster that has the smallest extent
-
-# new output directory (temporary, but necessary because we can't just overwrite the same files)
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/cropped'
-dir.create(dir, recursive = T, showWarnings = F)
-
-# crop each raster to the new extent and write out 
-out.files <- vapply(files, function(f) {
-  r <- rast(f)
-  r.crop <- crop(r, ref)
-  
-  out <- file.path(dir, basename(f))
-  writeRaster(r.crop, out, overwrite = TRUE)
-  out
-}, character(1))
-
-# ---- if just needing to crop 1 file ----
-ref <- rast(files[1]) # chose the raster that has the smallest extent
-old <- rast(files[7]) # chose the raster that needs to be cropped
-new <- crop(old, ref) # crop
-
-# rename old file and move to old_versions folder so new file can be written
-old.file <- file.path(dir, 'creek_topo_50m.tif')
-new.file <- file.path(dir, 'old_versions/creek_topo_50m_before_crop.tif')
-file.rename(old.file, new.file)
-
-# write new raster
-writeRaster(new, file.path(dir, 'creek_topo_50m.tif'))
-
-# move old master file to old_version
-old.file <- file.path(dir, 'creek_master_50m.tif')
-new.file <- file.path(dir, 'old_versions/creek_master_50m_before_fixinglandcover_before_fixingsnowice_andNAs.tif')
-file.rename(old.file, new.file)
-
-# try stacking again
-files <- list.files(dir, pattern = '\\.tif$', full.names = T)
-files
-swe.stack <- rast(files) # now it works!
-
-# save swe.stack again
-writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
-
-
-
-# ----- clean up -----
-# some of this may not be necessary since doing the file.rename thing. 
-
-# go back to OG files
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
-files <- list.files(dir, 'creek', full.names = TRUE)
-
-old.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/old_versions'
-
-moved.files <- vapply(files, function(f) {
-  base <- file_path_sans_ext(basename(f))
-  new.name <- paste0(base, '_before_crop.tif')
-  new.path <- file.path(old.dir, new.name)
-  
-  file.rename(f, new.path)
-  new.path
-}, character(1))
-
-
-
-
-
+# crop to limiting extent
+# for multiple files 
+# if just needing to crop 1 file 
+# clean up 
 # ===========================================================================================
 # convert to df and filter
 # ===========================================================================================

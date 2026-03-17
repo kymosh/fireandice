@@ -331,54 +331,41 @@ writeRaster(accum, file.path(dir, 'rad_canopy_reduction_accum_5m.tif'))
 writeRaster(melt, file.path(dir, 'rad_canopy_reduction_melt_5m.tif'))
 
 
-# ------ resample to 452m to match SDD ------
+# ------ resample to match SDD and SWE ------
 
-# 500m dir
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
-
-# 500m template
-template <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/creek_sdd_500m.tif')
-
-# resample 
-accum.500m <- exact_resample(accum, template, fun = 'mean')
-melt.500m <- exact_resample(melt, template, fun = 'mean')
-
-# write
-writeRaster(accum.500m, file.path(dir, 'creek_radiation_reduction_accum_500m.tif'), overwrite = T)
-writeRaster(melt.500m, file.path(dir, 'creek_radiation_reduction_melt_500m.tif'), overwrite = T)
-
-# ----- resample to 50m to match swe ------
-
-# 50m dir
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
-
-# 50m template
-template <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/creek_swe_50m.tif')
-
-# resample 
-accum.50m <- exact_resample(accum, template, fun = 'mean')
-melt.50m <- exact_resample(melt, template, fun = 'mean')
-
-# write
-writeRaster(accum.50m, file.path(dir, 'creek_radiation_reduction_accum_50m.tif'), overwrite = T)
-writeRaster(melt.50m, file.path(dir, 'creek_radiation_reduction_melt_50m.tif'), overwrite = T)
-
-
-
-
-
-
-
-
-
-
-# renaming files
-# shouldn't keep needing to do this 
-files <- list.files(dir, pattern = 'rad_diff_', full.names = T)
-
-for (f in files) {
-  new.name <- sub('rad_diff_', 'rad_reduction_', basename(f))
-  file.rename(f, file.path(dir, new.name))
+resample_rad <- function(r, season, template.path) {
+  
+  # read template
+  template <- rast(template.path)
+  out.dir <- dirname(template.path) # extract out.dir from template file
+  res <- gsub('.*_(\\d+m)\\.tif$', '\\1', basename(template.path))  # extract res from template file name
+  
+  # resample 
+  r.out <- exact_resample(r, template, fun = 'mean')
+  
+  # rename layer
+  names(r.out) <- paste0('rad_canopy_reduction_', season)
+  
+  # output file name
+  out.name <- paste0('creek_radiation_reduction_', season, '_', res, '.tif')
+  
+  # write
+  writeRaster(r.out, file.path(out.dir, out.name), overwrite = T)
+  
+  return(r.out)
 }
+
+# setup
+template.path.500 <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/creek_sdd_500m.tif'
+template.path.50 <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/creek_swe_50m.tif'
+
+# run function for each season and resolution
+accum.500m <- resample_rad(accum, 'accum', template.path.500)
+accum.50m <- resample_rad(accum, 'accum', template.path.50)
+
+melt.500m <- resample_rad(melt, 'melt', template.path.500)
+melt.50m <- resample_rad(melt, 'melt', template.path.50)
+
+
 
 
