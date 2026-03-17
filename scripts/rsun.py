@@ -73,7 +73,7 @@ def main():
             # define output file paths for the radiation maps
             glob_file = os.path.join(p.out_dir, f'rad_global_{p.surface}_day{day}_{p.res}m.tif') 
             beam_file = os.path.join(p.out_dir, f'rad_beam_{p.surface}_day_{day}_{p.res}m.tif')
-            diff_file = os.path.join(p.out_dir, f'rad_diff_{p.surface}_day{day}_{p.res}m.tif')
+            diff_file = os.path.join(p.out_dir, f'rad_diffuse_{p.surface}_day{day}_{p.res}m.tif')
 
             # export the radiation maps to GeoTIFFs
             gs.run_command(
