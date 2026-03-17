@@ -274,23 +274,33 @@ global(diff.pct, quantile, probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE)
 # Compute Radiation Metrics from Rsun Outputs
 # ===========================================================================================
 
+dir <- 'data/processed/processed/tif/5m/creek_rad' 
+days <- c(15, 46, 74, 105, 135, 166, 349) # days of year for which we have Rsun outputs
 
+# compute difference and ratio between dtm and dsm for each day and write output
+for (each in days) {
+  
+  dtm.file <- list.files(dir, pattern = paste0('^rad_global_dtm_day', each, '_5m\\.tif$'), full.names = T)
+  dsm.file <- list.files(dir, pattern = paste0('^rad_global_dsm_day', each, '_5m\\.tif$'), full.names = T)
+  
+  dtm <- rast(dtm.file)
+  dsm <- rast(dsm.file)
+  
+  diff <- dtm - dsm
+  ratio <- dsm / dtm
+  
+  output.diff <- file.path(dir, paste0('rad_diff_day', each, '_5m.tif'))
+  output.ratio <- file.path(dir, paste0('rad_ratio_day', each, '_5m.tif'))
+  
+  writeRaster(diff, output.diff, overwrite = T)
+  writeRaster(ratio, output.ratio, overwrite = T)
+  
+}
 
+diff <- rast('data/processed/processed/tif/5m/creek_rad/rad_diff_day15_5m.tif')
+ratio <- rast('data/processed/processed/tif/5m/creek_rad/rad_ratio_day15_5m.tif')
+plot(diff)
+plot(ratio)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+summary(values(diff))
+summary(values(ratio))
