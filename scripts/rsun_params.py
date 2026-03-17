@@ -30,7 +30,7 @@ slope_name = f'{surface}_slope' # name of the slope raster
 aspect_name = f'{surface}_aspect' # name of the aspect raster
 
 res = 5
-days = [15] # start with just one day for testing, then add more to the list
+days = [349, 46, 74, 105, 135, 166] # start with just one day for testing, then add more to the list
 step = 0.5
 linke_value = 1.8
 albedo_value = 0.6
