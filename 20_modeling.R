@@ -4,8 +4,9 @@ lapply(packages, library, character.only = T)
 
 # get dataframe
 df <- readRDS('data/processed/processed/rds/creek_long_df_50m.rds')
+df.wide <- readRDS('data/processed/processed/rds/creek_df_50m.rds')
 
-
+head(df)
 
 
 # ---------------- EDA ---------------------------------------------------------
