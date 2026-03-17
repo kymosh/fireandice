@@ -1,4 +1,4 @@
-packages <- c('dplyr', 'tidyr', 'tools', 'terra')
+packages <- c('dplyr', 'tidyr', 'tools', 'exactextractr', 'terra')
 lapply(packages, library, character.only = T)
 
 # ===========================================================================================
@@ -274,10 +274,12 @@ global(diff.pct, quantile, probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE)
 # Compute Radiation Metrics from Rsun Outputs
 # ===========================================================================================
 
-dir <- 'data/processed/processed/tif/5m/creek_rad' 
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/5m/creek_rad' 
+#dir <- 'data/processed/processed/tif/5m/creek_rad' 
+
 days <- c(15, 46, 74, 105, 135, 166, 349) # days of year for which we have Rsun outputs
 
-# compute difference and ratio between dtm and dsm for each day and write output
+# ----- compute difference between dtm and dsm for each day and write output -----
 for (each in days) {
   
   dtm.file <- list.files(dir, pattern = paste0('^rad_global_dtm_day', each, '_5m\\.tif$'), full.names = T)
@@ -287,20 +289,96 @@ for (each in days) {
   dsm <- rast(dsm.file)
   
   diff <- dtm - dsm
-  ratio <- dsm / dtm
+  diff[diff < 0] <- 0 # set negative values to 0, since dsm must have equal or higher radiation than dtm
   
-  output.diff <- file.path(dir, paste0('rad_diff_day', each, '_5m.tif'))
-  output.ratio <- file.path(dir, paste0('rad_ratio_day', each, '_5m.tif'))
+  output <- file.path(dir, paste0('rad_canopy_reduction_day', each, '_5m.tif'))
   
-  writeRaster(diff, output.diff, overwrite = T)
-  writeRaster(ratio, output.ratio, overwrite = T)
+  writeRaster(diff, output, overwrite = T)
   
 }
 
-diff <- rast('data/processed/processed/tif/5m/creek_rad/rad_diff_day15_5m.tif')
-ratio <- rast('data/processed/processed/tif/5m/creek_rad/rad_ratio_day15_5m.tif')
+# check 
+diff <- rast(file.path(dir, 'rad_canopy_reduction_day15_5m.tif'))
 plot(diff)
-plot(ratio)
-
 summary(values(diff))
-summary(values(ratio))
+hist(values(diff))
+
+
+# ----- compute accumulation/melt metric -----
+
+files <- list.files(dir, pattern = 'rad_canopy_reduction_day', full.names = T)
+
+# order files sequentially by day
+days <- as.numeric(gsub('.*day|_5m\\.tif', '', basename(files)))
+ord <- order(days)
+files <- files[ord]
+days <- days[ord]
+
+# read in rasters
+dec <- rast(files[7])
+jan <- rast(files[1])
+feb <- rast(files[2])
+mar <- rast(files[3])
+apr <- rast(files[4])
+may <- rast(files[5])
+jun <- rast(files[6])
+
+# calculate weighted mean for each season
+accum <- ((dec * 31) + (jan * 31) + (feb * 28) + (mar * 31)) / sum(31, 31, 28, 31)
+melt <- ((apr * 30) + (may * 31) + (jun * 30)) / sum(30, 31, 30)
+
+writeRaster(accum, file.path(dir, 'rad_canopy_reduction_accum_5m.tif'))
+writeRaster(melt, file.path(dir, 'rad_canopy_reduction_melt_5m.tif'))
+
+
+# ------ resample to 452m to match SDD ------
+
+# 500m dir
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+
+# 500m template
+template <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/creek_sdd_500m.tif')
+
+# resample 
+accum.500m <- exact_resample(accum, template, fun = 'mean')
+melt.500m <- exact_resample(melt, template, fun = 'mean')
+
+# write
+writeRaster(accum.500m, file.path(dir, 'creek_radiation_reduction_accum_500m.tif'), overwrite = T)
+writeRaster(melt.500m, file.path(dir, 'creek_radiation_reduction_melt_500m.tif'), overwrite = T)
+
+# ----- resample to 50m to match swe ------
+
+# 50m dir
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+
+# 50m template
+template <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/creek_swe_50m.tif')
+
+# resample 
+accum.50m <- exact_resample(accum, template, fun = 'mean')
+melt.50m <- exact_resample(melt, template, fun = 'mean')
+
+# write
+writeRaster(accum.50m, file.path(dir, 'creek_radiation_reduction_accum_50m.tif'), overwrite = T)
+writeRaster(melt.50m, file.path(dir, 'creek_radiation_reduction_melt_50m.tif'), overwrite = T)
+
+
+
+
+
+
+
+
+
+
+# renaming files
+# shouldn't keep needing to do this 
+files <- list.files(dir, pattern = 'rad_diff_', full.names = T)
+
+for (f in files) {
+  new.name <- sub('rad_diff_', 'rad_reduction_', basename(f))
+  file.rename(f, file.path(dir, new.name))
+}
+
+
