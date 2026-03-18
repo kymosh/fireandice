@@ -5,11 +5,9 @@ lapply(packages, library, character.only = T)
 # Create master raster
 # ===========================================================================================
 
-
 # read in all raster stacks and combine into single one for modeling
 
 # ----- 500m (452m) master-raster -----
-# this is just a test so far to see if everthing matches and is able to be stacked. 
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
 files <- list.files(dir, 'creek', full.names = TRUE)
 files <- files[!grepl('master', files)]
@@ -161,9 +159,26 @@ df.long.0 <- left_join(df.long.0, clim.long, by = c('cell', 'wy'))
 
 range(df.long.0$wy, na.rm = TRUE)
 
+remove <- c(
+  'Undesirable',
+  'Temperate_subpolar_needleleaf_forest',
+  'Temperate_subpolar_broadleaf_deciduous_forest',
+  'Mixed_forest',
+  'Temperate_subpolar_shrubland',
+  'Temperate_subpolar_grassland',
+  'Wetland',
+  'topo_hli',
+  'topo_tpi2010',
+  'forest_type',
+  'forest_dom_frac'
+)
+
 df.long <- df.long.0 %>%
   select(-starts_with('clim')) %>% # get rid up duplicate clim variables
-  select(-starts_with('swe_20')) # get rid of monthly swe data
+  select(-starts_with('swe_20')) %>% # get rid of monthly swe data
+  select(-all_of(remove)) # remove landcover and topo cols that we don't need anymore
+
+names(df.long)
 
 saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
 
@@ -179,7 +194,7 @@ df.long.0 <- df.500.f %>%
   )
 
 
-df.long.0$wy <- as.numeric(clim.long$wy)
+df.long.0$wy <- as.numeric(gsub('swe_peak_wy|_500m', '', df.long.0$wy))
 
 # pivot long for climate variables
 clim.long <- df.500.f %>%
@@ -210,12 +225,26 @@ df.long.0 <- left_join(df.long.0, sdd.long, by = c('cell', 'wy'))
 
 df.long.0 <- left_join(df.long.0, clim.long, by = c('cell', 'wy'))
 
+remove <- c(
+  'Undesirable',
+  'Temperate_subpolar_needleleaf_forest',
+  'Temperate_subpolar_broadleaf_deciduous_forest',
+  'Mixed_forest',
+  'Temperate_subpolar_shrubland',
+  'Temperate_subpolar_grassland',
+  'Wetland',
+  'topo_hli',
+  'topo_tpi2010',
+  'forest_type',
+  'forest_dom_frac'
+)
+
 df.long <- df.long.0 %>%
   select(-starts_with('clim')) %>% # remove duplicate clim cols
   select(-starts_with('swe_20')) %>% # remove duplicate swe cols
   select(-starts_with('sdd_')) %>% # remove duplicate sdd cols
+  select(-all_of(remove)) %>% # remove landcover and topo cols that we don't need anymore
   mutate(cbibc = ifelse(wy == 2020 & !is.na(cbibc), 0, cbibc)) # change cbibc in 2020 to 0 because wy2020 was before the creek fire
-
 
 saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_500m.rds')
 names(df.long)
