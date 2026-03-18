@@ -1,12 +1,20 @@
 packages <- c('tidymodels', 'dplyr', 'tidyr')
-install.packages(setdiff(packages, row.names(installed.packages())))
 lapply(packages, library, character.only = T)
 
 # get dataframe
-df <- readRDS('data/processed/processed/rds/creek_long_df_50m.rds')
-df.wide <- readRDS('data/processed/processed/rds/creek_df_50m.rds')
+df.50 <- readRDS('data/processed/processed/rds/creek_long_df_50m.rds')
+df.500 <- readRDS('data/processed/processed/rds/creek_long_df_500m.rds')
 
-head(df)
+
+
+
+
+
+
+
+
+
+
 
 
 # ---------------- EDA ---------------------------------------------------------
