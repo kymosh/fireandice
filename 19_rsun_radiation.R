@@ -274,66 +274,61 @@ global(diff.pct, quantile, probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE)
 # Compute Radiation Metrics from Rsun Outputs
 # ===========================================================================================
 
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/5m/creek_rad' 
-#dir <- 'data/processed/processed/tif/5m/creek_rad' 
-
-days <- c(15, 46, 74, 105, 135, 166, 349) # days of year for which we have Rsun outputs
-
-# ----- compute difference between dtm and dsm for each day and write output -----
-for (each in days) {
-  
-  dtm.file <- list.files(dir, pattern = paste0('^rad_global_dtm_day', each, '_5m\\.tif$'), full.names = T)
-  dsm.file <- list.files(dir, pattern = paste0('^rad_global_dsm_day', each, '_5m\\.tif$'), full.names = T)
-  
-  dtm <- rast(dtm.file)
-  dsm <- rast(dsm.file)
-  
-  diff <- dtm - dsm
-  diff[diff < 0] <- 0 # set negative values to 0, since dsm must have equal or higher radiation than dtm
-  
-  output <- file.path(dir, paste0('rad_canopy_reduction_day', each, '_5m.tif'))
-  
-  writeRaster(diff, output, overwrite = T)
-  
-}
-
-# check 
-diff <- rast(file.path(dir, 'rad_canopy_reduction_day15_5m.tif'))
-plot(diff)
-summary(values(diff))
-hist(values(diff))
-
-
 # ----- compute accumulation/melt metric -----
 
-files <- list.files(dir, pattern = 'rad_canopy_reduction_day', full.names = T)
+season_rad <- function(dir, surface) {
+  
+  files <- list.files(dir, pattern = paste0('^rad_global_', surface, '_day\\d+_5m\\.tif$'), full.names = TRUE)
 
-# order files sequentially by day
-days <- as.numeric(gsub('.*day|_5m\\.tif', '', basename(files)))
-ord <- order(days)
-files <- files[ord]
-days <- days[ord]
+  # order files sequentially by day
+  days <- as.numeric(gsub('.*day|_5m\\.tif', '', basename(files)))
+  ord <- order(days)
+  files <- files[ord]
+  days <- days[ord]
+  
+  # print files and days to check order
+  print(data.frame(
+    index = seq_along(files),
+    day = days,
+    file = basename(files)
+  ))
+  
+  # read in rasters
+  dec <- rast(files[7])
+  jan <- rast(files[1])
+  feb <- rast(files[2])
+  mar <- rast(files[3])
+  apr <- rast(files[4])
+  may <- rast(files[5])
+  jun <- rast(files[6])
+  
+  # calculate weighted mean for each season
+  accum <- ((dec * 31) + (jan * 31) + (feb * 28) + (mar * 31)) / sum(31, 31, 28, 31)
+  melt <- ((apr * 30) + (may * 31) + (jun * 30)) / sum(30, 31, 30)
+  
+  names(accum) <- paste0('rad_', surface, '_accum')
+  names(melt) <- paste0('rad_', surface, '_melt')
+  
+  writeRaster(accum, file.path(dir, paste0('rad_', surface, '_accum_5m.tif')), overwrite = TRUE)
+  writeRaster(melt, file.path(dir, paste0('rad_', surface, '_melt_5m.tif')), overwrite = TRUE)
+  
+  return(list(accum = accum, melt = melt))
+}
 
-# read in rasters
-dec <- rast(files[7])
-jan <- rast(files[1])
-feb <- rast(files[2])
-mar <- rast(files[3])
-apr <- rast(files[4])
-may <- rast(files[5])
-jun <- rast(files[6])
+# run function
 
-# calculate weighted mean for each season
-accum <- ((dec * 31) + (jan * 31) + (feb * 28) + (mar * 31)) / sum(31, 31, 28, 31)
-melt <- ((apr * 30) + (may * 31) + (jun * 30)) / sum(30, 31, 30)
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/5m/creek_rad' # from my comp
+#dir <- 'data/processed/processed/tif/5m/creek_rad'   # from processing comp
 
-writeRaster(accum, file.path(dir, 'rad_canopy_reduction_accum_5m.tif'))
-writeRaster(melt, file.path(dir, 'rad_canopy_reduction_melt_5m.tif'))
+dtm.rad <- season_rad(dir, 'dtm')
+dsm.rad <- season_rad(dir, 'dsm')
 
 
-# ------ resample to match SDD and SWE ------
+# ===========================================================================================
+# resample to match SDD and SWE
+# ===========================================================================================
 
-resample_rad <- function(r, season, template.path) {
+resample_rad <- function(r, season, surface, template.path) {
   
   # read template
   template <- rast(template.path)
@@ -344,13 +339,13 @@ resample_rad <- function(r, season, template.path) {
   r.out <- exact_resample(r, template, fun = 'mean')
   
   # rename layer
-  names(r.out) <- paste0('rad_canopy_reduction_', season)
+  names(r.out) <- paste0('rad_', surface, '_', season)
   
   # output file name
-  out.name <- paste0('creek_radiation_reduction_', season, '_', res, '.tif')
+  out.name <- paste0('creek_rad_', surface, '_', season, '_', res, '.tif')
   
   # write
-  writeRaster(r.out, file.path(out.dir, out.name), overwrite = T)
+  writeRaster(r.out, file.path(out.dir, out.name), overwrite = TRUE)
   
   return(r.out)
 }
@@ -359,13 +354,42 @@ resample_rad <- function(r, season, template.path) {
 template.path.500 <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/creek_sdd_500m.tif'
 template.path.50 <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/creek_swe_50m.tif'
 
-# run function for each season and resolution
-accum.500m <- resample_rad(accum, 'accum', template.path.500)
-accum.50m <- resample_rad(accum, 'accum', template.path.50)
+rad.list <- list(
+  dtm = dtm.rad,
+  dsm = dsm.rad
+)
 
-melt.500m <- resample_rad(melt, 'melt', template.path.500)
-melt.50m <- resample_rad(melt, 'melt', template.path.50)
+templates <- list(
+  '500m' = template.path.500,
+  '50m'  = template.path.50
+)
 
+# loop through surfaces, seasons, and resolutions to resample and save rasters
+for (surface in c('dtm', 'dsm')) {
+  for (season in c('accum', 'melt')) {
+    for (res in c('500m', '50m')) {
+      
+      r <- rad.list[[surface]][[season]]
+      template.path <- templates[[res]]
+      
+      resample_rad(
+        r = r,
+        season = season,
+        surface = surface,
+        template.path = template.path
+      )
+    }
+  }
+}
 
-
-
+# check
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek' 
+files <- list.files(dir, pattern = '^creek_rad_', full.names = TRUE)
+dsm.a <- rast(files[1]) 
+dsm.m <- rast(files[2]) 
+dtm.a <- rast(files[3]) 
+dtm.m <- rast(files[4]) 
+plot(dsm.a) 
+plot(dsm.m)
+plot(dtm.a)
+plot(dtm.m)
