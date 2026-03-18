@@ -13,14 +13,8 @@ files <- list.files(dir, 'creek', full.names = TRUE)
 files <- files[!grepl('master', files)]
 files
 sdd.stack <- rast(files)
-# it worked!
-
 names(sdd.stack)
-
 writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
-
-#sdd <- rast(file.path(dir, 'creek_master_500m.tif'))
-
 
 # ----- 50m master-raster -----
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
@@ -32,7 +26,7 @@ names(swe.stack)
 writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
 
 
-# ----- if extents don't match, unable to be stacked :( -----
+# ----- if extents don't match... -----
 
 # check extents
 for (f in files) {
@@ -40,28 +34,81 @@ for (f in files) {
   print(ext(r))
 }
 
-# files[x] # has different extent than others
+# crop to limiting extent 
+#  for multiple files 
+rasters <- lapply(files, rast)
+ref <- rast(files[1]) # chose the raster that has the smallest extent
 
-# crop to limiting extent
-# for multiple files 
+# new output directory (temporary, but necessary because we can't just overwrite the same files)
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/cropped'
+dir.create(dir, recursive = T, showWarnings = F)
+
+# crop each raster to the new extent and write out 
+out.files <- vapply(files, function(f) {
+  r <- rast(f)
+  r.crop <- crop(r, ref)
+  
+  out <- file.path(dir, basename(f))
+  writeRaster(r.crop, out, overwrite = TRUE)
+  out
+}, character(1))
+
 # if just needing to crop 1 file 
+ref <- rast(files[1]) # chose the raster that has the smallest extent
+old <- rast(files[7]) # chose the raster that needs to be cropped
+new <- crop(old, ref) # crop
+
+# rename old file and move to old_versions folder so new file can be written
+old.file <- file.path(dir, 'creek_topo_50m.tif')
+new.file <- file.path(dir, 'old_versions/creek_topo_50m_before_crop.tif')
+file.rename(old.file, new.file)
+
+# write new raster
+writeRaster(new, file.path(dir, 'creek_topo_50m.tif'))
+
+# move old master file to old_version
+old.file <- file.path(dir, 'creek_master_50m.tif')
+new.file <- file.path(dir, 'old_versions/creek_master_50m_before_fixinglandcover_before_fixingsnowice_andNAs.tif')
+file.rename(old.file, new.file)
+
+# try stacking again
+files <- list.files(dir, pattern = '\\.tif$', full.names = T)
+files
+swe.stack <- rast(files) # now it works!
+
+# save swe.stack again
+writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
+
+
+
 # clean up 
+# some of this may not be necessary since doing the file.rename thing. 
+# go back to OG files
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+files <- list.files(dir, 'creek', full.names = TRUE)
+
+old.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/old_versions'
+
+moved.files <- vapply(files, function(f) {
+  base <- file_path_sans_ext(basename(f))
+  new.name <- paste0(base, '_before_crop.tif')
+  new.path <- file.path(old.dir, new.name)
+  
+  file.rename(f, new.path)
+  new.path
+}, character(1))
 # ===========================================================================================
-# convert to df and filter
+# convert to df, filter, and pivot long
+# ===========================================================================================
+
+# ===========================================================================================
+# setup
 # ===========================================================================================
 
 dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
 
-r.50 <- rast(file.path(dir, '50m/creek/creek_master_50m.tif'))
-r.500 <- rast(file.path(dir, '500m/creek/creek_master_500m.tif'))
-
-# convert to DF
-df.50 <- as.data.frame(r.50, cells = T)
-df.500 <- as.data.frame(r.500, cells = T)
-
-# filter out undesirable forest type * before pivoting *
 forest.cols <- c(
-  'Undesirable', # barren land, urban/built-up, water, snow/ice
+  'Undesirable',
   'Temperate_subpolar_needleleaf_forest',
   'Temperate_subpolar_broadleaf_deciduous_forest',
   'Mixed_forest',
@@ -70,96 +117,7 @@ forest.cols <- c(
   'Wetland'
 )
 
-df.50.f <- df.50 %>%
-  
-  # --- create QC columns to evaluate landcover validity ---
-  mutate(
-    lc.all.na = rowSums(is.na(across(all_of(forest.cols)))) == length(forest.cols), # identify pixels that don't have any landcover classification
-    lc.sum = rowSums(across(all_of(forest.cols)), na.rm = TRUE) # for each pixel, sum of all % landcover classes (should be ~1)
-  ) %>%
-  
-  # ---- remove pixels that are not valid landcover ----
-  filter(
-    !lc.all.na, # remove pixels outside of study area
-    lc.sum > 0.25 # remove rare pixels where landcover fractions sum to 0
-  ) %>%
-  
-  # ---- remove pixels where >30% is classified as "undesirable" landcover class
-  filter(Undesirable <= 0.30) %>% 
-  
-  # ---- assign dominant forest type for each pixel ----
-  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')],
-         # --- convert to factor for modeling ---
-         forest_type = as.factor(forest_type),
-         forest_dom_frac = do.call(pmax, c(across(all_of(forest.cols)), na.rm = TRUE))
-         ) %>%
-  # drop QAQC columns
-  select(-lc.all.na, -lc.sum)
-
-
-df.500.f <- df.500 %>%
-  
-  # --- create QC columns to evaluate landcover validity ---
-  mutate(
-    lc.all.na = rowSums(is.na(across(all_of(forest.cols)))) == length(forest.cols), # identify pixels that don't have any landcover classification
-    lc.sum = rowSums(across(all_of(forest.cols)), na.rm = TRUE) # for each pixel, sum of all % landcover classes (should be ~1)
-  ) %>%
-  
-  # ---- remove pixels that are not valid landcover ----
-  filter(
-  !lc.all.na, # remove pixels outside of study area
-  lc.sum > .25 # remove rare pixels where landcover fractions sum to 0
-  ) %>%
-  
-  # ---- remove pixels where >30% is classified as "undesirable" landcover class
-  filter(Undesirable <= 0.30) %>% 
-  
-  # ---- assign dominant forest type for each pixel ----
-  mutate(forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'random')],
-       # --- convert to factor for modeling ---
-       forest_type = as.factor(forest_type),
-       forest_dom_frac = do.call(pmax, c(across(all_of(forest.cols)), na.rm = TRUE))
-       ) %>%
-  # drop QAQC columns
-  select(-lc.all.na, -lc.sum)
-
-# ===========================================================================================
-# pivot to long
-# ===========================================================================================
-
-# ----- 50m raster -----
-
-# pivot long for swe
-df.long.0 <- df.50.f %>%
-  pivot_longer(
-    cols = starts_with('swe_peak_wy'),
-    names_to = 'wy',
-    values_to = 'swe_peak' 
-  )
-
-# clean wy column
-df.long.0$wy <- as.numeric(gsub('swe_peak_wy', '', df.long.0$wy))
-
-
-# pivot long for climate variables
-clim.long <- df.50.f %>%
-  select(cell, starts_with('clim')) %>%
-  pivot_longer(
-    cols = -cell,
-    names_to = c('.value', 'wy'),
-    names_pattern = 'clim_(.*)_wy(\\d+)'
-  )
-
-clim.long$wy <- as.numeric(clim.long$wy)
-clim.long <- clim.long[clim.long$wy >= 2020, ]
-names(clim.long)[names(clim.long) == 'swe'] <- 'clim_swe' # rename climate swe for clarity
-
-# join dataframes
-df.long.0 <- left_join(df.long.0, clim.long, by = c('cell', 'wy'))
-
-range(df.long.0$wy, na.rm = TRUE)
-
-remove <- c(
+remove.cols <- c(
   'Undesirable',
   'Temperate_subpolar_needleleaf_forest',
   'Temperate_subpolar_broadleaf_deciduous_forest',
@@ -173,81 +131,175 @@ remove <- c(
   'forest_dom_frac'
 )
 
-df.long <- df.long.0 %>%
-  select(-starts_with('clim')) %>% # get rid up duplicate clim variables
-  select(-starts_with('swe_20')) %>% # get rid of monthly swe data
-  select(-all_of(remove)) # remove landcover and topo cols that we don't need anymore
-
-names(df.long)
-
-saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
-
-
-# ----- 500m raster -----
-
-# pivot long for swe
-df.long.0 <- df.500.f %>%
-  pivot_longer(
-    cols = starts_with('swe_peak_wy'),
-    names_to = 'wy',
-    values_to = 'swe_peak' 
-  )
-
-
-df.long.0$wy <- as.numeric(gsub('swe_peak_wy|_500m', '', df.long.0$wy))
-
-# pivot long for climate variables
-clim.long <- df.500.f %>%
-  select(cell, starts_with('clim')) %>%
-  pivot_longer(
-    cols = -cell,
-    names_to = c('.value', 'wy'),
-    names_pattern = 'clim_(.*)_wy(\\d+)'
-  )
-
-clim.long$wy <- as.numeric(clim.long$wy)
-clim.long <- clim.long[clim.long$wy >= 2020, ]
-names(clim.long)[names(clim.long) == 'swe'] <- 'clim_swe'
-
-# pivot long for sdd
-sdd.long <- df.500.f %>%
-  select(cell, matches('^sdd_wy\\d{4}$')) %>%
-  pivot_longer(
-    cols = -cell,
-    names_to = 'wy',
-    values_to = 'sdd'
-  )
-
-sdd.long$wy <- as.numeric(gsub('sdd_wy', '', sdd.long$wy))
-
-# join back in to df.long
-df.long.0 <- left_join(df.long.0, sdd.long, by = c('cell', 'wy'))
-
-df.long.0 <- left_join(df.long.0, clim.long, by = c('cell', 'wy'))
-
-remove <- c(
-  'Undesirable',
-  'Temperate_subpolar_needleleaf_forest',
-  'Temperate_subpolar_broadleaf_deciduous_forest',
-  'Mixed_forest',
-  'Temperate_subpolar_shrubland',
-  'Temperate_subpolar_grassland',
-  'Wetland',
-  'topo_hli',
-  'topo_tpi2010',
-  'forest_type',
-  'forest_dom_frac'
+keep.canopy <- c(
+  'fd_fractal_dim',
+  'gap_gap_pct',
+  'cover_ground_frac',
+  'gap_dist_to_canopy_mean',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zentropy',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zpcum6',
+  'ht_zpcum9'
 )
 
-df.long <- df.long.0 %>%
-  select(-starts_with('clim')) %>% # remove duplicate clim cols
-  select(-starts_with('swe_20')) %>% # remove duplicate swe cols
-  select(-starts_with('sdd_')) %>% # remove duplicate sdd cols
-  select(-all_of(remove)) %>% # remove landcover and topo cols that we don't need anymore
-  mutate(cbibc = ifelse(wy == 2020 & !is.na(cbibc), 0, cbibc)) # change cbibc in 2020 to 0 because wy2020 was before the creek fire
 
-saveRDS(df.long, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_500m.rds')
-names(df.long)
+
+# ===========================================================================================
+# helper functions
+# ===========================================================================================
+
+filter_landcover <- function(df, forest.cols, lc.sum.min = 0.25, undesirable.max = 0.30) {
+  
+  df %>%
+    mutate(
+      lc.all.na = rowSums(is.na(across(all_of(forest.cols)))) == length(forest.cols),
+      lc.sum = rowSums(across(all_of(forest.cols)), na.rm = TRUE)
+    ) %>%
+    filter(
+      !lc.all.na,
+      lc.sum > lc.sum.min,
+      Undesirable <= undesirable.max
+    ) %>%
+    mutate(
+      forest_type = forest.cols[max.col(across(all_of(forest.cols)), ties.method = 'first')],
+      forest_type = as.factor(forest_type),
+      forest_dom_frac = do.call(pmax, c(across(all_of(forest.cols)), na.rm = TRUE))
+    ) %>%
+    select(-lc.all.na, -lc.sum)
+}
+
+pivot_climate_long <- function(df) {
+  
+  clim.long <- df %>%
+    select(cell, starts_with('clim_')) %>%
+    pivot_longer(
+      cols = -cell,
+      names_to = c('.value', 'wy'),
+      names_pattern = 'clim_(.*)_wy(\\d+)'
+    )
+  
+  clim.long$wy <- as.numeric(clim.long$wy)
+  clim.long <- clim.long[clim.long$wy >= 2020, ]
+  names(clim.long)[names(clim.long) == 'swe'] <- 'clim_swe'
+  
+  clim.long
+}
+
+build_long_50m <- function(df, forest.cols, remove.cols, keep.canopy) {
+  
+  canopy.cols <- names(df)[grepl('^(cover_|gap_|ht_|fd_)', names(df))]
+  drop.canopy <- setdiff(canopy.cols, keep.canopy)
+  
+  swe.long <- df %>%
+    pivot_longer(
+      cols = starts_with('swe_peak_wy'),
+      names_to = 'wy',
+      values_to = 'swe_peak'
+    )
+  
+  swe.long$wy <- as.numeric(gsub('swe_peak_wy', '', swe.long$wy))
+  
+  clim.long <- pivot_climate_long(df)
+  
+  df.long <- left_join(swe.long, clim.long, by = c('cell', 'wy')) %>%
+    select(
+      -starts_with('clim_'),
+      -matches('^swe_\\d{8}$'),
+      -all_of(remove.cols),
+      -all_of(drop.canopy)
+    )
+  
+  df.long
+}
+
+build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy) {
+  
+  names.clean <- gsub('_500m$', '', names(df))
+  canopy.cols <- names.clean[grepl('^(cover_|gap_|ht_|fd_)', names.clean)]
+  drop.canopy <- setdiff(canopy.cols, keep.canopy)
+  
+  swe.long <- df %>%
+    pivot_longer(
+      cols = starts_with('swe_peak_wy'),
+      names_to = 'wy',
+      values_to = 'swe_peak'
+    )
+  
+  swe.long$wy <- as.numeric(gsub('swe_peak_wy|_500m', '', swe.long$wy))
+  
+  clim.long <- pivot_climate_long(df)
+  
+  sdd.long <- df %>%
+    select(cell, matches('^sdd_wy\\d{4}$')) %>%
+    pivot_longer(
+      cols = -cell,
+      names_to = 'wy',
+      values_to = 'sdd'
+    )
+  
+  sdd.long$wy <- as.numeric(gsub('sdd_wy', '', sdd.long$wy))
+  
+  df.long <- swe.long %>%
+    left_join(sdd.long, by = c('cell', 'wy')) %>%
+    left_join(clim.long, by = c('cell', 'wy')) %>%
+    rename_with(~ gsub('_500m$', '', .x)) %>%
+    select(
+      -starts_with('clim_'),
+      -matches('^swe_\\d{8}$'),
+      -starts_with('sdd_'),
+      -all_of(remove.cols),
+      -all_of(drop.canopy)
+    ) %>%
+    mutate(
+      cbibc = ifelse(wy == 2020 & !is.na(cbibc), 0, cbibc)
+    )
+  
+  df.long
+}
+
+
+
+# ===========================================================================================
+# read rasters and convert to dfs
+# ===========================================================================================
+
+r.50 <- rast(file.path(dir, '50m/creek/creek_master_50m.tif'))
+r.500 <- rast(file.path(dir, '500m/creek/creek_master_500m.tif'))
+
+df.50 <- as.data.frame(r.50, cells = TRUE)
+df.500 <- as.data.frame(r.500, cells = TRUE)
+
+
+
+# ===========================================================================================
+# filter landcover
+# ===========================================================================================
+
+df.50.f <- filter_landcover(df.50, forest.cols)
+df.500.f <- filter_landcover(df.500, forest.cols)
+
+# ===========================================================================================
+# pivot long
+# ===========================================================================================
+
+df.long.50 <- build_long_50m(df.50.f, forest.cols, remove.cols, keep.canopy)
+df.long.500 <- build_long_500m(df.500.f, forest.cols, remove.cols, keep.canopy)
+
+# check
+names(df.long.50)
+names(df.long.500)
+
+# ===========================================================================================
+# save
+# ===========================================================================================
+
+saveRDS(df.long.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
+saveRDS(df.long.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_500m.rds')
+
+
 # ----- exploration -----
 
 # -- visualize peak swe by year ----
