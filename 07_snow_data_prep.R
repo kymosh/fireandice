@@ -23,15 +23,17 @@ res(sdd.32611)
 # reproject SDD to 32611 and mask to study area
 
 in.dir <- here('data', 'raw', 'SDD')
-out.dir <- here('data', 'processed', 'processed', 'tif', '500m')
-dem.500 <- rast(here(out.dir, 'creek_dem_500m_1524.tif'))
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/snow_metrics'
+template <- rast(here(out.dir, 'creek_dem_500m_1524.tif'))
+template <- rast(file.path(out.dir, 'creek_sdd_wy2021_32611_1524.tif'))
 
 sdd.files <- list.files(in.dir, pattern = '^creek_sdd.*\\.tif$', full.names = T)
+sdd.files <- list.files(in.dir, pattern = '^creek_sdd_wy2024|2025.*\\.tif$', full.names = T)
 
 for (f in sdd.files) {
   r <- rast(f)
-  r.32611 <- project(r, 'EPSG:32611', method = 'near')
-  r.32611.masked <- mask(r.32611, dem.500)
+  r.32611 <- project(r, template, method = 'near')
+  r.32611.masked <- mask(r.32611, template)
   
   new.name <- sub('\\.tif$', '_32611_1524.tif', basename(f))
   out.name <- file.path(out.dir, new.name)
@@ -39,13 +41,18 @@ for (f in sdd.files) {
   writeRaster(r.32611.masked, out.name, overwrite = T)
 }
 
-test <- rast(here(out.dir, 'creek_sdd_wy2023_32611_1524.tif'))
+test <- rast(file.path(out.dir, 'creek_sdd_wy2024_32611_1524.tif'))
 plot(test)
-
-
+res(test)
+crs(test, describe = T)$code
 sdd.creek.5000 <- mask(sdd.creek, dem.5000)
 
-
+# copy results to backup
+files.out <- list.files(out.dir, pattern = 'creek_sdd_wy2024|2025_32611_1524\\.tif$', full.names = TRUE)
+dest1 <- 'C:/Users/km220416/Documents/Fire_Snow_Dynamics/data/processed/processed/tif/500m/creek'
+dest2 <- 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/500m/creek/snow_metrics'
+file.copy(files.out, dest1, overwrite = TRUE)
+file.copy(files.out, dest2, overwrite = TRUE)
 
 
 ##### rename SWE files that are clipped to 5000 to reflect that so I can change them to the correct elevations withough losing them

@@ -328,12 +328,13 @@ dsm.rad <- season_rad(dir, 'dsm')
 # resample to match SDD and SWE
 # ===========================================================================================
 
-resample_rad <- function(r, season, surface, template.path) {
+resample_rad <- function(r, season, surface, template.path, out.dir) {
   
   # read template
   template <- rast(template.path)
-  out.dir <- dirname(template.path) # extract out.dir from template file
-  res <- gsub('.*_(\\d+m)\\.tif$', '\\1', basename(template.path))  # extract res from template file name
+  
+  # extract resolution from template name
+  res <- gsub('.*_(\\d+m)\\.tif$', '\\1', basename(template.path))
   
   # resample 
   r.out <- exact_resample(r, template, fun = 'mean')
@@ -344,6 +345,9 @@ resample_rad <- function(r, season, surface, template.path) {
   # output file name
   out.name <- paste0('creek_rad_', surface, '_', season, '_', res, '.tif')
   
+  # ensure output directory exists
+  dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
+  
   # write
   writeRaster(r.out, file.path(out.dir, out.name), overwrite = TRUE)
   
@@ -353,6 +357,10 @@ resample_rad <- function(r, season, surface, template.path) {
 # setup
 template.path.500 <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/creek_sdd_500m.tif'
 template.path.50 <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/creek_swe_50m.tif'
+
+out.dirs <- list(
+  '500m' = 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/other_metrics',
+  '50m'  = 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/other_metrics')
 
 rad.list <- list(
   dtm = dtm.rad,
@@ -376,14 +384,32 @@ for (surface in c('dtm', 'dsm')) {
         r = r,
         season = season,
         surface = surface,
-        template.path = template.path
+        template.path = template.path,
+        out.dir = out.dir
       )
     }
   }
 }
 
+### not sure if this really works yet but would be nice
+# save as raster stack and copy to backup
+for (res in c('500m', '50m')) {
+  
+  src.dir <- out.dirs[[res]]
+  backup.dir <- backup.dirs[[res]]
+  
+  # list files
+  files <- list.files(src.dir, pattern = '\\.tif$', full.names = TRUE)
+  
+  # ensure backup dir exists
+  dir.create(backup.dir, recursive = TRUE, showWarnings = FALSE)
+  
+  # copy
+  file.copy(files, backup.dir, overwrite = TRUE)
+}
+
 # check
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek' 
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/other_metrics' 
 files <- list.files(dir, pattern = '^creek_rad_', full.names = TRUE)
 dsm.a <- rast(files[1]) 
 dsm.m <- rast(files[2]) 
@@ -393,3 +419,25 @@ plot(dsm.a)
 plot(dsm.m)
 plot(dtm.a)
 plot(dtm.m)
+
+
+
+# ----- Combine into raster stack and save -----
+res <- c('500m', '50m')
+
+for (each in res) {
+  in.dir <- paste0('J:/Fire_Snow/fireandice/data/processed/processed/tif/',each, '/creek/other_metrics') 
+  out.dir <- paste0('J:/Fire_Snow/fireandice/data/processed/processed/tif/',each, '/creek' )
+  files <- list.files(in.dir, pattern = '^creek_rad_', full.names = TRUE)
+  rad.stack <- rast(files)
+  out.name <- paste0('creek_rad_', each, '.tif')
+  writeRaster(rad.stack, file.path(out.dir, out.name), overwrite = TRUE)
+}
+
+# copy to backup
+for (each in res) {
+  in.dir <- paste0('J:/Fire_Snow/fireandice/data/processed/processed/tif/',each, '/creek') 
+  out.dir <- paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/',each, '/creek' )
+  file <- paste0('creek_rad_', each, '.tif')
+  file.copy(file.path(in.dir, file), out.dir, overwrite = TRUE)
+}
