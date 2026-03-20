@@ -15,6 +15,8 @@ plot(is.na(dem), main = 'NA cells in DEM')
 # calculate variables
 slope.rad <- terrain(dem, v = 'slope', unit = 'radians')
 aspect.rad <- terrain(dem, v = 'aspect', unit = 'radians')
+aspect.sin <- sin(aspect.rad)
+aspect.cos <- cos(aspect.rad)
 hli <- hli(dem) #uses McCune(2007) calculation for hli
 tpi150 <- tpi(dem, win = "circle", s = 150)
 tpi510 <- tpi(dem, win = "circle", s = 510)
@@ -32,6 +34,8 @@ plot(tpi2010)
 variables <- list(
   slope  = slope.rad,
   aspect = aspect.rad,
+  aspect.sin = aspect.sin,
+  aspect.cos = aspect.cos,
   hli    = hli,
   tpi150 = tpi150,
   tpi510 = tpi510,
