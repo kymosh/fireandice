@@ -105,8 +105,6 @@ moved.files <- vapply(files, function(f) {
 # setup
 # ===========================================================================================
 
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
-
 forest.cols <- c(
   'Undesirable',
   'Temperate_subpolar_needleleaf_forest',
@@ -266,6 +264,8 @@ build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy) {
 # read rasters and convert to dfs
 # ===========================================================================================
 
+dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
+
 r.50 <- rast(file.path(dir, '50m/creek/creek_master_50m.tif'))
 r.500 <- rast(file.path(dir, '500m/creek/creek_master_500m.tif'))
 
@@ -297,6 +297,10 @@ names(df.long.500)
 
 saveRDS(df.long.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
 saveRDS(df.long.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_500m.rds')
+
+# save to backup
+saveRDS(df.long.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m.rds')
+saveRDS(df.long.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_500m.rds')
 
 
 # ----- exploration -----
