@@ -50,9 +50,8 @@ plot(tpi2010)
 
 variables <- list(
   slope  = slope.rad,
-  aspect = aspect.rad,
-  aspect.sin = aspect.sin,
-  aspect.cos = aspect.cos,
+  aspect_sin = aspect.sin,
+  aspect_cos = aspect.cos,
   tpi150 = tpi150,
   tpi510 = tpi510,
   tpi1200 = tpi1200,

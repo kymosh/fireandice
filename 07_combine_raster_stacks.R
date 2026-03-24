@@ -27,15 +27,16 @@ names(clim.stack)
 writeRaster(clim.stack, file.path(out.dir, 'creek_terraclimate_500m_1524.tif'))
 
 # ------ topo --------
-
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
-topo.files <- list.files(out.dir, 'creek_topo|nasadem', full.names = T)
+# change to either 50m or 500m
+out.dir <- 'data/processed/processed/tif/500m/creek'
+#out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/other_metrics'
+topo.files <- list.files(file.path(out.dir, 'other_metrics'), 'creek_topo|nasadem', full.names = T)
 topo.stack  <- rast(topo.files)
 
 fn <- basename(topo.files)
 
 # extract everything after "creek_topo_" and before "_500m"
-nm <- sub('creek_topo_(.*)_50m.*', '\\1', fn)
+nm <- sub('creek_topo_(.*)_500m.*', '\\1', fn)
 
 # handle DEM separately (nasadem file)
 nm[grepl('nasadem', fn)] <- 'elev'
@@ -45,12 +46,13 @@ names(topo.stack) <- paste0('topo_', nm)
 
 names(topo.stack)
 
-writeRaster(topo.stack, file.path(out.dir, 'creek_topo_50m_1524.tif'))
+writeRaster(topo.stack, file.path(out.dir, 'creek_topo_500m.tif'), overwrite = TRUE)
 
 # ------ sdd (500m only) ------
 
-in.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/snow_metrics'
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+out.dir <- 'data/processed/processed/tif/500m/creek'
+#out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+in.dir <- file.path(out.dir, 'snow_metrics')
 sdd.files <- list.files(in.dir, pattern = '^creek_sdd', full.names = T)
 sdd.stack <- rast(sdd.files)
 

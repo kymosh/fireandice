@@ -8,7 +8,8 @@ lapply(packages, library, character.only = T)
 # read in all raster stacks and combine into single one for modeling
 
 # ----- 500m (452m) master-raster -----
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+dir <- 'data/processed/processed/tif/500m/creek'
+#dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
 files <- list.files(dir, 'creek', full.names = TRUE)
 files <- files[!grepl('master', files)]
 files
@@ -17,7 +18,8 @@ names(sdd.stack)
 writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
 
 # ----- 50m master-raster -----
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+dir <- 'data/processed/processed/tif/50m/creek'
+#dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 files <- list.files(dir, 'creek', full.names = TRUE)
 files <- files[!grepl('master', files)]
 files
@@ -40,7 +42,7 @@ rasters <- lapply(files, rast)
 ref <- rast(files[1]) # chose the raster that has the smallest extent
 
 # new output directory (temporary, but necessary because we can't just overwrite the same files)
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/cropped'
+dir <- 'data/processed/processed/tif/50m/creek/cropped'
 dir.create(dir, recursive = T, showWarnings = F)
 
 # crop each raster to the new extent and write out 
@@ -55,12 +57,12 @@ out.files <- vapply(files, function(f) {
 
 # if just needing to crop 1 file 
 ref <- rast(files[1]) # chose the raster that has the smallest extent
-old <- rast(files[7]) # chose the raster that needs to be cropped
+old <- rast(files[8]) # chose the raster that needs to be cropped
 new <- crop(old, ref) # crop
 
 # rename old file and move to old_versions folder so new file can be written
 old.file <- file.path(dir, 'creek_topo_50m.tif')
-new.file <- file.path(dir, 'old_versions/creek_topo_50m_before_crop.tif')
+new.file <- file.path(dir, 'old_versions/creek_topo_50m_before_crop_again.tif')
 file.rename(old.file, new.file)
 
 # write new raster
@@ -123,8 +125,6 @@ remove.cols <- c(
   'Temperate_subpolar_shrubland',
   'Temperate_subpolar_grassland',
   'Wetland',
-  'topo_hli',
-  'topo_tpi2010',
   'forest_type',
   'forest_dom_frac'
 )
@@ -264,7 +264,8 @@ build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy) {
 # read rasters and convert to dfs
 # ===========================================================================================
 
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
+#dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
+dir <- 'data/processed/processed/tif'
 
 r.50 <- rast(file.path(dir, '50m/creek/creek_master_50m.tif'))
 r.500 <- rast(file.path(dir, '500m/creek/creek_master_500m.tif'))
@@ -294,15 +295,27 @@ names(df.long.500)
 # ===========================================================================================
 # save
 # ===========================================================================================
+dir <- 'data/processed/processed/rds'
 
-saveRDS(df.long.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
-saveRDS(df.long.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_500m.rds')
+saveRDS(df.long.50, file.path(dir, 'creek_long_df_50m.rds'))
+saveRDS(df.long.500, file.path(dir, 'creek_long_df_500m.rds'))
 
 # save to backup
-saveRDS(df.long.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m.rds')
-saveRDS(df.long.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_500m.rds')
+saveRDS(df.long.50, 'G:/Active_Projects/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m.rds')
+saveRDS(df.long.500, 'G:/Active_Projects/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_500m.rds')
 
 
+# -------- check NAs ------------
+na.counts <- colSums(is.na(df.50.cc))
+na.pct <- colMeans(is.na(df.50.cc))*100
+
+n.total <- nrow(df.50.cc)
+n.complete <- sum(complete.cases(df.50.cc))
+
+cat('Total rows:', n.total, '\n')
+cat('Complete rows:', n.complete, '\n')
+cat('Rows lost:', n.total - n.complete, '\n')
+cat('Percent lost:', round(100 * (n.total - n.complete) / n.total, 2), '%\n')
 # ----- exploration -----
 
 # -- visualize peak swe by year ----
