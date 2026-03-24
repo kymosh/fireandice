@@ -6,16 +6,15 @@ lapply(packages, library, character.only = T)
 # Initialize Dataframe
 # ==============================================================================
 # get dataframe
-#dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/rds' # my computer
-dir <- 'data/processed/processed/rds' # processing computer
+# make sure if not on processing computer that the rds is updated!
+dir <- 'data/processed/processed/rds' 
 
-df.50 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
+df.50 <- readRDS(file.path(dir, 'creek_long_df_50m_filt.rds'))
 #df.500 <- readRDS(file.path(dir, 'creek_long_df_500m.rds')) let's just focus on df.50 for now. 
 
 # make complete-case DF 
 df.50.cc <- df.50 %>% 
   filter(wy != 2020) %>% # drop 2020, since it's prefire
-  select(-fd_fractal_dim) %>% # drop fractal_dim because very highly correlated with gap_pct but gas large amount of NAs
   mutate(
     cell = as.factor(cell), # make cell a factor
     wy = as.factor(wy))  %>% # make wy a factor
@@ -398,3 +397,60 @@ cor(df.50.cc[, c(
   'rad_dtm_melt'
 )], use = 'complete.obs')
 
+
+
+model <- lmer(
+  swe_peak ~ 
+    topo_elev +
+    pr +
+    tmmn +
+    topo_slope +
+    topo_tpi150 +
+    (1 | wy),
+  data = df.50.cc
+)
+
+# get residuals and fitted
+res <- resid(model)
+fit <- fitted(model)
+
+# sample indices
+set.seed(123)
+idx <- sample(seq_along(res), min(100000, length(res)))
+
+res.sub <- res[idx]
+fit.sub <- fit[idx]
+
+plot(fit.sub, res.sub,
+     pch = 16, cex = 0.3,
+     xlab = 'Fitted values',
+     ylab = 'Residuals')
+
+abline(h = 0, col = 'red')
+
+summary(df.50.cc$swe_peak)
+any(df.50.cc$swe_peak <= 0, na.rm = TRUE)
+
+model <- lmer(
+  log(swe_peak + 0.01) ~ 
+    topo_elev +
+    pr +
+    tmmn +
+    topo_slope +
+    topo_tpi150 +
+    (1 | wy),
+  data = df.50.cc
+)
+
+model <- lmer(
+  log(swe_peak + 0.01) ~ 
+    topo_elev + I(topo_elev^2) +
+    pr + I(pr^2) +
+    tmmn +
+    rad_dtm_accum +
+    topo_tpi150 + I(topo_tpi150^2) +
+    topo_slope +
+    (1 | wy),
+  data = df.50.cc
+)
+smoothScatter(df.50.cc$topo_elev, resid(model))
