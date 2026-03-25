@@ -13,14 +13,29 @@ df.50 <- df.50.0 %>%
   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
   select(-tmmx) %>% # just using tmin for modeling swe (tmmn and tmmx are highly correlated 0.99)
   select(-topo_tpi510, -topo_tpi1200) %>% # not as correlated/strong relationship to swe
-  select(-rad_dtm_melt, -rad_dsm_melt) # melt season not relevent to snow accumulation phase
+  select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevent to snow accumulation phase
+  select(-topo_aspect_cos, -topo_aspect_sin) %>% # drop these because they're really just proxies for what rad_dtm gets
+  filter(
+    wy != 2020, # drop 2020, since it's prefire
+    swe_peak > 0) %>%  # filter so only including cells that actually have snow
+  mutate(
+    cell = as.factor(cell), # make cell a factor
+    wy = as.factor(wy), # make wy a factor 
+    swe_peak_log = log(swe_peak)) %>% # log tranform peak swe
+  filter(complete.cases(.)) # drop rows with any missing values
 
+# scale numeric predictors
+num.cols <- sapply(df.50, is.numeric)
+num.cols['swe_peak'] <- FALSE # don't scale the response variable'
+df.50[num.cols] <- scale(df.50[num.cols])
+  
+# still need to build this one similar to df.50
 df.500 <- df.500.0 %>% 
   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
   select(-tmmn) # just using tmmx to model sdd
 
-saveRDS(df.50, file.path(dir, 'creek_long_df_50m_filt.rds'))
-saveRDS(df.500, file.path(dir, 'creek_long_df_500m_filt.rds'))
+saveRDS(df.50, file.path(dir, 'creek_long_df_50m_clean.rds'))
+saveRDS(df.500, file.path(dir, 'creek_long_df_500m_clean.rds'))
 
 # save to J: drive
 saveRDS(df.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m_filt.rds')
@@ -228,41 +243,18 @@ plot_var_wy(df.50, 'tmmn')
 
 
 # ----- fit a GAM with multiple predictors -----
-library(mgcv)
-
-gam.test <- gam(
-  swe_peak ~ 
-    s(topo_elev) +
-    s(pr) +
-    s(tmmn) +
-    s(rad_dtm_accum),
-  data = df.50
-)
-
-plot(gam.test, pages = 1)
-
-gam.test <- gam(
-  swe_peak ~ 
-    s(topo_elev) +
-    s(pr) +
-    s(tmmn) +
-    s(rad_dtm_accum) +
-    s(topo_tpi150) +
-    s(topo_slope),
-  data = df.50
-)
-
-plot(gam.test, pages = 1)
+summary(df.50.cc$swe_peak)
+sum(df.50$swe_peak == 0, na.rm = TRUE)
 
 
 
 
 
-
-
-
-
-
+cor(df.50$tmmn, df.50$swe_peak, use = 'complete.obs')
+cor(df.50$pr, df.50$swe_peak, use = 'complete.obs')
+cor(df.50$rad_dtm_accum, df.50$topo_aspect_cos, use = 'complete.obs')
+cor(df.50$rad_dtm_accum, df.50$swe_peak, use = 'complete.obs')
+cor(df.50$swe_peak, df.50$topo_aspect_cos, use = 'complete.obs')
 
 
 
