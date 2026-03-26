@@ -1,4 +1,4 @@
-packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4')
+packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -11,6 +11,8 @@ dir <- 'data/processed/processed/rds'
 
 df.50 <- readRDS(file.path(dir, 'creek_long_df_50m_clean.rds'))
 #df.500 <- readRDS(file.path(dir, 'creek_long_df_500m.rds')) let's just focus on df.50 for now. 
+df.50 <- df.50 %>% 
+  mutate(sqrt_swe = sqrt(swe_peak))
 
 
 # load results DF
@@ -116,87 +118,155 @@ plot.residuals <- function(model) {
 # ==============================================================================
 #  Modeling
 # ==============================================================================
-# ----- WY and clim -----
-wy.clim <- lmer(
-  swe_peak_log ~ topo_slope + topo_tpi150 + I(topo_tpi150^2) + topo_elev + I(topo_elev^2) + rad_dtm_accum + pr + tmmn +
+
+# -------------- LOG(SWE) -------------------------
+
+# ----- 1a) WY and clim -----
+wy.clim.logswe<- lmer(
+  swe_peak_log ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + pr + tmmn +
     (1 | wy),
   data = df.50,
-  REML = FALSE # if TRUE, can't compare AIC values
+  REML = FALSE 
 )
 
 # add results
 out <- add.model.results(
   results.df = results,
   coef.df = coef.results,
-  model = wy.clim,
-  name = 'wy.clim',
+  model = wy.clim.logswe,
+  name = 'wy.clim.logswe',
   type = 'base',
-  notes = 'base model with WY and climate'
+  notes = 'base model with WY and climate, log(swe)'
 )
 
 results <- out$results.df
 coef.results <- out$coef.df
 
-# ----- WY, no clim -----
-wy <- lmer(
-  swe_peak_log ~ topo_slope + topo_tpi150 + I(topo_tpi150^2) + topo_elev + I(topo_elev^2) + rad_dtm_accum +
+# ----- 1b) WY, no clim -----
+wy.logswe <- lmer(
+  swe_peak_log ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum +
     (1 | wy),
   data = df.50,
-  REML = FALSE # if TRUE, can't compare AIC values
+  REML = FALSE 
 )
 
 # add results
 out <- add.model.results(
   results.df = results,
   coef.df = coef.results,
-  model = wy,
-  name = 'wy, no clim',
+  model = wy.logswe,
+  name = 'wy, no clim, log(swe)',
   type = 'base',
-  notes = 'base model with WY, but no climate'
+  notes = 'base model with WY and log(swe), but no climate'
 )
 
 results <- out$results.df
 coef.results <- out$coef.df
 
-# ----- clim, no wy -----
-clim <- lm(
-  swe_peak_log ~ topo_slope + topo_tpi150 + I(topo_tpi150^2) + topo_elev + I(topo_elev^2) + rad_dtm_accum + pr + tmmn,
-  data = df.50,
-)
+plot.residuals(wy.logswe)
 
-# add results
-out <- add.model.results(
-  results.df = results,
-  coef.df = coef.results,
-  model = clim,
-  name = 'clim, no wy',
-  type = 'base',
-  notes = 'climate, but getting rid of WY'
-)
-
-results <- out$results.df
-coef.results <- out$coef.df
-
-# ----- clim, no wy -----
-# getting rid of tpi^2
-clim2 <- lm(
+# ----- 1c) clim, no wy -----
+clim.logswe <- lm(
   swe_peak_log ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + pr + tmmn,
   data = df.50,
 )
 
+# add results
 out <- add.model.results(
   results.df = results,
   coef.df = coef.results,
-  model = clim2,
-  name = 'clim, no wy, no tpi^2',
+  model = clim.logswe,
+  name = 'clim, no wy, log(swe)',
   type = 'base',
-  notes = 'climate, but getting rid of WY  tpi^2'
+  notes = 'climate + log(swe), but getting rid of WY'
 )
 
 results <- out$results.df
 coef.results <- out$coef.df
 
+plot.residuals(clim.logswe)
 
+# ------------------ UNTRANFORMED SWE ------------------
 
+# ----- 2a) un-logged SWE, clim w/o wy -----
+clim.swe <- lm(
+  swe_peak ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + pr + tmmn,
+  data = df.50,
+)
 
+out <- add.model.results(
+  results.df = results,
+  coef.df = coef.results,
+  model = clim.swe,
+  name = 'clim, no log(swe)',
+  type = 'base',
+  notes = 'no wy, no log(swe)'
+)
 
+results <- out$results.df
+coef.results <- out$coef.df
+
+plot.residuals(clim.swe)
+
+# ----------------------- SQRT(SWE) ---------------------
+
+# ----- clim, no wy, sqrt(swe)-----
+clim.sqrtswe <- lm(
+  sqrt_swe ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + pr + tmmn,
+  data = df.50,
+)
+
+out <- add.model.results(
+  results.df = results,
+  coef.df = coef.results,
+  model = clim.sqrtswe,
+  name = 'clim, sqrt swe',
+  type = 'base',
+  notes = 'no wy, sqrt(swe)'
+)
+
+results <- out$results.df
+coef.results <- out$coef.df
+
+plot.residuals(clim.sqrtswe)
+
+# ----- WY, no clim, sqrt(swe) -----
+wy.sqrtswe <- lmer(
+  sqrt_swe ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + (1 | wy),
+  data = df.50,
+)
+
+out <- add.model.results(
+  results.df = results,
+  coef.df = coef.results,
+  model = wy.sqrtswe,
+  name = 'wy, sqrt swe',
+  type = 'base',
+  notes = 'wy, no clim, sqrt(swe)'
+)
+
+results <- out$results.df
+coef.results <- out$coef.df
+
+plot.residuals(wy.sqrtswe)
+# residuals look more funky
+
+# ----- WY + clim, sqrt(swe) -----
+wy.clim.sqrtswe <- lmer(
+  sqrt_swe ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + tmmn + pr + (1 | wy),
+  data = df.50,
+)
+
+out <- add.model.results(
+  results.df = results,
+  coef.df = coef.results,
+  model = wy.clim.sqrtswe,
+  name = 'wy, clim, sqrt swe',
+  type = 'base',
+  notes = 'wy AND clim, sqrt(swe)'
+)
+
+results <- out$results.df
+coef.results <- out$coef.df
+
+plot.residuals(wy.clim.sqrtswe)
