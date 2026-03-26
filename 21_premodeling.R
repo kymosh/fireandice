@@ -188,8 +188,6 @@ vars <- c(
   'cbibc',
   'rad_dsm_accum',
   'rad_dtm_accum',
-  'topo_aspect_cos',
-  'topo_aspect_sin',
   'topo_slope',
   'topo_tpi150',
   'topo_elev',
@@ -243,13 +241,61 @@ plot_var_wy(df.50, 'tmmn')
 
 
 # ----- fit a GAM with multiple predictors -----
-summary(df.50.cc$swe_peak)
-sum(df.50$swe_peak == 0, na.rm = TRUE)
+gam <- sqrt(swe) ~ topo_elev + tpi150 + rad_dtm_accum + topo_slope 
+
+
+hist(df.50[["topo_elev"]])
+
+# normalish
+
+hist(df.50[["rad_dtm_accum"]])
+# normal
+
+hist(df.50[["topo_slope"]])
+# skewed right
+
+hist(df.50[["topo_tpi150"]])
+# normal
+
+hist(df.50[["pr"]])
+# skewed right
+
+hist(df.50[["tmmn"]])
+# multimodal but somewhat normal
+
+hist(df.50[["swe_peak"]])
+# skewed right
+
+hist(df.50[["sqrt_swe"]])
+# still skewed right but better
+
+# loop through all variables
+par(mfrow = c(3, 3))  # adjust layout
+
+for (v in vars) {
+  hist(df.50[[v]], main = v, xlab = v)
+}
+
+par(mfrow = c(1, 1))  # reset
 
 
 
+# ------ plot relationships between variables and sqrt(swe) -----
+library(ggplot2)
 
+set.seed(123)
+df.sample <- df.50[sample(nrow(df.50), 100000), ]
 
+for (v in vars) {
+  p <- ggplot(df.sample, aes(x = .data[[v]], y = sqrt(swe_peak))) +
+    geom_point(alpha = 0.1) +
+    geom_smooth(method = 'gam') +
+    labs(title = v)
+  
+  print(p)
+}
+
+# look at specific correlations
 cor(df.50$tmmn, df.50$swe_peak, use = 'complete.obs')
 cor(df.50$pr, df.50$swe_peak, use = 'complete.obs')
 cor(df.50$rad_dtm_accum, df.50$topo_aspect_cos, use = 'complete.obs')

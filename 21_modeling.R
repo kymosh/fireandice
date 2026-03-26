@@ -30,9 +30,18 @@ idx <- sample(seq_len(nrow(df.50)), 100000)
 results <- data.frame()
 coef.results <- data.frame()
 
+clean.term.names <- function(x) {
+  x <- gsub('\\(Intercept\\)', 'Intercept', x)
+  x <- gsub('I\\((.*)\\^2\\)', '\\1_sq', x)
+  x <- gsub('[^[:alnum:]_]', '_', x)
+  x <- gsub('_+', '_', x)
+  x <- gsub('^_|_$', '', x)
+  x
+}
+
 add.model.results <- function(results.df, coef.df, model, name, type = 'exploratory', notes = NA) {
   
-  # fixed-effect coefficients
+  # check model class and extract coefficient matrix
   if (inherits(model, c('merMod', 'lm'))) {
     coef.mat <- summary(model)$coefficients
     n.params <- attr(logLik(model), 'df')
@@ -40,7 +49,9 @@ add.model.results <- function(results.df, coef.df, model, name, type = 'explorat
     stop('Model class not supported. Use lm or lmer/glmer objects.')
   }
   
+  # --------------------------
   # model-level results
+  # --------------------------
   new.row <- data.frame(
     model = name,
     AIC = AIC(model),
@@ -52,39 +63,67 @@ add.model.results <- function(results.df, coef.df, model, name, type = 'explorat
     stringsAsFactors = FALSE
   )
   
-  results.df <- rbind(results.df, new.row)
+  results.df <- bind_rows(results.df, new.row)
   
-  # coefficient-level results
-  coef.out <- data.frame(
-    model = name,
-    term = rownames(coef.mat),
-    estimate = coef.mat[, 'Estimate'],
-    std.error = coef.mat[, 'Std. Error'],
-    stringsAsFactors = FALSE
+  # --------------------------
+  # coefficient-level results (wide format)
+  # one row per model
+  # --------------------------
+  
+  term.names <- clean.term.names(rownames(coef.mat))
+  
+  # estimates
+  est.vec <- coef.mat[, 'Estimate']
+  names(est.vec) <- term.names
+  est.row <- as.data.frame(as.list(est.vec), stringsAsFactors = FALSE)
+  names(est.row) <- paste0('est_', names(est.row))
+  
+  # standard errors
+  se.vec <- coef.mat[, 'Std. Error']
+  names(se.vec) <- term.names
+  se.row <- as.data.frame(as.list(se.vec), stringsAsFactors = FALSE)
+  names(se.row) <- paste0('se_', names(se.row))
+  
+  # test statistics
+  if ('t value' %in% colnames(coef.mat)) {
+    stat.vec <- coef.mat[, 't value']
+  } else if ('z value' %in% colnames(coef.mat)) {
+    stat.vec <- coef.mat[, 'z value']
+  } else {
+    stat.vec <- rep(NA_real_, nrow(coef.mat))
+  }
+  names(stat.vec) <- term.names
+  stat.row <- as.data.frame(as.list(stat.vec), stringsAsFactors = FALSE)
+  names(stat.row) <- paste0('stat_', names(stat.row))
+  
+  # p-values
+  if ('Pr(>|t|)' %in% colnames(coef.mat)) {
+    p.vec <- coef.mat[, 'Pr(>|t|)']
+  } else if ('Pr(>|z|)' %in% colnames(coef.mat)) {
+    p.vec <- coef.mat[, 'Pr(>|z|)']
+  } else {
+    p.vec <- rep(NA_real_, nrow(coef.mat))
+  }
+  names(p.vec) <- term.names
+  p.row <- as.data.frame(as.list(p.vec), stringsAsFactors = FALSE)
+  names(p.row) <- paste0('p_', names(p.row))
+  
+  # combine metadata + coefficient info into one row
+  coef.out <- bind_cols(
+    data.frame(
+      model = name,
+      type = type,
+      notes = notes,
+      stringsAsFactors = FALSE
+    ),
+    est.row,
+    se.row,
+    stat.row,
+    p.row
   )
   
-  # add test statistic column
-  if ('t value' %in% colnames(coef.mat)) {
-    coef.out$statistic <- coef.mat[, 't value']
-  } else if ('z value' %in% colnames(coef.mat)) {
-    coef.out$statistic <- coef.mat[, 'z value']
-  } else {
-    coef.out$statistic <- NA
-  }
-  
-  # add p-values if available
-  if ('Pr(>|t|)' %in% colnames(coef.mat)) {
-    coef.out$p.value <- coef.mat[, 'Pr(>|t|)']
-  } else if ('Pr(>|z|)' %in% colnames(coef.mat)) {
-    coef.out$p.value <- coef.mat[, 'Pr(>|z|)']
-  } else {
-    coef.out$p.value <- NA
-  }
-  
-  coef.out$type <- type
-  coef.out$notes <- notes
-  
-  coef.df <- rbind(coef.df, coef.out)
+  # add to running wide coefficient table
+  coef.df <- bind_rows(coef.df, coef.out)
   
   return(list(results.df = results.df, coef.df = coef.df))
 }
