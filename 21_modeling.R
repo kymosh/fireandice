@@ -1,4 +1,4 @@
-packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger')
+packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger', 'tictoc')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -317,9 +317,13 @@ library(ranger)
 
 dir <- 'data/processed/processed/rds/creek'
 df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
+out.dir <- dir <- 'data/processed/processed/rds/creek/modeling'
 
-# initalize dfs
+rf.results <- data.frame()
+rf.var.importance <- data.frame()
 
+# ------ initalize -----
+# ----- create dfs -----
 # full df
 df.50.rf.full <- df.50.0 %>% 
   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
@@ -330,8 +334,6 @@ df.50.rf.full <- df.50.0 %>%
   mutate(
     wy = as.factor(wy)) %>% # make wy a factor 
     filter(complete.cases(.)) # drop rows with any missing values
-
-
 
 # reduced df
 df.50.rf.red <- df.50.0 %>% 
@@ -349,54 +351,83 @@ df.50.rf.red <- df.50.0 %>%
   filter(complete.cases(.)) # drop rows with any missing values
 
 # create dfs for each year
-rf.2021 <- df.50.rf.full %>% filter(wy == '2021')
-rf.2022 <- df.50.rf.full %>% filter(wy == '2022')
-rf.2023 <- df.50.rf.full %>% filter(wy == '2023')
-rf.2024 <- df.50.rf.full %>% filter(wy == '2024')
-rf.2025 <- df.50.rf.full %>% filter(wy == '2025')
-
-rf.2021 <- ranger(swe_peak ~ .,
-                  data = rf.2021,
-                  num.trees = 500,
-                  importance = 'permutation',
-                  seed = 123)
-#11:14
-print(Sys.time())
-var.imp <- sort(rf.2021$variable.importance, decreasing = T)
-var.imp
-rf.2022 <- ranger(swe_peak ~ .,
-                  data = rf.2022,
-                  num.trees = 500,
-                  importance = 'permutation',
-                  seed = 123)
-rf.2023 <- ranger(swe_peak ~ .,
-                  data = rf.2023,
-                  num.trees = 500,
-                  importance = 'permutation',
-                  seed = 123)
-rf.2024 <- ranger(swe_peak ~ .,
-                  data = rf.2024,
-                  num.trees = 500,
-                  importance = 'permutation',
-                  seed = 123)
-rf.2025 <- ranger(swe_peak ~ .,
-                  data = rf.2025,
-                  num.trees = 500,
-                  importance = 'permutation',
-                  seed = 123)
-
-rf.full <- ranger(swe_peak ~ .,
-                  data = df.50.rf.full,
-                  num.trees = 500,
-                  importance = 'permutation',
-                  seed = 123)
-print(Sys.time())
-rf.red <- ranger(swe_peak ~ .,
-                  data = df.50.rf.red,
-                  num.trees = 500,
-                  importance = 'permutation',
-                  seed = 123)
-print(Sys.time())
+df.2021 <- df.50.rf.full %>% filter(wy == '2021')
+df.2022 <- df.50.rf.full %>% filter(wy == '2022')
+df.2023 <- df.50.rf.full %>% filter(wy == '2023')
+df.2024 <- df.50.rf.full %>% filter(wy == '2024')
+df.2025 <- df.50.rf.full %>% filter(wy == '2025')
 
 
+# ----- rf helper function -----
+
+rf.run.save <- function(name, df, out.dir, rf.results, rf.var.importance) {
+  
+  # run model
+  rf.mod <- ranger(swe_peak ~ .,
+                   data = df,
+                   num.trees = 500,
+                   importance = 'permutation',
+                   seed = 123,
+                   num.threads = 25)
+  # save model
+  saveRDS(rf.mod, file.path(out.dir, paste0(name, '.rds')))
+  
+  # add model-level results
+  rf.results <- rbind(
+    rf.results,
+    data.frame(
+      model = name,
+      n = nrow(df),
+      num.trees = rf.mod$num.trees,
+      mtry = rf.mod$mtry,
+      min.node.size = rf.mod$min.node.size,
+      prediction.error = rf.mod$prediction.error,
+      r.squared = rf.mod$r.squared)
+  )
+  
+  # add variable imporan
+    var.imp <- sort(rf.mod$variable.importance, decreasing = T)
+    
+    rf.var.importance <- rbind(
+      rf.var.importance,
+      data.frame(
+        model = name, 
+        variable = names(var.imp),
+        importance = as.numeric(var.imp))
+      )
+    
+    # save updated results dfs
+    saveRDS(rf.results, file.path(out.dir, 'rf_results.rds'))
+    saveRDS(rf.var.importance, file.path(out.dir, 'rf_var_importance.rds'))
+    
+    # return everything
+    return(list(
+      rf.mod = rf.mod,
+      rf.results = rf.results,
+      rf.var.importance = rf.var.importance
+    ))
+  
+}
+
+# ----- run rf models -----
+
+# --- 2021 ---
+tic('2021 rf model')
+rf.2021 <- rf.run.save(name = 'rf2021', df = df.2021, out.dir, rf.results, rf.var.importance)
+toc()
+# 15 threads
+# 27 minutes
+
+
+# --- 2022 ---
+tic('2022 rf model')
+rf.2022 <- rf.run.save(name = 'rf2022', df = df.2022, out.dir, rf.results, rf.var.importance)
+toc()
+# 25 threads
+
+
+# --- full rf model ---
+tic('full rf.model')
+rf.full <- rf.run.save(name = 'rf_full_50', df = df.50.rf.full, out.dir, rf.results.rf.var.importance)
+toc()
 
