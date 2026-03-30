@@ -1,4 +1,4 @@
-packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest')
+packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -7,7 +7,7 @@ lapply(packages, library, character.only = T)
 # ==============================================================================
 # get dataframe
 # make sure if not on processing computer that the rds is updated!
-dir <- 'data/processed/processed/rds' 
+dir <- 'data/processed/processed/rds/creek' 
 
 df.50 <- readRDS(file.path(dir, 'creek_long_df_50m_clean.rds'))
 #df.500 <- readRDS(file.path(dir, 'creek_long_df_500m.rds')) let's just focus on df.50 for now. 
@@ -315,7 +315,7 @@ plot.residuals(wy.clim.sqrtswe)
 # ==============================================================================
 library(ranger)
 
-dir <- 'data/processed/processed/rds'
+dir <- 'data/processed/processed/rds/creek'
 df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
 
 # initalize dfs
@@ -330,6 +330,8 @@ df.50.rf.full <- df.50.0 %>%
   mutate(
     wy = as.factor(wy)) %>% # make wy a factor 
     filter(complete.cases(.)) # drop rows with any missing values
+
+
 
 # reduced df
 df.50.rf.red <- df.50.0 %>% 
