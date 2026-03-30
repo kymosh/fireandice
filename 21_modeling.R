@@ -309,3 +309,92 @@ results <- out$results.df
 coef.results <- out$coef.df
 
 plot.residuals(wy.clim.sqrtswe)
+
+# ==============================================================================
+#  Exploratory Random Forest
+# ==============================================================================
+library(ranger)
+
+dir <- 'data/processed/processed/rds'
+df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
+
+# initalize dfs
+
+# full df
+df.50.rf.full <- df.50.0 %>% 
+  select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
+  select(-cell) %>% # RF won't use cell
+  filter(
+    wy != 2020, # drop 2020, since it's prefire
+    swe_peak > 0) %>%  # filter so only including cells that actually have snow
+  mutate(
+    wy = as.factor(wy)) %>% # make wy a factor 
+    filter(complete.cases(.)) # drop rows with any missing values
+
+# reduced df
+df.50.rf.red <- df.50.0 %>% 
+  select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
+  select(-tmmx) %>% # just using tmin for modeling swe (tmmn and tmmx are highly correlated 0.99)
+  select(-topo_tpi510, -topo_tpi1200) %>% # not as correlated/strong relationship to swe
+  select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevent to snow accumulation phase
+  select(-topo_aspect_cos, -topo_aspect_sin) %>% # drop these because they're really just proxies for what rad_
+  select(-cell) %>% # RF won't use cell
+  filter(
+    wy != 2020, # drop 2020, since it's prefire
+    swe_peak > 0) %>%  # filter so only including cells that actually have snow
+  mutate(
+    wy = as.factor(wy)) %>% # make wy a factor 
+  filter(complete.cases(.)) # drop rows with any missing values
+
+# create dfs for each year
+rf.2021 <- df.50.rf.full %>% filter(wy == '2021')
+rf.2022 <- df.50.rf.full %>% filter(wy == '2022')
+rf.2023 <- df.50.rf.full %>% filter(wy == '2023')
+rf.2024 <- df.50.rf.full %>% filter(wy == '2024')
+rf.2025 <- df.50.rf.full %>% filter(wy == '2025')
+
+rf.2021 <- ranger(swe_peak ~ .,
+                  data = rf.2021,
+                  num.trees = 500,
+                  importance = 'permutation',
+                  seed = 123)
+#11:14
+print(Sys.time())
+var.imp <- sort(rf.2021$variable.importance, decreasing = T)
+var.imp
+rf.2022 <- ranger(swe_peak ~ .,
+                  data = rf.2022,
+                  num.trees = 500,
+                  importance = 'permutation',
+                  seed = 123)
+rf.2023 <- ranger(swe_peak ~ .,
+                  data = rf.2023,
+                  num.trees = 500,
+                  importance = 'permutation',
+                  seed = 123)
+rf.2024 <- ranger(swe_peak ~ .,
+                  data = rf.2024,
+                  num.trees = 500,
+                  importance = 'permutation',
+                  seed = 123)
+rf.2025 <- ranger(swe_peak ~ .,
+                  data = rf.2025,
+                  num.trees = 500,
+                  importance = 'permutation',
+                  seed = 123)
+
+rf.full <- ranger(swe_peak ~ .,
+                  data = df.50.rf.full,
+                  num.trees = 500,
+                  importance = 'permutation',
+                  seed = 123)
+print(Sys.time())
+rf.red <- ranger(swe_peak ~ .,
+                  data = df.50.rf.red,
+                  num.trees = 500,
+                  importance = 'permutation',
+                  seed = 123)
+print(Sys.time())
+
+
+
