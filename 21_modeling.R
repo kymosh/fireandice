@@ -322,8 +322,8 @@ dir <- 'data/processed/processed/rds/creek'
 df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
 out.dir <- dir <- 'data/processed/processed/rds/creek/modeling'
 
-rf.results <- data.frame()
-rf.var.importance <- data.frame()
+#rf.results <- data.frame()
+#rf.var.importance <- data.frame()
 
 # ------ initalize -----
 # ----- create dfs -----
@@ -467,9 +467,9 @@ toc()
 # ----- visualize -----
 
 p <- pdp::partial(
-  object = rf.2021$rf.mod,
+  object = rf.2021,
   pred.var = 'topo_elev',
-  train = df.50.rf.full
+  train = df.2021
 )
 
 plot(p)
@@ -530,4 +530,6 @@ rf.results <- rbind(
 saveRDS(rf.var.importance, file.path(dir, 'rf_var_importance.rds'))
 saveRDS(rf.results, file.path(dir, 'rf.results.rds'))
 
-
+rf.var.importance <- readRDS(file.path(dir, 'modeling/rf_var_importance.rds'))
+rf.2021 <- readRDS(file.path(dir, 'modeling/rf2021.rds'))
+rf.2022 <- readRDS(file.path(dir, 'modeling/rf2022.rds'))
