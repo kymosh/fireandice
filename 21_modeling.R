@@ -426,8 +426,35 @@ toc()
 # 25 threads
 
 
+# --- 2023 ---
+tic('2022 rf model')
+rf.2022 <- rf.run.save(name = 'rf2022', df = df.2022, out.dir, rf.results, rf.var.importance)
+toc()
+# 25 threads
+
+
+# --- 2024 ---
+tic('2022 rf model')
+rf.2022 <- rf.run.save(name = 'rf2022', df = df.2022, out.dir, rf.results, rf.var.importance)
+toc()
+# 25 threads
+
+
+# --- 2025 ---
+tic('2022 rf model')
+rf.2022 <- rf.run.save(name = 'rf2022', df = df.2022, out.dir, rf.results, rf.var.importance)
+toc()
+# 25 threads
+
+
 # --- full rf model ---
 tic('full rf.model')
 rf.full <- rf.run.save(name = 'rf_full_50', df = df.50.rf.full, out.dir, rf.results.rf.var.importance)
 toc()
 
+
+
+# --- reduced rf model ---
+tic('full rf.model')
+rf.full <- rf.run.save(name = 'rf_red_50', df = df.50.rf.red, out.dir, rf.results.rf.var.importance)
+toc()
