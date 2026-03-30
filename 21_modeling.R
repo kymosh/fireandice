@@ -385,7 +385,7 @@ rf.run.save <- function(name, df, out.dir, rf.results, rf.var.importance) {
       r.squared = rf.mod$r.squared)
   )
   
-  # add variable imporan
+  # add variable imporance
     var.imp <- sort(rf.mod$variable.importance, decreasing = T)
     
     rf.var.importance <- rbind(
@@ -427,34 +427,36 @@ toc()
 
 
 # --- 2023 ---
-tic('2022 rf model')
-rf.2022 <- rf.run.save(name = 'rf2022', df = df.2022, out.dir, rf.results, rf.var.importance)
+tic('2023 rf model')
+rf.2023 <- rf.run.save(name = 'rf2023', df = df.2023, out.dir, rf.results, rf.var.importance)
 toc()
 # 25 threads
 
 
 # --- 2024 ---
-tic('2022 rf model')
-rf.2022 <- rf.run.save(name = 'rf2022', df = df.2022, out.dir, rf.results, rf.var.importance)
+tic('2024 rf model')
+rf.2024 <- rf.run.save(name = 'rf2024', df = df.2024, out.dir, rf.results, rf.var.importance)
 toc()
 # 25 threads
 
 
 # --- 2025 ---
-tic('2022 rf model')
-rf.2022 <- rf.run.save(name = 'rf2022', df = df.2022, out.dir, rf.results, rf.var.importance)
+tic('2025 rf model')
+rf.2025 <- rf.run.save(name = 'rf2025', df = df.2025, out.dir, rf.results, rf.var.importance)
 toc()
 # 25 threads
 
 
 # --- full rf model ---
 tic('full rf.model')
-rf.full <- rf.run.save(name = 'rf_full_50', df = df.50.rf.full, out.dir, rf.results.rf.var.importance)
+rf.full <- rf.run.save(name = 'rf_full_50', df = df.50.rf.full, out.dir, rf.results, rf.var.importance)
 toc()
 
 
 
 # --- reduced rf model ---
-tic('full rf.model')
-rf.full <- rf.run.save(name = 'rf_red_50', df = df.50.rf.red, out.dir, rf.results.rf.var.importance)
+tic('reduced rf.model')
+rf.red <- rf.run.save(name = 'rf_red_50', df = df.50.rf.red, out.dir, rf.results, rf.var.importance)
 toc()
+
+
