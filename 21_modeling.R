@@ -316,6 +316,7 @@ saveRDS(coef.results, file.path(dir, 'modeling/base_modelcoef_results.rds'))
 #  Exploratory Random Forest
 # ==============================================================================
 library(ranger)
+library(pdp)
 
 dir <- 'data/processed/processed/rds/creek'
 df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
@@ -364,17 +365,16 @@ df.2025 <- df.50.rf.full %>% filter(wy == '2025')
 
 rf.run.save <- function(name, df, out.dir, rf.results, rf.var.importance) {
   
-  # run model
-  rf.mod <- ranger(swe_peak ~ .,
-                   data = df,
-                   num.trees = 500,
-                   importance = 'permutation',
-                   seed = 123,
-                   num.threads = 25)
-  # save model
+  rf.mod <- ranger(
+    swe_peak ~ .,
+    data = df,
+    num.trees = 500,
+    importance = 'permutation',
+    seed = 123
+  )
+  
   saveRDS(rf.mod, file.path(out.dir, paste0(name, '.rds')))
   
-  # add model-level results
   rf.results <- rbind(
     rf.results,
     data.frame(
@@ -384,31 +384,29 @@ rf.run.save <- function(name, df, out.dir, rf.results, rf.var.importance) {
       mtry = rf.mod$mtry,
       min.node.size = rf.mod$min.node.size,
       prediction.error = rf.mod$prediction.error,
-      r.squared = rf.mod$r.squared)
+      r.squared = rf.mod$r.squared
+    )
   )
   
-  # add variable imporance
-    var.imp <- sort(rf.mod$variable.importance, decreasing = T)
-    
-    rf.var.importance <- rbind(
-      rf.var.importance,
-      data.frame(
-        model = name, 
-        variable = names(var.imp),
-        importance = as.numeric(var.imp))
-      )
-    
-    # save updated results dfs
-    saveRDS(rf.results, file.path(out.dir, 'rf_results.rds'))
-    saveRDS(rf.var.importance, file.path(out.dir, 'rf_var_importance.rds'))
-    
-    # return everything
-    return(list(
-      rf.mod = rf.mod,
-      rf.results = rf.results,
-      rf.var.importance = rf.var.importance
-    ))
+  var.imp <- sort(rf.mod$variable.importance, decreasing = TRUE)
   
+  rf.var.importance <- rbind(
+    rf.var.importance,
+    data.frame(
+      model = name,
+      variable = names(var.imp),
+      importance = as.numeric(var.imp)
+    )
+  )
+  
+  saveRDS(rf.results, file.path(out.dir, 'rf_results.rds'))
+  saveRDS(rf.var.importance, file.path(out.dir, 'rf_var_importance.rds'))
+  
+  list(
+    rf.mod = rf.mod,
+    rf.results = rf.results,
+    rf.var.importance = rf.var.importance
+  )
 }
 
 # ----- run rf models -----
@@ -425,34 +423,37 @@ toc()
 tic('2022 rf model')
 rf.2022 <- rf.run.save(name = 'rf2022', df = df.2022, out.dir, rf.results, rf.var.importance)
 toc()
-# 25 threads
+
 
 
 # --- 2023 ---
 tic('2023 rf model')
-rf.2023 <- rf.run.save(name = 'rf2023', df = df.2023, out.dir, rf.results, rf.var.importance)
+out.2023 <- rf.run.save(name = 'rf2023', df = df.2023, out.dir, rf.results, rf.var.importance)
 toc()
-# 25 threads
+rf.2023 <- out.2023$rf.mod
+rf.results <- out.2023$rf.results
+rf.var.importance <- out.2023$rf.var.importance
 
 
 # --- 2024 ---
 tic('2024 rf model')
 rf.2024 <- rf.run.save(name = 'rf2024', df = df.2024, out.dir, rf.results, rf.var.importance)
 toc()
-# 25 threads
+
 
 
 # --- 2025 ---
 tic('2025 rf model')
 rf.2025 <- rf.run.save(name = 'rf2025', df = df.2025, out.dir, rf.results, rf.var.importance)
 toc()
-# 25 threads
+
 
 
 # --- full rf model ---
 tic('full rf.model')
 rf.full <- rf.run.save(name = 'rf_full_50', df = df.50.rf.full, out.dir, rf.results, rf.var.importance)
 toc()
+# took 2 hours 20 minutes
 
 
 
@@ -460,5 +461,73 @@ toc()
 tic('reduced rf.model')
 rf.red <- rf.run.save(name = 'rf_red_50', df = df.50.rf.red, out.dir, rf.results, rf.var.importance)
 toc()
+
+
+
+# ----- visualize -----
+
+p <- pdp::partial(
+  object = rf.2021$rf.mod,
+  pred.var = 'topo_elev',
+  train = df.50.rf.full
+)
+
+plot(p)
+
+
+
+
+# troubleshooting
+
+get.rf.mod <- function(x) {
+  if ('ranger' %in% class(x)) {
+    return(x)
+  }
+  if (is.list(x) && 'rf.mod' %in% names(x)) {
+    return(x$rf.mod)
+  }
+  stop('Object is neither a ranger model nor a list containing $rf.mod')
+}
+
+extract.rf.var.importance <- function(model.obj, model.name) {
+  rf.mod <- get.rf.mod(model.obj)
+  var.imp <- sort(rf.mod$variable.importance, decreasing = TRUE)
+  
+  data.frame(
+    model = model.name,
+    variable = names(var.imp),
+    importance = as.numeric(var.imp)
+  )
+}
+
+extract.rf.results <- function(model.obj, model.name) {
+  rf.mod <- get.rf.mod(model.obj)
+  
+  data.frame(
+    model = model.name,
+    n = rf.mod$num.samples,
+    num.trees = rf.mod$num.trees,
+    mtry = rf.mod$mtry,
+    min.node.size = rf.mod$min.node.size,
+    prediction.error = rf.mod$prediction.error,
+    r.squared = rf.mod$r.squared
+  )
+}
+dir <- 'data/processed/processed/rds/creek/modeling'
+
+rf.var.importance <- rbind(
+  extract.rf.var.importance(rf.2021, 'rf.2021'),
+  extract.rf.var.importance(rf.2022, 'rf.2022'),
+  extract.rf.var.importance(rf.full, 'rf.full')
+)
+
+rf.results <- rbind(
+  extract.rf.results(rf.2021, 'rf.2021'),
+  extract.rf.results(rf.2022, 'rf.2022'),
+  extract.rf.results(rf.full, 'rf.full')
+)
+
+saveRDS(rf.var.importance, file.path(dir, 'rf_var_importance.rds'))
+saveRDS(rf.results, file.path(dir, 'rf.results.rds'))
 
 
