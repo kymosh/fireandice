@@ -16,8 +16,8 @@ df.50 <- df.50 %>%
 
 
 # load results DF
-results <- readRDS(file.path(dir, 'model_results.rds'))
-coef.results <- readRDS(file.path(dir, 'model_coef_results.rds'))
+results <- readRDS(file.path(dir, 'modeling/base_model_results.rds'))
+coef.results <- readRDS(file.path(dir, 'modeling/base_modelcoef_results.rds'))
 
 set.seed(12)
 idx <- sample(seq_len(nrow(df.50)), 100000)
@@ -161,7 +161,7 @@ plot.residuals <- function(model) {
 # -------------- LOG(SWE) -------------------------
 
 # ----- 1a) WY and clim -----
-wy.clim.logswe<- lmer(
+wy.clim.logswe <- lmer(
   swe_peak_log ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + pr + tmmn +
     (1 | wy),
   data = df.50,
@@ -223,7 +223,6 @@ out <- add.model.results(
 results <- out$results.df
 coef.results <- out$coef.df
 
-plot.residuals(clim.logswe)
 
 # ------------------ UNTRANFORMED SWE ------------------
 
@@ -309,6 +308,9 @@ results <- out$results.df
 coef.results <- out$coef.df
 
 plot.residuals(wy.clim.sqrtswe)
+
+saveRDS(results, file.path(dir, 'modeling/base_model_results.rds'))
+saveRDS(coef.results, file.path(dir, 'modeling/base_modelcoef_results.rds'))
 
 # ==============================================================================
 #  Exploratory Random Forest
