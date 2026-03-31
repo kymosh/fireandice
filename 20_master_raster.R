@@ -439,3 +439,90 @@ n.zero / n.valid
 r <- x[[ -which(names(x) == 'topo_elev')[1] ]]
 plot(r)
 writeRaster(r, file.path(dir, 'topo_50m.tif'))
+
+# ==============================================================================
+# explore
+# ==============================================================================
+
+# ----- visualize where swe = 0 for each year -----
+year <- c('2021', '2022', '2023', '2024', '2025')
+
+dev.off()
+par(mfrow = c(2, 3))
+for (yr in year) {
+  r <- swe.stack[[paste0('swe_peak_wy', yr)]]
+  r <- clamp(r, lower = 0, upper = 5, values = TRUE)
+  
+  plot(r,
+       main = paste0('Peak SWE in WY', yr),
+       zlim = c(0, 5))
+  
+  r.zero <- r == 0
+  r.zero <- classify(r.zero, rbind(c(0, NA)))
+  plot(r.zero, col = 'red', add = TRUE, legend = FALSE)
+}
+
+# ----- find what what elevation threshold we stop seeing snow for each year -----
+for (yr in year) {
+  r.swe <- swe.stack[[paste0('swe_peak_wy', yr)]]
+  r.zero <- r.swe == 0
+  r.elev <- swe.stack$topo_elev
+  elev.zero <- mask(r.elev, r.zero, maskvalues = 0)
+  elev.vals <- values(elev.zero, na.rm = T)
+
+}
+
+# find snowline
+
+years <- c(2021, 2022, 2023, 2024, 2025)
+r.elev <- swe.stack$topo_elev
+
+snowline <- data.frame(
+  wy = years,
+  q25 = NA_real_,
+  q50 = NA_real_,
+  q75 = NA_real_,
+  n.edge = NA_integer_
+)
+
+w <- matrix(1, 3, 3)
+
+for (i in seq_along(years)) {
+  
+  yr <- years[i]
+  
+  # SWE for this year
+  r.swe <- swe.stack[[paste0('swe_peak_wy', yr)]]
+  
+  # binary: 0 = no snow, 1 = snow
+  r.bin <- ifel(r.swe > 0, 1, 0)
+  
+  # find cells whose 3x3 neighborhood contains both 0 and 1
+  r.min <- focal(r.bin, w = w, fun = min, na.rm = TRUE)
+  r.max <- focal(r.bin, w = w, fun = max, na.rm = TRUE)
+  r.edge <- (r.min != r.max)
+  
+  # keep only the snow-side edge cells
+  r.edge.snow <- r.edge * (r.bin == 1)
+  r.edge.snow <- mask(r.edge.snow, r.edge.snow, maskvalues = 0)
+  
+  # elevation at edge
+  elev.edge <- mask(r.elev, r.edge.snow)
+  elev.vals <- values(elev.edge, na.rm = TRUE)
+  
+  # save summaries
+  qs <- quantile(elev.vals, probs = c(0.25, 0.5, 0.75), na.rm = TRUE)
+  
+  snowline$q25[i] <- qs[1]
+  snowline$q50[i] <- qs[2]
+  snowline$q75[i] <- qs[3]
+  snowline$n.edge[i] <- length(elev.vals)
+}
+
+snowline
+
+par(mfrow = c(1, 2))
+plot(snowline$wy, snowline$q50, ylim = range(snowline$q25, snowline$q75))
+arrows(snowline$wy, snowline$q25,
+       snowline$wy, snowline$q75,
+       angle = 90, code = 3, length = 0.05)

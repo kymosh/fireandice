@@ -2,13 +2,12 @@ packages <- c('dplyr', 'tidyr', 'corrplot', 'ggplot2')
 lapply(packages, library, character.only = T)
 
 # make sure if not on processing computer that the rds is updated!
-dir <- 'data/processed/processed/rds'
+dir <- 'data/processed/processed/rds/creek'
 
 # get dataframe
 df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
 df.500.0 <- readRDS(file.path(dir, 'creek_long_df_500m.rds'))
 
-# drop tpi1200, too many NAs
 df.50 <- df.50.0 %>% 
   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
   select(-tmmx) %>% # just using tmin for modeling swe (tmmn and tmmx are highly correlated 0.99)
@@ -16,13 +15,21 @@ df.50 <- df.50.0 %>%
   select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevent to snow accumulation phase
   select(-topo_aspect_cos, -topo_aspect_sin) %>% # drop these because they're really just proxies for what rad_dtm gets
   filter(
-    wy != 2020, # drop 2020, since it's prefire
-    swe_peak > 0) %>%  # filter so only including cells that actually have snow
+    wy != 2020 # drop 2020, since it's prefire
+    ) %>%  
   mutate(
-    cell = as.factor(cell), # make cell a factor
-    wy = as.factor(wy), # make wy a factor 
-    swe_peak_log = log(swe_peak)) %>% # log tranform peak swe
-  filter(complete.cases(.)) # drop rows with any missing values
+    snowline = case_when( # remove pixels that fall below that year's snowline
+      wy == 2021 ~ 1843,
+      wy == 2022 ~ 1748,
+      wy == 2023 ~ -Inf, # snow covers whole area for 2023, no need to filter 
+      wy == 2024 ~ 1723,
+      wy == 2025 ~ 1883),
+    wy = as.factor(wy), # make wy a factor
+    cell = as.factor(cell) # make cell a factor
+    ) %>% 
+  filter(topo_elev >= snowline,
+    complete.cases(.)) %>% # drop rows with any missing values
+  select(-snowline)
 
 # scale numeric predictors
 num.cols <- sapply(df.50, is.numeric)
@@ -55,8 +62,8 @@ mean(complete.cases(df.500))
 
 
 # ----- Check correlation among predictors -----
-num.vars <- df.500 |>
-  select(-cell, -wy, -swe_peak)
+num.vars <- df.50 |>
+  select(-cell, -wy, -swe_peak, -sqrt_swe, -swe_peak_log)
 
 cor.mat <- cor(num.vars, use = 'pairwise.complete.obs')
 
@@ -78,8 +85,13 @@ cor.df <- as.data.frame(as.table(cor.mat))
 
 cor.strong <- cor.df %>%
   filter(Var1 != Var2) %>%
-  filter(abs(Freq) > 0.8) %>%
-  arrange(desc(abs(Freq)))
+  filter(abs(Freq) > 0.5) %>%
+  rowwise() %>%
+  mutate(pair = paste(sort(c(as.character(Var1), as.character(Var2))), collapse = '___')) %>%
+  ungroup() %>%
+  distinct(pair, .keep_all = TRUE) %>%
+  arrange(desc(abs(Freq))) %>%
+  select(-pair)
 
 cor.strong
 
@@ -304,11 +316,51 @@ cor(df.50$swe_peak, df.50$topo_aspect_cos, use = 'complete.obs')
 
 
 
+# ----- plot/explore transformations of predictors -----
 
+# slope
+hist(
+  df.50$topo_slope,
+  main = 'Slope distribution',
+  xlab = 'Slope',
+  breaks = 50
+)
 
-
+hist(
+  (df.50$topo_slope)^2,
+  main = 'Slope distribution',
+  xlab = 'Slope',
+  breaks = 50
+)
+smoothScatter(log(df.50$topo_slope + 0.01), df.50$swe_peak)
+smoothScatter(sqrt(df.50$topo_slope + 0.01), df.50$swe_peak)
+smoothScatter(log(df.50$topo_slope + 0.01), df.50$swe_peak)
 
 
 
  # troubleshooting
+# ----- turn back to raster -----
+template <- swe.stack[['swe_peak_wy2021']]
 
+# make an empty raster with same geometry
+r <- rast(template)
+values(r) <- NA
+
+# if cell is a factor, convert back to numeric
+cells <- as.numeric(as.character(df.50$cell))
+
+# write values into those cells
+r[cells] <- df.50$swe_peak
+
+plot(r)
+
+
+df.2021 <- df.50[df.50$wy == '2021', ]
+
+r.2021 <- rast(template)
+values(r.2021) <- NA
+
+cells <- as.numeric(as.character(df.2021$cell))
+r.2021[cells] <- df.2021$swe_peak
+
+plot(r.2021)
