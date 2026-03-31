@@ -439,7 +439,7 @@ rf.var.importance <- out.2023$rf.var.importance
 tic('2024 rf model')
 rf.2024 <- rf.run.save(name = 'rf2024', df = df.2024, out.dir, rf.results, rf.var.importance)
 toc()
-
+# can't remember when I ended up running here, may have overwritten out.2023 but kind of don't think I did because when I told it to rewrite it with doesn't actually exist...
 
 
 # --- 2025 ---
