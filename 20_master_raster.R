@@ -526,3 +526,32 @@ plot(snowline$wy, snowline$q50, ylim = range(snowline$q25, snowline$q75))
 arrows(snowline$wy, snowline$q25,
        snowline$wy, snowline$q75,
        angle = 90, code = 3, length = 0.05)
+
+# ----- now visualize snowline -----
+# ----- visualize where swe = 0 for each year -----
+year <- c('2021', '2022', '2023', '2024', '2025')
+
+dev.off()
+par(mfrow = c(2, 3))
+for (yr in year) {
+  r <- swe.stack[[paste0('swe_peak_wy', yr)]]
+  r.elev <- swe.stack$topo_elev
+  r <- clamp(r, lower = 0, upper = 5, values = TRUE)
+  
+  # set snowline by year
+  snowline <- 
+    if (yr == '2021') 1843 else
+    if (yr == '2022') 1748 else
+    if (yr == '2023') -Inf else
+    if (yr == '2024') 1723 else
+    if (yr == '2025') 1883
+  
+  plot(r,
+       main = paste0('Snowline in WY', yr),
+       zlim = c(0, 5))
+  
+  r.sl <- r.elev < snowline
+  r.sl <- mask(r.sl, r)
+  r.sl <- classify(r.sl, rbind(c(0, NA)))
+  plot(r.sl, col = 'red', add = TRUE, legend = FALSE)
+}

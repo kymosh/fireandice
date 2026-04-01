@@ -15,7 +15,8 @@ df.50 <- df.50.0 %>%
   select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevent to snow accumulation phase
   select(-topo_aspect_cos, -topo_aspect_sin) %>% # drop these because they're really just proxies for what rad_dtm gets
   filter(
-    wy != 2020 # drop 2020, since it's prefire
+    wy != 2020, # drop 2020, since it's prefire
+    swe_peak > 0 # drop all cells where there was no snow
     ) %>%  
   mutate(
     snowline = case_when( # remove pixels that fall below that year's snowline
@@ -45,7 +46,7 @@ saveRDS(df.50, file.path(dir, 'creek_long_df_50m_clean.rds'))
 saveRDS(df.500, file.path(dir, 'creek_long_df_500m_clean.rds'))
 
 # save to J: drive
-saveRDS(df.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m_filt.rds')
+saveRDS(df.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_clean.rds')
 
 
 # ----- check how many NAs (do for both 50 and 500) -----
@@ -364,3 +365,6 @@ cells <- as.numeric(as.character(df.2021$cell))
 r.2021[cells] <- df.2021$swe_peak
 
 plot(r.2021)
+r.zero <- r.2021 == 0
+r.zero <- classify(r.zero, rbind(c(0, NA)))
+plot(r.zero, col = 'red', add = TRUE, legend = FALSE)
