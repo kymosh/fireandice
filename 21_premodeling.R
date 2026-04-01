@@ -20,11 +20,11 @@ df.50 <- df.50.0 %>%
     ) %>%  
   mutate(
     snowline = case_when( # remove pixels that fall below that year's snowline
-      wy == 2021 ~ 1843,
-      wy == 2022 ~ 1748,
+      wy == 2021 ~ 2145,
+      wy == 2022 ~ 1956,
       wy == 2023 ~ -Inf, # snow covers whole area for 2023, no need to filter 
-      wy == 2024 ~ 1723,
-      wy == 2025 ~ 1883),
+      wy == 2024 ~ 1786,
+      wy == 2025 ~ 2021),
     wy = as.factor(wy), # make wy a factor
     cell = as.factor(cell) # make cell a factor
     ) %>% 
@@ -203,9 +203,7 @@ vars <- c(
   'rad_dtm_accum',
   'topo_slope',
   'topo_tpi150',
-  'topo_elev',
-  'pr',
-  'tmmn'
+  'topo_elev'
 )
 
 # pivot long so that it's better for plotting
@@ -293,20 +291,22 @@ par(mfrow = c(1, 1))  # reset
 
 
 
-# ------ plot relationships between variables and sqrt(swe) -----
+# ------ plot relationships between variables and swe -----
 library(ggplot2)
+library(patchwork)
 
 set.seed(123)
-df.sample <- df.50[sample(nrow(df.50), 100000), ]
+df.sample <- df.50[sample(nrow(df.50), 10000), ]
 
+p <- list()
 for (v in vars) {
-  p <- ggplot(df.sample, aes(x = .data[[v]], y = sqrt(swe_peak))) +
+  p[[v]] <- ggplot(df.sample, aes(x = .data[[v]], y = swe_peak)) +
     geom_point(alpha = 0.1) +
     geom_smooth(method = 'gam') +
     labs(title = v)
-  
-  print(p)
 }
+
+wrap_plots(p, ncol = 4)
 
 # look at specific correlations
 cor(df.50$tmmn, df.50$swe_peak, use = 'complete.obs')

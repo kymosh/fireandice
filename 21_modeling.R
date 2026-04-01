@@ -21,6 +21,7 @@ coef.results <- readRDS(file.path(dir, 'modeling/base_modelcoef_results.rds'))
 
 set.seed(12)
 idx <- sample(seq_len(nrow(df.50)), 100000)
+df.50.samp <- df.50[sample(nrow(df.50), 100000), ]
 
 # ==============================================================================
 #  Results DF and helper functions creation
@@ -144,7 +145,7 @@ plot.residuals <- function(model) {
   plot(
     fit.sub, res.sub,
     pch = 16, cex = 0.3,
-    col = rgb(0, 0, 0, 0.3),  # transparency helps A LOT
+    col = rgb(0, 0, 0, 0.3),  
     xlab = 'Fitted values',
     ylab = 'Residuals',
     main = 'Residuals vs Fitted'
@@ -155,7 +156,7 @@ plot.residuals <- function(model) {
 
 
 # ==============================================================================
-#  Modeling
+#  LMs
 # ==============================================================================
 
 # -------------- LOG(SWE) -------------------------
@@ -182,11 +183,9 @@ results <- out$results.df
 coef.results <- out$coef.df
 
 # ----- 1b) WY, no clim -----
-wy.logswe <- lmer(
-  swe_peak_log ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum +
-    (1 | wy),
-  data = df.50,
-  REML = FALSE 
+wy.sqrtswe <- lm(
+  sqrt(swe_peak) ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + wy ,
+  data = df.50
 )
 
 # add results
@@ -202,7 +201,7 @@ out <- add.model.results(
 results <- out$results.df
 coef.results <- out$coef.df
 
-plot.residuals(wy.logswe)
+plot.residuals(wy.sqrtswe)
 
 # ----- 1c) clim, no wy -----
 clim.logswe <- lm(
@@ -315,6 +314,9 @@ saveRDS(coef.results, file.path(dir, 'modeling/base_modelcoef_results.rds'))
 # ==============================================================================
 #  Exploratory Random Forest
 # ==============================================================================
+
+
+# ------ initalize -----
 library(ranger)
 library(pdp)
 
@@ -325,7 +327,6 @@ out.dir <- dir <- 'data/processed/processed/rds/creek/modeling'
 #rf.results <- data.frame()
 #rf.var.importance <- data.frame()
 
-# ------ initalize -----
 # ----- create dfs -----
 # full df
 df.50.rf.full <- df.50.0 %>% 
@@ -533,3 +534,60 @@ saveRDS(rf.results, file.path(dir, 'rf.results.rds'))
 rf.var.importance <- readRDS(file.path(dir, 'modeling/rf_var_importance.rds'))
 rf.2021 <- readRDS(file.path(dir, 'modeling/rf2021.rds'))
 rf.2022 <- readRDS(file.path(dir, 'modeling/rf2022.rds'))
+
+
+
+
+
+# ==============================================================================
+#  Exploratory GLM
+# ==============================================================================
+
+gamma.base <- glm(swe_peak ~ topo_elev + I(topo_elev^2) + wy + topo_tpi150 + topo_slope + rad_dtm_accum, 
+                    family = Gamma(link = 'log'), 
+                    data = df.50)
+
+# get pearson residuals
+fit <- fitted(gamma.base)
+est.disp <- summary(gamma.base)$dispersion
+pearson.resid <- residuals(gamma.base, type = 'pearson')/sqrt(est.disp)
+
+set.seed(1)
+idx <- sample(seq_along(fit), 5000)
+
+par(mfrow = c(1, 1))
+plot(fit[idx] ~ pearson.resid[idx], 
+     ylab = "Pearson residuals", 
+     xlab = 'Predicted SWE')
+abline(h = 0)
+
+
+
+
+
+
+
+summary(gamma.base)
+anova(m.gamma.full)
+
+plot(residuals(m.gamma) ~ fitted(m.gamma))
+plot(fitted(m.gamma),
+     residuals(m.gamma, type = 'pearson'),
+     xlab = 'Fitted values',
+     ylab = 'Pearson residuals')
+abline(h = 0, col = 'red')
+
+
+# toubleshooting
+zeros <- df.50$swe_peak == 0
+
+
+# ==============================================================================
+#  Exploratory CART
+# ==============================================================================
+library(rpart)
+cart <- rpart(swe_peak ~ cover_ground_frac +gap_gap_pct + gap_dist_to_canopy_mean + ht_zskew + ht_zkurt + ht_zentropy + ht_zpcum1 + ht_zpcum2 + ht_zpcum6 + ht_zpcum9 + cbibc + rad_dsm_accum + rad_dtm_accum + topo_slope + topo_tpi150 + topo_elev, data = df.50.samp, method = 'anova',  control = rpart.control(
+  cp = 0.001,
+  minsplit = 100,
+  maxdepth = 10))
+
