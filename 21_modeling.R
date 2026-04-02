@@ -129,7 +129,7 @@ add.model.results <- function(results.df, coef.df, model, name, type = 'explorat
   return(list(results.df = results.df, coef.df = coef.df))
 }
 
-plot.residuals <- function(model) {
+plot.residuals <- function(model, name = NULL) {
   
   # get residuals and fitted
   res <- resid(model)
@@ -141,6 +141,13 @@ plot.residuals <- function(model) {
 
   res.sub <- res[idx]
   fit.sub <- fit[idx]
+  
+  # title
+  if (is.null(name)) {
+    main.title <- 'Residuals vs Fitted'
+  } else {
+    main.title <- paste(name, '- Residuals vs Fitted')
+  }
 
   plot(
     fit.sub, res.sub,
@@ -148,7 +155,7 @@ plot.residuals <- function(model) {
     col = rgb(0, 0, 0, 0.3),  
     xlab = 'Fitted values',
     ylab = 'Residuals',
-    main = 'Residuals vs Fitted'
+    main = main.title
   )
 
   abline(h = 0, col = 'red')
@@ -158,7 +165,151 @@ plot.residuals <- function(model) {
 # ==============================================================================
 #  LMs
 # ==============================================================================
+# 
+# ----- sqrt(swe) / Fixed Effect WY / no clim ) ------ 
+wyfe.sqrtswe <- lm(
+  sqrt(swe_peak) ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + wy,
+  data = df.50
+)
 
+# add results
+out <- add.model.results(
+  results.df = results,
+  coef.df = coef.results,
+  model = wyfe.sqrtswe,
+  name = 'wy as fixed effect, no clim, sqrt(swe))',
+  type = 'base',
+  notes = 'base model with WY and log(swe), but no climate'
+)
+
+results <- out$results.df
+coef.results <- out$coef.df
+
+plot.residuals(wyfe.sqrtswe)
+
+
+
+
+
+
+# ----- sqrt(swe) / FE WY / high vs low canopy -----
+# I want to look at if the significance of canopy cover changes whether the canopy cover is high or low
+
+# function to create 3 groups:
+
+make.groups <- function(x) {
+  cut(x,
+      breaks = quantile(x, probs = c(0, 1/3, 2/3, 1), na.rm = T),
+      include.lowest = T,
+      labels = c('low', 'medium', 'high'))
+}
+
+df.50.g <- df.50
+canopy.vars.temp <- c('ht_zpcum1', 'ht_zpcum2', 'gap_gap_pct', 'rad_dsm_accum', 'cover_ground_frac')
+groups <- c('all', 'low', 'high')
+
+# for each canopy variable listed above, 
+  # 1. create group in new df that categorizes it as high, medium, or low
+  # 2. fit model using either all, low, or high 
+  # 3. add results to df
+  # 4. plot residuals
+
+for (v in canopy.vars.temp) {
+  cat('\nRunning', v, '...\n')
+  
+  # group column
+  grp.name <- paste0(v, '.grp')
+  df.50.g[[grp.name]] <- make.groups(df.50.g[[v]])
+  
+  # build model formula
+  form <- as.formula(paste0('sqrt(swe_peak) ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + wy + ', v))
+  
+  # inner loop for all/low/high
+  for (g in groups) {
+    # subset data
+    if (g == 'all') {
+      df.sub <- df.50.g
+    } else {
+      df.sub <- df.50.g[df.50.g[[grp.name]] == g, ]
+    }
+    
+    # fit model
+    df.sub[[v]] <- scale(df.sub[[v]])
+    mod <- lm(form, data = df.sub)
+    
+    # model name
+    mod.name <- paste0(v, '.', g)
+    
+    # save model
+    assign(mod.name, mod)
+    
+    # add results
+    out <- add.model.results(
+      results.df = results,
+      coef.df = coef.results,
+      model = mod,
+      name = mod.name,
+      type = 'canopy.explore',
+      notes = paste(g, 'values of', v)
+    )
+    
+    results <- out$results.df
+    coef.results <- out$coef.df
+    
+    # plot residuals
+    plot.residuals(mod, name = mod.name)
+  
+  }
+}
+
+# results
+coef.compare.2 <- data.frame()
+
+for (v in canopy.vars.temp) {
+  
+  # rows for this variable's models
+  rows <- grepl(paste0('^', v, '\\.(all|low|high)$'), coef.results$model)
+  temp <- coef.results[rows, ]
+  
+  # build column names to pull
+  est.col <- paste0('est_', v)
+  se.col <- paste0('se_', v)
+  stat.col <- paste0('stat_', v)
+  p.col <- paste0('p_', v)
+  
+  # make small clean table
+  out <- data.frame(
+    variable = v,
+    group = sub(paste0('^', v, '\\.'), '', temp$model),
+    model = temp$model,
+    estimate = temp[[est.col]],
+    se = temp[[se.col]],
+    stat = temp[[stat.col]],
+    p = temp[[p.col]],
+    stringsAsFactors = FALSE
+  )
+  
+  coef.compare.2 <- rbind(coef.compare.2, out)
+}
+
+coef.compare.2
+
+
+
+# ----- sqrt(swe) allll ----
+full.lm <- lm(sqrt(swe_peak) ~ cover_ground_frac + gap_gap_pct+ gap_dist_to_canopy_mean + ht_zskew + ht_zkurt + ht_zentropy + ht_zpcum1 + ht_zpcum2 + ht_zpcum6 + ht_zpcum9 + cbibc + rad_dsm_accum + rad_dtm_accum + topo_slope + topo_tpi150 + topo_elev + wy,
+              data = df.50)
+
+plot.residuals(full.lm)
+
+full.lm.elev2 <- lm(sqrt(swe_peak) ~ cover_ground_frac + gap_gap_pct+ gap_dist_to_canopy_mean + ht_zskew + ht_zkurt + ht_zentropy + ht_zpcum1 + ht_zpcum2 + ht_zpcum6 + ht_zpcum9 + cbibc + rad_dsm_accum + rad_dtm_accum + topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + wy,
+              data = df.50)
+
+plot.residuals(full.lm.elev2)
+
+anova(wyfe.sqrtswe, full.lm.elev2)
+
+# ------------------------- OLD EXPLORATORY LMS --------------------------------
 # -------------- LOG(SWE) -------------------------
 
 # ----- 1a) WY and clim -----
@@ -182,9 +333,9 @@ out <- add.model.results(
 results <- out$results.df
 coef.results <- out$coef.df
 
-# ----- 1b) WY, no clim -----
-wy.sqrtswe <- lm(
-  sqrt(swe_peak) ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + wy ,
+# ----- 1b) WY, no clim  ----- 
+wy.logswe <- lm(
+  log(swe_peak) ~ topo_slope + topo_tpi150 + topo_elev + I(topo_elev^2) + rad_dtm_accum + (1 | wy),
   data = df.50
 )
 
@@ -310,6 +461,7 @@ plot.residuals(wy.clim.sqrtswe)
 
 saveRDS(results, file.path(dir, 'modeling/base_model_results.rds'))
 saveRDS(coef.results, file.path(dir, 'modeling/base_modelcoef_results.rds'))
+
 
 # ==============================================================================
 #  Exploratory Random Forest
@@ -590,4 +742,12 @@ cart <- rpart(swe_peak ~ cover_ground_frac +gap_gap_pct + gap_dist_to_canopy_mea
   cp = 0.001,
   minsplit = 100,
   maxdepth = 10))
+
+
+
+
+
+
+
+
 

@@ -184,6 +184,27 @@ ggplot(cor.long, aes(x = variable, y = correlation)) +
   theme_bw() +
   labs(title = 'Within-year correlations with SWE')
 
+cor(df.50$swe_peak, df.50$ht_zpcum1, use = 'complete.obs')
+# -0.090
+cor(sqrt(df.50$swe_peak), df.50$ht_zpcum1, use = 'complete.obs')
+# -0.097
+cor(df.50$swe_peak, df.50$ht_zpcum2, use = 'complete.obs')
+# -0.127
+cor(sqrt(df.50$swe_peak), df.50$ht_zpcum2, use = 'complete.obs')
+# -0.147
+
+canopy.vars.temp <- c('ht_zpcum1', 'ht_zpcum2', 'gap_gap_pct', 'rad_dsm_accum', 'cover_ground_frac')
+for (v in canopy.vars.temp) {
+  cat('\n---', v, '---\n')
+  
+  cor1 <- cor(df.50$swe_peak, df.50[[v]], use = 'complete.obs')
+  cor2 <- cor(sqrt(df.50$swe_peak), df.50[[v]], use = 'complete.obs')
+  
+  cat('swe:', round(cor1, 4), '\n')
+  cat('sqrt swe:', round(cor1, 4), '\n')
+}
+
+
 # ----- plot predictor vs response -----
 
 # SWE
