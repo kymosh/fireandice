@@ -481,27 +481,10 @@ out.dir <- dir <- 'data/processed/processed/rds/creek/modeling'
 
 # ----- create dfs -----
 # full df
-df.50.rf.full <- df.50.0 %>% 
-  select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
+df.50.rf.full <- df.50 %>% 
   select(-cell) %>% # RF won't use cell
   filter(
-    wy != 2020, # drop 2020, since it's prefire
-    swe_peak > 0) %>%  # filter so only including cells that actually have snow
-  mutate(
-    wy = as.factor(wy)) %>% # make wy a factor 
-    filter(complete.cases(.)) # drop rows with any missing values
-
-# reduced df
-df.50.rf.red <- df.50.0 %>% 
-  select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
-  select(-tmmx) %>% # just using tmin for modeling swe (tmmn and tmmx are highly correlated 0.99)
-  select(-topo_tpi510, -topo_tpi1200) %>% # not as correlated/strong relationship to swe
-  select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevent to snow accumulation phase
-  select(-topo_aspect_cos, -topo_aspect_sin) %>% # drop these because they're really just proxies for what rad_
-  select(-cell) %>% # RF won't use cell
-  filter(
-    wy != 2020, # drop 2020, since it's prefire
-    swe_peak > 0) %>%  # filter so only including cells that actually have snow
+    wy != 2020) %>% # drop 2020, since it's prefire
   mutate(
     wy = as.factor(wy)) %>% # make wy a factor 
   filter(complete.cases(.)) # drop rows with any missing values
@@ -604,29 +587,9 @@ toc()
 
 # --- full rf model ---
 tic('full rf.model')
-rf.full <- rf.run.save(name = 'rf_full_50', df = df.50.rf.full, out.dir, rf.results, rf.var.importance)
+rf.full <- rf.run.save(name = 'rf_full_50_75qsnowline', df = df.50.rf.full, out.dir, rf.results, rf.var.importance)
 toc()
 # took 2 hours 20 minutes
-
-
-
-# --- reduced rf model ---
-tic('reduced rf.model')
-rf.red <- rf.run.save(name = 'rf_red_50', df = df.50.rf.red, out.dir, rf.results, rf.var.importance)
-toc()
-
-
-
-# ----- visualize -----
-
-p <- pdp::partial(
-  object = rf.2021,
-  pred.var = 'topo_elev',
-  train = df.2021
-)
-
-plot(p)
-
 
 
 
