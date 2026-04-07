@@ -5,27 +5,41 @@ lapply(packages, library, character.only = T)
 # Create master raster
 # ===========================================================================================
 
+
 # read in all raster stacks and combine into single one for modeling
 
 # ----- 500m (452m) master-raster -----
 dir <- 'data/processed/processed/tif/500m/creek'
-#dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+j <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+g <- 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/500m/creek'
+
+
 files <- list.files(dir, 'creek', full.names = TRUE)
 files <- files[!grepl('master', files)]
 files
 sdd.stack <- rast(files)
 names(sdd.stack)
+
 writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
+writeRaster(sdd.stack, file.path(j, 'creek_master_500m.tif'), overwrite = T)
+writeRaster(sdd.stack, file.path(g, 'creek_master_500m.tif'), overwrite = T)
 
 # ----- 50m master-raster -----
+
 dir <- 'data/processed/processed/tif/50m/creek'
+j <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+g <- 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/50m/creek'
+
 #dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 files <- list.files(dir, 'creek', full.names = TRUE)
 files <- files[!grepl('master', files)]
 files
 swe.stack <- rast(files)
 names(swe.stack)
+
 writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
+writeRaster(swe.stack, file.path(j, 'creek_master_50m.tif'), overwrite = T)
+writeRaster(swe.stack, file.path(g, 'creek_master_50m.tif'), overwrite = T)
 
 
 # ----- if extents don't match... -----
@@ -357,89 +371,6 @@ hist(log1p(df.50$swe_peak_wy2023))
 
 
 
-
-
-
-
-
-
-## troubleshooting
-
-x <- rast(files[7])
-y <- rast(files[3])
-names(x)
-plot(y)
-names(y)
-
-for (f in files) {
-  r <- rast(f)
-  cat('\nFILE:', basename(f), '\n')
-  print(names(r))
-}
-
-names(x) <- 'cbibc'
-names(y) <- 'landcover'
-
-writeRaster(x, file.path(dir, 'creek_cbibc_500m_2.tif'))
-writeRaster(y, file.path(dir, 'creek_landcover_500m_2.tif'))
-
-lc <- as.data.frame(y, cell = T)
-head(lc)
-plot(y)
-unique(values(y))
-
-z <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/30m/creek/creek_landcover_30m_1524.tif')
-z.df <- as.data.frame(z, cells = T)
-head(z.df)
-unique(values(z))
-
-# how many rows have ALL landcover group columns NA?
-all.na.50 <- rowSums(is.na(df.50[, forest.cols])) == length(forest.cols)
-sum(all.na.50)
-
-# and for the 452m one
-all.na.500 <- rowSums(is.na(df.500[, forest.cols])) == length(forest.cols)
-sum(all.na.500)
-
-lc50 <- rast(file.path(dir, '50m/creek/creek_landcover_fractional_groups_50m.tif'))
-
-compareGeom(r.50[[1]], lc50[[1]], stopOnError = FALSE)
-ext(r.50); ext(lc50)
-res(r.50); res(lc50)
-origin(r.50); origin(lc50)
-
-# proportion of NA in landcover sum raster
-lc.sum.r <- sum(lc50[[forest.cols]])
-global(is.na(lc.sum.r), 'mean', na.rm = FALSE)
-
-# same but for the master’s landcover layers (what you actually used)
-lc.sum.master <- sum(r.50[[forest.cols]])
-global(is.na(lc.sum.master), 'mean', na.rm = FALSE)
-
-all.na.50 <- rowSums(is.na(df.50[, forest.cols])) == length(forest.cols)
-sum(all.na.50)
-
-lc.sum.r <- sum(lc50[[forest.cols]])
-
-global(lc.sum.r, fun = c('min','mean','max'), na.rm = TRUE)  # only where not NA
-
-lc.sum.50 <- rowSums(df.50[, forest.cols], na.rm = TRUE)
-all.na.50 <- rowSums(is.na(df.50[, forest.cols])) == length(forest.cols)
-
-summary(lc.sum.50[!all.na.50])
-sum(all.na.50)  # number of outside-mask pixels
-
-sum(lc.sum.50[!all.na.50] == 0)
-
-n.valid <- sum(!all.na.50)
-n.zero  <- sum(lc.sum.50[!all.na.50] == 0)
-
-n.zero / n.valid
-
-r <- x[[ -which(names(x) == 'topo_elev')[1] ]]
-plot(r)
-writeRaster(r, file.path(dir, 'topo_50m.tif'))
-
 # ==============================================================================
 # explore
 # ==============================================================================
@@ -555,3 +486,37 @@ for (yr in year) {
   r.sl <- classify(r.sl, rbind(c(0, NA)))
   plot(r.sl, col = 'red', add = TRUE, legend = FALSE)
 }
+
+
+
+# ----- visualize where sdd = 0 for each year -----
+year <- c('2021', '2022', '2023', '2024', '2025')
+
+dev.off()
+par(mfrow = c(2, 3))
+for (yr in year) {
+  r <- sdd.stack[[paste0('sdd_wy', yr)]]
+  r <- clamp(r, lower = 0, upper = 360, values = TRUE)
+  
+  plot(r,
+       main = paste0('SDD in WY', yr),
+       zlim = c(0, 360))
+  
+  r.zero <- r == 0
+  r.zero <- classify(r.zero, rbind(c(0, NA)))
+  plot(r.zero, col = 'red', add = TRUE, legend = FALSE)
+}
+
+
+
+
+## troubleshooting
+f1 <- file.path(out.dir, 'creek_sdd_wy2023__500m.tif')
+f2 <- file.path(temp.dir, 'creek_cbibc_500m_1524.tif') 
+r1 <- rast(f1)
+r2 <- rast(f2)
+
+res(r1)
+res(r2)
+origin(r2) == origin(r1)
+crs(r1, describe = T)$code == crs(r2, describe = T)$code

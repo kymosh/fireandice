@@ -51,7 +51,6 @@ writeRaster(topo.stack, file.path(out.dir, 'creek_topo_500m.tif'), overwrite = T
 # ------ sdd (500m only) ------
 
 out.dir <- 'data/processed/processed/tif/500m/creek'
-#out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
 in.dir <- file.path(out.dir, 'snow_metrics')
 sdd.files <- list.files(in.dir, pattern = '^creek_sdd', full.names = T)
 sdd.stack <- rast(sdd.files)
@@ -61,7 +60,13 @@ fn <- basename(sdd.files)
 wy <- sub('.*(wy\\d{4}).*', '\\1', fn)
 # assign names
 names(sdd.stack) <- paste0('sdd_', wy)
-
+# check names
 names(sdd.stack)
 
 writeRaster(sdd.stack, file.path(out.dir, 'creek_sdd_500m.tif'), overwrite = TRUE)
+
+# copy to backups
+dest1 <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/creek_sdd_500m.tif'
+dest2 <- 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/500m/creek/creek_sdd_500m.tif'
+writeRaster(sdd.stack, dest1, overwrite = TRUE)
+writeRaster(sdd.stack, dest2, overwrite = TRUE)

@@ -24,35 +24,33 @@ res(sdd.32611)
 
 in.dir <- here('data', 'raw', 'SDD')
 out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/snow_metrics'
-template <- rast(here(out.dir, 'creek_dem_500m_1524.tif'))
-template <- rast(file.path(out.dir, 'creek_sdd_wy2021_32611_1524.tif'))
+temp.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/other_metrics'
+template <- rast(here(temp.dir, 'nasadem_creek_500m_1524.tif'))
 
 sdd.files <- list.files(in.dir, pattern = '^creek_sdd.*\\.tif$', full.names = T)
-sdd.files <- list.files(in.dir, pattern = '^creek_sdd_wy2024|2025.*\\.tif$', full.names = T)
 
 for (f in sdd.files) {
   r <- rast(f)
+  crs(r) <- '+proj=sinu +R=6371007.181 +nadgrids=@null +wktext' # force CRS to the native MODIS projection that it was exported in 
   r.32611 <- project(r, template, method = 'near')
   r.32611.masked <- mask(r.32611, template)
   
-  new.name <- sub('\\.tif$', '_32611_1524.tif', basename(f))
+  new.name <- sub('6974\\.tif$', '_500m.tif', basename(f))
   out.name <- file.path(out.dir, new.name)
   
   writeRaster(r.32611.masked, out.name, overwrite = T)
 }
 
-test <- rast(file.path(out.dir, 'creek_sdd_wy2024_32611_1524.tif'))
-plot(test)
-res(test)
-crs(test, describe = T)$code
-sdd.creek.5000 <- mask(sdd.creek, dem.5000)
+# check
+new.sdd <- list.files(out.dir, pattern = '^creek_sdd', full.names = T)
+sdd <- rast(new.sdd)
+plot(sdd)
 
 # copy results to backup
-files.out <- list.files(out.dir, pattern = 'creek_sdd_wy2024|2025_32611_1524\\.tif$', full.names = TRUE)
-dest1 <- 'C:/Users/km220416/Documents/Fire_Snow_Dynamics/data/processed/processed/tif/500m/creek'
+dest1 <- 'C:/Users/km220416/Documents/Fire_Snow_Dynamics/data/processed/processed/tif/500m/creek/snow_metrics'
 dest2 <- 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/500m/creek/snow_metrics'
-file.copy(files.out, dest1, overwrite = TRUE)
-file.copy(files.out, dest2, overwrite = TRUE)
+file.copy(new.sdd, dest1, overwrite = TRUE)
+file.copy(new.sdd, dest2, overwrite = TRUE)
 
 
 ##### rename SWE files that are clipped to 5000 to reflect that so I can change them to the correct elevations withough losing them
@@ -333,3 +331,35 @@ crs(target) == crs(swe.500m)
 plot(swe.500m)
 # save output
 writeRaster(swe.500m, file.path(out.dir, 'creek_swe_500m.tif'), overwrite = TRUE)
+
+
+
+
+# troubleshooting
+og.23 <- rast('data/raw/SDD/sdd_2023_test_ogscript.tif')
+r <- rast('data/raw/SDD/creek_sdd_wy2024_6974.tif')
+r.correct <- rast('data/raw/SDD/creek_sdd_wy2023_5837.tif')
+
+crs(r) <- '+proj=sinu +R=6371007.181 +nadgrids=@null +wktext'
+
+r.32611 <- project(r, template, method = 'near')
+r.32611.masked <- mask(r.32611, template)
+plot(r.32611.masked)
+
+r.32611.correct <- project(r.correct, template, method = 'near')
+r.32611.correct.masked <- mask(r.32611.correct, template)
+plot(r.32611.correct.masked)
+
+r1 <- r.32611.masked
+r2 <- r.32611.masked.x
+
+d <- r1 - r2
+global(d, c('min', 'max'), na.rm = TRUE)
+freq(d)
+plot(d)
+
+# percent of cells with big differences
+mean(abs(values(d)) > 30, na.rm = TRUE)
+
+# percent with small differences
+mean(abs(values(d)) <= 5, na.rm = TRUE)

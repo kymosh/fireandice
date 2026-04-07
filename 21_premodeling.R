@@ -517,17 +517,14 @@ vars <- c(
   'cbibc',
   'rad_dsm_accum',
   'rad_dtm_accum',
-  'topo_aspect_cos',
   'topo_aspect_sin',
   'topo_slope',
-  'topo_tpi150',
-  'topo_elev',
-  'pr',
-  'tmmx'
+  'topo_tpi1200',
+  'topo_elev'
 )
 
 # group by year
-cor.by.wy <- df.50 %>%
+cor.by.wy <- df.500 %>%
   group_by(wy) %>%
   summarise(
     across(
@@ -551,60 +548,53 @@ ggplot(cor.long, aes(x = variable, y = correlation)) +
   geom_boxplot() +
   coord_flip() +
   theme_bw() +
-  labs(title = 'Within-year correlations with SWE')
+  labs(title = 'Within-year correlations with SDD')
 
-cor(df.50$swe_peak, df.50$ht_zpcum1, use = 'complete.obs')
-# -0.090
-cor(sqrt(df.50$swe_peak), df.50$ht_zpcum1, use = 'complete.obs')
-# -0.097
-cor(df.50$swe_peak, df.50$ht_zpcum2, use = 'complete.obs')
-# -0.127
-cor(sqrt(df.50$swe_peak), df.50$ht_zpcum2, use = 'complete.obs')
-# -0.147
-
+# print correlations of canopy vars with sdd
 canopy.vars.temp <- c('ht_zpcum1', 'ht_zpcum2', 'gap_gap_pct', 'rad_dsm_accum', 'cover_ground_frac')
 for (v in canopy.vars.temp) {
   cat('\n---', v, '---\n')
   
-  cor1 <- cor(df.50$swe_peak, df.50[[v]], use = 'complete.obs')
-  cor2 <- cor(sqrt(df.50$swe_peak), df.50[[v]], use = 'complete.obs')
+  cor1 <- cor(df.500$sdd, df.500[[v]], use = 'complete.obs')
+ # cor2 <- cor(sqrt(df.500$sdd), df.500[[v]], use = 'complete.obs')
   
-  cat('swe:', round(cor1, 4), '\n')
-  cat('sqrt swe:', round(cor1, 4), '\n')
+  cat('sdd:', round(cor1, 4), '\n')
+#  cat('sqrt swe:', round(cor1, 4), '\n')
 }
 
+# ----- compute correlations with sdd -----
+cor.df <- df.500 %>%
+  select(where(is.numeric)) %>%
+  summarise(across(-sdd, ~ cor(.x, sdd, use = 'complete.obs'))) %>%
+  tidyr::pivot_longer(cols = everything(), 
+                      names_to = 'variable', 
+                      values_to = 'correlation')
 
-# ----- plot predictor vs response -----
+# sort by strength
+cor.df <- cor.df %>%
+  arrange(desc(abs(correlation)))
 
-# SWE
-vars <- c(
-  'cover_ground_frac',
-  'gap_gap_pct',
-  'gap_dist_to_canopy_mean',
-  'ht_zskew',
-  'ht_zkurt',
-  'ht_zentropy',
-  'ht_zpcum1',
-  'ht_zpcum2',
-  'ht_zpcum6',
-  'ht_zpcum9',
-  'cbibc',
-  'rad_dsm_accum',
-  'rad_dtm_accum',
-  'topo_slope',
-  'topo_tpi150',
-  'topo_elev'
-)
+# plot
+ggplot(cor.df, aes(x = reorder(variable, correlation), y = correlation)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = 'Correlation with SDD',
+    x = 'Variable',
+    y = 'Pearson correlation'
+  ) +
+  theme_minimal()
 
-# pivot long so that it's better for plotting
-plot.df <- df.50 %>%
-  select(cell, wy, swe_peak, all_of(vars)) %>%
+
+# -----  plot predictor vs response -----
+plot.df <- df.500 %>%
+  select(cell, wy, sdd, all_of(vars)) %>%
   pivot_longer(
     cols = all_of(vars),
     names_to = 'predictor',
     values_to = 'value'
   ) %>%
-  filter(!is.na(value), !is.na(swe_peak))
+  filter(!is.na(value), !is.na(sdd))
 
 # create sample df
 set.seed(123)
@@ -612,37 +602,42 @@ set.seed(123)
 plot_var_wy <- function(df, var) {
   
   d <- df %>%
-    filter(!is.na(.data[[var]]), !is.na(swe_peak))
+    filter(!is.na(.data[[var]]), !is.na(sdd))
   
   # sample to keep it fast
   set.seed(123)
   d <- d %>% slice_sample(n = min(200000, nrow(d)))
   
-  ggplot(d, aes(x = .data[[var]], y = swe_peak)) +
+  p <- ggplot(d, aes(x = .data[[var]], y = sdd)) +
     geom_point(alpha = 0.03, size = 0.3) +
     geom_smooth(method = 'gam', formula = y ~ s(x), se = FALSE, color = 'blue') +
     facet_wrap(~ wy) +
-    coord_cartesian(ylim = c(0, 4)) +
     theme_bw() +
     labs(
       x = var,
-      y = 'swe_peak',
-      title = paste('SWE vs', var, 'by water year')
+      y = 'sdd',
+      title = paste('SDD vs', var, 'by water year')
     )
+  
+  return(p)
 }
 
-plot_var_wy(df.50, 'topo_elev')
-plot_var_wy(df.50, 'topo_tpi150')
-plot_var_wy(df.50, 'topo_slope')
-plot_var_wy(df.50, 'topo_aspect_sin')
-plot_var_wy(df.50, 'topo_aspect_cos')
+for (v in vars) {
+  print(plot_var_wy(df.500, v))
+}
+
+plot_var_wy(df.500, 'topo_elev')
+plot_var_wy(df.500, 'topo_tpi150')
+plot_var_wy(df.500, 'topo_slope')
+plot_var_wy(df.500, 'topo_aspect_sin')
+plot_var_wy(df.500, 'topo_aspect_cos')
 plot_var_wy(df.50, 'rad_dtm_accum')
 plot_var_wy(df.50, 'pr')
 plot_var_wy(df.50, 'tmmn')
 
 
 # ----- fit a GAM with multiple predictors -----
-gam <- sqrt(swe) ~ topo_elev + tpi150 + rad_dtm_accum + topo_slope 
+gam <- sdd ~ topo_elev + tpi150 + rad_dtm_accum + topo_slope 
 
 
 hist(df.50[["topo_elev"]])
