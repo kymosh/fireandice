@@ -309,15 +309,16 @@ names(df.long.500)
 # ===========================================================================================
 # save
 # ===========================================================================================
-dir <- 'data/processed/processed/rds'
+dir <- 'data/processed/processed/rds/creek'
 
 saveRDS(df.long.50, file.path(dir, 'creek_long_df_50m.rds'))
 saveRDS(df.long.500, file.path(dir, 'creek_long_df_500m.rds'))
 
 # save to backup
-saveRDS(df.long.50, 'G:/Active_Projects/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m.rds')
-saveRDS(df.long.500, 'G:/Active_Projects/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_500m.rds')
-
+saveRDS(df.long.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m.rds')
+saveRDS(df.long.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek/creek_long_df_500m.rds')
+saveRDS(df.long.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
+saveRDS(df.long.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_500m.rds')
 
 # -------- check NAs ------------
 na.counts <- colSums(is.na(df.50.cc))
@@ -520,3 +521,6 @@ res(r1)
 res(r2)
 origin(r2) == origin(r1)
 crs(r1, describe = T)$code == crs(r2, describe = T)$code
+
+r <- rast('data/processed/processed/tif/500m/creek/creek_master_500m.tif')
+plot(r)

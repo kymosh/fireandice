@@ -1,4 +1,4 @@
-packages <- c('dplyr', 'tidyr', 'corrplot', 'ggplot2')
+packages <- c('dplyr', 'tidyr', 'corrplot', 'ggplot2', 'terra')
 lapply(packages, library, character.only = T)
 
 # make sure if not on processing computer that the rds is updated!
@@ -81,7 +81,57 @@ saveRDS(df.500, file.path(dir, 'creek_long_df_500m_clean.rds'))
 # save to J: drive
 saveRDS(df.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_500m_clean.rds')
 
+# =======================================================================================
+# Spatial Autocorrelation
+# =======================================================================================
+library(gstat)
 
+# get x and y coordinates
+r.template <- rast('data/processed/processed/tif/50m/creek/creek_swe_50m.tif')
+
+df.2021 <- subset(df.50, wy == 2021)
+df.2021$cell <- as.numeric(as.character(df.2021$cell))
+
+
+coords <- xyFromCell(r.template, df.2021$cell)
+df.2021$x <- coords[,1]
+df.2021$y <- coords[,2]
+df.2021 <- df.2021[complete.cases(df.2021[, c('swe_peak', 'x', 'y')]), ]
+
+# ----- semivariogram -----
+set.seed(123)
+df.vario <- df.2021[sample(nrow(df.2021), min(10000, nrow(df.2021))), ]
+vg <- variogram(
+  swe_peak ~ 1,
+  locations = ~ x + y,
+  data = df.vario,
+  width = 100   # 100 m bins
+)
+plot(vg)
+plot(vg, xlim = c(0, 3000))
+plot(vg, xlim = c(0, 1000))
+head(vg)
+tail(vg)
+vg[vg$dist <= 3000, ]
+
+# ------ Morans I ------
+# subset dataset for Moran's I
+set.seed(123)
+
+n.samp <- min(20000, nrow(df.2021))
+df.moran <- df.2021[sample(nrow(df.2021), n.samp), ]
+
+d.vals <- c(250, 500, 1000, 2000)
+library(spdep)
+
+for (d in d.vals) {
+  nb <- dnearneigh(coords.mat, d1 = 0, d2 = d)
+  lw <- nb2listw(nb, style = 'W', zero.policy = TRUE)
+  
+  cat('\n----- Distance:', d, 'm -----\n')
+  print(summary(nb))
+  print(moran.test(df.moran$swe_peak, lw, zero.policy = TRUE))
+}
 
 # =======================================================================================
 # Data Exploration
