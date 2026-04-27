@@ -20,9 +20,15 @@ files
 sdd.stack <- rast(files)
 names(sdd.stack)
 
-writeRaster(sdd.stack, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
-writeRaster(sdd.stack, file.path(j, 'creek_master_500m.tif'), overwrite = T)
-writeRaster(sdd.stack, file.path(g, 'creek_master_500m.tif'), overwrite = T)
+# mask t exclude Kings study area
+template <- sdd.stack[['swe_20200414_500m']]
+mask <- !is.na(template) 
+
+sdd.stack.masked <- trim(mask(sdd.stack, mask, maskvalues = FALSE))
+
+writeRaster(sdd.stack.masked, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
+writeRaster(sdd.stack.masked, file.path(j, 'creek_master_500m.tif'), overwrite = T)
+writeRaster(sdd.stack.masked, file.path(g, 'creek_master_500m.tif'), overwrite = T)
 
 # ----- 50m master-raster -----
 
@@ -30,16 +36,28 @@ dir <- 'data/processed/processed/tif/50m/creek'
 j <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 g <- 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/50m/creek'
 
-#dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
+# dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
 files <- list.files(dir, 'creek', full.names = TRUE)
 files <- files[!grepl('master', files)]
 files
 swe.stack <- rast(files)
 names(swe.stack)
 
-writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
-writeRaster(swe.stack, file.path(j, 'creek_master_50m.tif'), overwrite = T)
-writeRaster(swe.stack, file.path(g, 'creek_master_50m.tif'), overwrite = T)
+# mask t exclude Kings study area
+names(swe.stack)
+plot(swe.stack[['swe_20200523']])
+
+template <- swe.stack[['swe_20200523']]
+mask <- !is.na(template) 
+
+swe.stack.masked <- trim(mask(swe.stack, mask, maskvalues = FALSE))
+
+# save
+writeRaster(swe.stack.masked, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
+writeRaster(swe.stack.masked, file.path(j, 'creek_master_50m.tif'), overwrite = T)
+writeRaster(swe.stack.masked, file.path(g, 'creek_master_50m.tif'), overwrite = T)
+
+
 
 
 # ----- if extents don't match... -----
@@ -180,7 +198,7 @@ filter_landcover <- function(df, forest.cols, lc.sum.min = 0.25, undesirable.max
       forest_type = as.factor(forest_type),
       forest_dom_frac = do.call(pmax, c(across(all_of(forest.cols)), na.rm = TRUE))
     ) %>%
-    select(-lc.all.na, -lc.sum)
+    dplyr::select(-lc.all.na, -lc.sum)
 }
 
 pivot_climate_long <- function(df) {
@@ -217,7 +235,7 @@ build_long_50m <- function(df, forest.cols, remove.cols, keep.canopy) {
   clim.long <- pivot_climate_long(df)
   
   df.long <- left_join(swe.long, clim.long, by = c('cell', 'wy')) %>%
-    select(
+    dplyr::select(
       -starts_with('clim_'),
       -matches('^swe_\\d{8}$'),
       -all_of(remove.cols),
@@ -258,7 +276,7 @@ build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy) {
     left_join(sdd.long, by = c('cell', 'wy')) %>%
     left_join(clim.long, by = c('cell', 'wy')) %>%
     rename_with(~ gsub('_500m$', '', .x)) %>%
-    select(
+    dplyr::select(
       -starts_with('clim_'),
       -matches('^swe_\\d{8}$'),
       -starts_with('sdd_'),
@@ -284,15 +302,56 @@ dir <- 'data/processed/processed/tif'
 r.50 <- rast(file.path(dir, '50m/creek/creek_master_50m.tif'))
 r.500 <- rast(file.path(dir, '500m/creek/creek_master_500m.tif'))
 
-df.50 <- as.data.frame(r.50, cells = TRUE)
-df.500 <- as.data.frame(r.500, cells = TRUE)
+# sanity check
+n <- nlyr(r.50)
+for (i in seq(1, n, by = 16)) {
+  idx <- i:min(i + 15, n)
+  plot(r.50[[idx]])
+  title(paste('Layers', idx[1], 'to', idx[length(idx)]))
+  readline('Press [enter] to continue...')
+}
 
+n <- nlyr(r.500)
+for (i in seq(1, n, by = 16)) {
+  idx <- i:min(i + 15, n)
+  plot(r.500[[idx]])
+  title(paste('Layers', idx[1], 'to', idx[length(idx)]))
+  readline('Press [enter] to continue...')
+}
+
+
+df.50 <- as.data.frame(r.50, cells = TRUE, xy = TRUE)
+df.500 <- as.data.frame(r.500, cells = TRUE, xy = TRUE)
+
+# ===========================================================================================
+# Trim 50m data
+# ===========================================================================================
+
+# make points from df.500 coordinates
+pts.500 <- vect(df.500, geom = c('x', 'y'), crs = crs(r.500))
+
+# extract all 50m layers at those points
+r.50.pts <- terra::extract(r.50, pts.500)
+
+# combine to keep 50m cell/x/y
+df.50.thinned <- cbind(
+  df.500[, c('cell', 'x', 'y')],
+  r.50.pts[, -1, drop = FALSE]
+)
+
+# remove edge points that are NA
+data.cols <- setdiff(names(df.50.thinned), c('cell', 'x', 'y'))
+df.50.thinned <- df.50.thinned[
+  rowSums(!is.na(df.50.thinned[, data.cols])) > 0,
+]
 
 # ===========================================================================================
 # filter landcover
 # ===========================================================================================
 
 df.50.f <- filter_landcover(df.50, forest.cols)
+df.50thin.f <- filter_landcover(df.50.thinned, forest.cols)
+
 df.500.f <- filter_landcover(df.500, forest.cols)
 
 # ===========================================================================================
@@ -300,6 +359,8 @@ df.500.f <- filter_landcover(df.500, forest.cols)
 # ===========================================================================================
 
 df.long.50 <- build_long_50m(df.50.f, forest.cols, remove.cols, keep.canopy)
+df.long.50thin <- build_long_50m(df.50thin.f, forest.cols, remove.cols, keep.canopy)
+
 df.long.500 <- build_long_500m(df.500.f, forest.cols, remove.cols, keep.canopy)
 
 # check
@@ -319,6 +380,12 @@ saveRDS(df.long.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/c
 saveRDS(df.long.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek/creek_long_df_500m.rds')
 saveRDS(df.long.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
 saveRDS(df.long.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_500m.rds')
+
+# save all thinned
+saveRDS(df.long.50thin, file.path(dir, 'creek_long_df_50m_thinned.rds'))
+saveRDS(df.long.50thin, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m_thinned.rds')
+saveRDS(df.long.50thin, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m_thinned.rds')
+
 
 # -------- check NAs ------------
 na.counts <- colSums(is.na(df.50.cc))
@@ -524,3 +591,7 @@ crs(r1, describe = T)$code == crs(r2, describe = T)$code
 
 r <- rast('data/processed/processed/tif/500m/creek/creek_master_500m.tif')
 plot(r)
+
+
+r1 <- rast('data/processed/processed/tif/50m/creek/creek_canopy_metrics_50m.tif')
+plot(r1)
