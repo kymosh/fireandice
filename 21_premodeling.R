@@ -17,7 +17,7 @@ df.50 <- df.50.0 %>%
   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
   select(-tmmx) %>% # just using tmin for modeling swe (tmmn and tmmx are highly correlated 0.99)
   select(-topo_tpi510, -topo_tpi1200) %>% # not as correlated/strong relationship to swe
-  select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevent to snow accumulation phase
+  select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevant to snow accumulation phase
   select(-topo_aspect_cos, -topo_aspect_sin) %>% # drop these because they're really just proxies for what rad_dtm gets
   filter(
     wy != 2020, # drop 2020, since it's prefire
@@ -39,11 +39,51 @@ df.50 <- df.50.0 %>%
 
 # scale numeric predictors
 num.cols <- sapply(df.50, is.numeric)
-num.cols['swe_peak'] <- FALSE # don't scale the response variable'
+num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
 df.50[num.cols] <- scale(df.50[num.cols])
 
 saveRDS(df.50, file.path(dir, 'creek_long_df_50m_clean.rds'))
 saveRDS(df.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_clean.rds') # save to J: drive
+saveRDS(df.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m_clean.rds') # save to G: drive backup
+
+
+# ----- df.50 SWE *THINNED* -----
+
+# get dataframe
+df.50thin.0 <- readRDS(file.path(dir, 'creek_long_df_50m_thinned.rds'))
+
+df.50.thin <- df.50thin.0 %>% 
+  select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
+  select(-tmmx) %>% # just using tmin for modeling swe (tmmn and tmmx are highly correlated 0.99)
+  select(-topo_tpi510, -topo_tpi1200) %>% # not as correlated/strong relationship to swe
+  select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevent to snow accumulation phase
+  select(-topo_aspect_cos, -topo_aspect_sin) %>% # drop these because they're really just proxies for what rad_dtm gets
+  filter(
+    wy != 2020, # drop 2020, since it's prefire
+    swe_peak > 0 # drop all cells where there was no snow
+  ) %>%  
+  mutate(
+    snowline = case_when( # remove pixels that fall below that year's snowline
+      wy == 2021 ~ 2145,
+      wy == 2022 ~ 1956,
+      wy == 2023 ~ -Inf, # snow covers whole area for 2023, no need to filter 
+      wy == 2024 ~ 1786,
+      wy == 2025 ~ 2021),
+    wy = as.factor(wy), # make wy a factor
+    cell = as.factor(cell) # make cell a factor
+  ) %>% 
+  filter(topo_elev >= snowline,
+         complete.cases(.)) %>% # drop rows with any missing values
+  select(-snowline)
+
+# scale numeric predictors
+num.cols <- sapply(df.50.thin, is.numeric)
+num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
+df.50.thin[num.cols] <- scale(df.50.thin[num.cols])
+
+saveRDS(df.50.thin, file.path(dir, 'creek_long_df_50m_clean.rds'))
+saveRDS(df.50.thin, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_thinned_clean.rds') # save to J: drive
+saveRDS(df.50.thin, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek/creek_long_df_50m_thinned_clean.rds') # save to G: drive backup
   
 # ----- df.500 SDD -----
 
@@ -73,34 +113,27 @@ df.500 <- df.500.0 %>%
 
 # scale numeric predictors
 num.cols <- sapply(df.500, is.numeric)
-num.cols['sdd'] <- FALSE # don't scale the response variable'
+num.cols[c('sdd', 'x', 'y')] <- FALSE # don't scale the response variable'
 df.500[num.cols] <- scale(df.500[num.cols])
 
 # save to mosher comp
 saveRDS(df.500, file.path(dir, 'creek_long_df_500m_clean.rds'))
-# save to J: drive
+# save to J/G drives
 saveRDS(df.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_500m_clean.rds')
+saveRDS(df.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_500m_clean.rds') # save to G: drive backup
 
 # =======================================================================================
 # Spatial Autocorrelation
 # =======================================================================================
+
+# ------------------------- df.50 -------------------------
 library(gstat)
-
-# get x and y coordinates
-r.template <- rast('data/processed/processed/tif/50m/creek/creek_swe_50m.tif')
-
-df.2021 <- subset(df.50, wy == 2021)
-df.2021$cell <- as.numeric(as.character(df.2021$cell))
-
-
-coords <- xyFromCell(r.template, df.2021$cell)
-df.2021$x <- coords[,1]
-df.2021$y <- coords[,2]
-df.2021 <- df.2021[complete.cases(df.2021[, c('swe_peak', 'x', 'y')]), ]
+df <- subset(df.50, wy == 2023)
+df <- df[complete.cases(df[, c('swe_peak', 'x', 'y')]), ]
 
 # ----- semivariogram -----
 set.seed(123)
-df.vario <- df.2021[sample(nrow(df.2021), min(10000, nrow(df.2021))), ]
+df.vario <- df[sample(nrow(df), min(10000, nrow(df))), ]
 vg <- variogram(
   swe_peak ~ 1,
   locations = ~ x + y,
@@ -108,30 +141,72 @@ vg <- variogram(
   width = 100   # 100 m bins
 )
 plot(vg)
-plot(vg, xlim = c(0, 3000))
-plot(vg, xlim = c(0, 1000))
 head(vg)
 tail(vg)
 vg[vg$dist <= 3000, ]
 
+# troubleshooting
+
+
 # ------ Morans I ------
 # subset dataset for Moran's I
-set.seed(123)
+set.seed(14)
+n.samp <- 20000
+df.moran <- df[sample(nrow(df), n.samp), ]
+coords <- as.matrix(df.moran[, c('x', 'y')])
+t = 100 # distance threshold for neighbors (e.g., 1000 meters)
+nb <- dnearneigh(coords, d1 = 0, d2 = t)
+lw <- nb2listw(nb, style = 'W', zero.policy = TRUE)
+moran.test(df.moran$swe_peak, lw, zero.policy = TRUE)
 
-n.samp <- min(20000, nrow(df.2021))
-df.moran <- df.2021[sample(nrow(df.2021), n.samp), ]
+thresholds <- c(100, 250, 500, 1000, 2000, 5000)
 
-d.vals <- c(250, 500, 1000, 2000)
-library(spdep)
-
-for (d in d.vals) {
-  nb <- dnearneigh(coords.mat, d1 = 0, d2 = d)
+for (t in thresholds) {
+  
+  nb <- dnearneigh(coords, d1 = 0, d2 = t)
   lw <- nb2listw(nb, style = 'W', zero.policy = TRUE)
   
-  cat('\n----- Distance:', d, 'm -----\n')
-  print(summary(nb))
-  print(moran.test(df.moran$swe_peak, lw, zero.policy = TRUE))
+  mt <- moran.test(df.moran$swe_peak, lw, zero.policy = TRUE)
+  
+  cat('-------------------------\n')
+  cat('Distance:', t, 'm\n')
+  cat('Moran I:', mt$estimate['Moran I statistic'], '\n')
+  cat('Expected:', mt$estimate['Expectation'], '\n')
+  cat('Z-score:', mt$statistic, '\n')
+  cat('p-value:', mt$p.value, '\n')
 }
+
+
+# ------------------------- df.50.thin -------------------------
+library(gstat)
+df <- subset(df.50.thin, wy == 2023)
+df <- df[complete.cases(df[, c('swe_peak', 'x', 'y')]), ]
+
+# ------ Morans I ------
+coords <- as.matrix(df[, c('x', 'y')])
+t = 1000 # distance threshold for neighbors (e.g., 1000 meters)
+nb <- dnearneigh(coords, d1 = 0, d2 = t)
+lw <- nb2listw(nb, style = 'W', zero.policy = TRUE)
+moran.test(df$swe_peak, lw, zero.policy = TRUE)
+
+thresholds <- c(500, 1000, 2000, 5000)
+
+for (t in thresholds) {
+  
+  nb <- dnearneigh(coords, d1 = 0, d2 = t)
+  lw <- nb2listw(nb, style = 'W', zero.policy = TRUE)
+  
+  mt <- moran.test(df$swe_peak, lw, zero.policy = TRUE)
+  
+  cat('-------------------------\n')
+  cat('Distance:', t, 'm\n')
+  cat('Moran I:', mt$estimate['Moran I statistic'], '\n')
+  cat('Expected:', mt$estimate['Expectation'], '\n')
+  cat('Z-score:', mt$statistic, '\n')
+  cat('p-value:', mt$p.value, '\n')
+}
+
+
 
 # =======================================================================================
 # Data Exploration
@@ -246,6 +321,10 @@ vars <- c(
   'pr',
   'tmmn'
 )
+
+vars <- df.50 %>%
+  select(-c(cell, x, y, tmmn, pr, swe_peak, wy, topo_elev, topo_slope, topo_tpi150, topo_tpi2010, rad_dtm_accum)) %>%
+  names()
 
 # group by year
 cor.by.wy <- df.50 %>%

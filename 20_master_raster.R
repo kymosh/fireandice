@@ -161,19 +161,20 @@ remove.cols <- c(
   'forest_dom_frac'
 )
 
-keep.canopy <- c(
-  'fd_fractal_dim',
-  'gap_gap_pct',
-  'cover_ground_frac',
-  'gap_dist_to_canopy_mean',
-  'ht_zskew',
-  'ht_zkurt',
-  'ht_zentropy',
-  'ht_zpcum1',
-  'ht_zpcum2',
-  'ht_zpcum6',
-  'ht_zpcum9'
-)
+# keep.canopy <- c(
+#   'fd_fractal_dim',
+#   'gap_gap_pct',
+#   'cover_ground_frac',
+#   'gap_dist_to_canopy_mean',
+#   'ht_zskew', # this one has basically no correlation with SWE, so can probably drop
+#   'ht_zkurt', # this one has basically no correlation with SWE, so can probably drop
+#   'ht_zentropy',
+#   'ht_zpcum1',
+#   'ht_zpcum2',
+#   'ht_zpcum6',
+#   'ht_zpcum9',
+#   'ht_zsd'
+# )
 
 
 
@@ -218,10 +219,15 @@ pivot_climate_long <- function(df) {
   clim.long
 }
 
-build_long_50m <- function(df, forest.cols, remove.cols, keep.canopy) {
+build_long_50m <- function(df, forest.cols, remove.cols, keep.canopy = NULL) {
   
   canopy.cols <- names(df)[grepl('^(cover_|gap_|ht_|fd_)', names(df))]
-  drop.canopy <- setdiff(canopy.cols, keep.canopy)
+  
+  if (is.null(keep.canopy)) {
+    drop.canopy <- character(0)
+  } else {
+    drop.canopy <- setdiff(canopy.cols, keep.canopy)
+  }
   
   swe.long <- df %>%
     pivot_longer(
@@ -245,11 +251,16 @@ build_long_50m <- function(df, forest.cols, remove.cols, keep.canopy) {
   df.long
 }
 
-build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy) {
+build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy = NULL) {
   
   names.clean <- gsub('_500m$', '', names(df))
   canopy.cols <- names.clean[grepl('^(cover_|gap_|ht_|fd_)', names.clean)]
-  drop.canopy <- setdiff(canopy.cols, keep.canopy)
+  
+  if (is.null(keep.canopy)) {
+    drop.canopy <- character(0)
+  } else {
+    drop.canopy <- setdiff(canopy.cols, keep.canopy)
+  }
   
   swe.long <- df %>%
     pivot_longer(
@@ -358,10 +369,12 @@ df.500.f <- filter_landcover(df.500, forest.cols)
 # pivot long
 # ===========================================================================================
 
-df.long.50 <- build_long_50m(df.50.f, forest.cols, remove.cols, keep.canopy)
-df.long.50thin <- build_long_50m(df.50thin.f, forest.cols, remove.cols, keep.canopy)
+# if you want to only keep the canopy defined in the setup, add in ", keep.canopy" to the function calls below
 
-df.long.500 <- build_long_500m(df.500.f, forest.cols, remove.cols, keep.canopy)
+df.long.50 <- build_long_50m(df.50.f, forest.cols, remove.cols)
+df.long.50thin <- build_long_50m(df.50thin.f, forest.cols, remove.cols)
+
+df.long.500 <- build_long_500m(df.500.f, forest.cols, remove.cols)
 
 # check
 names(df.long.50)
@@ -383,8 +396,8 @@ saveRDS(df.long.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek
 
 # save all thinned
 saveRDS(df.long.50thin, file.path(dir, 'creek_long_df_50m_thinned.rds'))
-saveRDS(df.long.50thin, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m_thinned.rds')
-saveRDS(df.long.50thin, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m_thinned.rds')
+saveRDS(df.long.50thin, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek/creek_long_df_50m_thinned.rds')
+saveRDS(df.long.50thin, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_thinned.rds')
 
 
 # -------- check NAs ------------

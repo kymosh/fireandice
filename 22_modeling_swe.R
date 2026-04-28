@@ -23,6 +23,7 @@ set.seed(12)
 idx <- sample(seq_len(nrow(df.50)), 100000)
 df.50.samp <- df.50[sample(nrow(df.50), 100000), ]
 
+
 # ==============================================================================
 #  Results DF and helper functions creation
 # ==============================================================================
@@ -473,16 +474,16 @@ library(ranger)
 library(pdp)
 
 dir <- 'data/processed/processed/rds/creek'
-df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
-out.dir <- dir <- 'data/processed/processed/rds/creek/modeling'
+df.50 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
+out.dir <- 'data/processed/processed/rds/creek/modeling'
 
-#rf.results <- data.frame()
-#rf.var.importance <- data.frame()
+rf.results <- data.frame()
+rf.var.importance <- data.frame()
 
 # ----- create dfs -----
 # full df
 df.50.rf.full <- df.50 %>% 
-  select(-cell) %>% # RF won't use cell
+  select(-c(cell, x, y, pr, tmmx, tmmn, fd_fractal_dim, rad_dsm_melt, rad_dtm_melt)) %>% # don't use cell, x, y, or clim variables
   filter(
     wy != 2020) %>% # drop 2020, since it's prefire
   mutate(
@@ -659,43 +660,70 @@ rf.2022 <- readRDS(file.path(dir, 'modeling/rf2022.rds'))
 # ==============================================================================
 
 gamma.base <- glm(swe_peak ~ topo_elev + I(topo_elev^2) + wy + topo_tpi150 + topo_slope + rad_dtm_accum, 
-                    family = Gamma(link = 'log'), 
-                    data = df.50)
+                    family = Gamma(link = log), 
+                    data = df.50.thin)
 
 # get pearson residuals
 fit <- fitted(gamma.base)
 est.disp <- summary(gamma.base)$dispersion
 pearson.resid <- residuals(gamma.base, type = 'pearson')/sqrt(est.disp)
+deviance.resid <- residuals(gamma.base, type = 'deviance')
 
-set.seed(1)
-idx <- sample(seq_along(fit), 5000)
+range(predict(gamma.base, type = 'response'))
 
-par(mfrow = c(1, 1))
-plot(fit[idx] ~ pearson.resid[idx], 
+set.seed(14)
+idx <- sample(seq_along(fit), 10000)
+
+# plot residuals
+plot(pearson.resid[idx] ~ fit[idx], 
+     col = densCols(pearson.resid[idx], fit[idx]),
      ylab = "Pearson residuals", 
      xlab = 'Predicted SWE')
 abline(h = 0)
 
-
-
-
-
-
+plot(deviance.resid[idx] ~ fit[idx], 
+     col = densCols(deviance.resid[idx], fit[idx]),
+     ylab = "Deviance residuals", 
+     xlab = 'Predicted SWE')
+abline(h = 0)
 
 summary(gamma.base)
-anova(m.gamma.full)
+anova(gamma.base)
 
-plot(residuals(m.gamma) ~ fitted(m.gamma))
-plot(fitted(m.gamma),
-     residuals(m.gamma, type = 'pearson'),
-     xlab = 'Fitted values',
-     ylab = 'Pearson residuals')
-abline(h = 0, col = 'red')
+# Morans I on residuals
+set.seed(14)
+idx <- sample(nrow(df.50.thin), 10000)
+
+coords <- as.matrix(df.50.thin[idx, c('x', 'y')])
+res.samp <- pearson.resid[idx]
+
+thresholds <- c(500, 1000, 2000, 5000)
+
+for (t in thresholds) {
+  
+  nb <- dnearneigh(coords, d1 = 0, d2 = t)
+  lw <- nb2listw(nb, style = 'W', zero.policy = TRUE)
+  
+  mt <- moran.test(res.samp, lw, zero.policy = TRUE)
+  
+  cat('-------------------------\n')
+  cat('Distance:', t, 'm\n')
+  cat('Moran I:', mt$estimate['Moran I statistic'], '\n')
+  cat('Expected:', mt$estimate['Expectation'], '\n')
+  cat('Z-score:', mt$statistic, '\n')
+  cat('p-value:', mt$p.value, '\n')
+}
 
 
-# toubleshooting
-zeros <- df.50$swe_peak == 0
-
+# troubleshooting
+t = 1000
+nb <- dnearneigh(coords, d1 = 0, d2 = t)
+lw <- nb2listw(nb, style = 'W', zero.policy = TRUE)
+MoransResults <- moran.test(res.samp, lw, zero.policy = TRUE)
+### Computation of effective sample size
+n = 10000
+eff_ss = round(n/(1+abs(MoransResults$estimate[1])))
+print(eff_ss)
 
 # ==============================================================================
 #  Exploratory CART
