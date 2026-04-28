@@ -12,7 +12,8 @@ dir <- 'data/processed/processed/rds/creek'
 df.50 <- readRDS(file.path(dir, 'creek_long_df_50m_clean.rds'))
 #df.500 <- readRDS(file.path(dir, 'creek_long_df_500m.rds')) let's just focus on df.50 for now. 
 df.50 <- df.50 %>% 
-  mutate(sqrt_swe = sqrt(swe_peak))
+  # mutate(sqrt_swe = sqrt(swe_peak))
+  select(-c())
 
 
 # load results DF
@@ -474,16 +475,40 @@ library(ranger)
 library(pdp)
 
 dir <- 'data/processed/processed/rds/creek'
-df.50 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
+df.50 <- readRDS(file.path(dir, 'creek_long_df_50m_clean.rds'))
 out.dir <- 'data/processed/processed/rds/creek/modeling'
 
 rf.results <- data.frame()
 rf.var.importance <- data.frame()
 
 # ----- create dfs -----
+
+keep <- c(
+  'ht_zq95',
+  'gap_gap_pct',
+  'cover_ground_frac',
+  'gap_dist_to_canopy_mean',
+  'ht_zskew', # this one has basically no correlation with SWE, so can probably drop
+  'ht_zkurt', # this one has basically no correlation with SWE, so can probably drop
+  'ht_zentropy',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zsd',
+  'ht_zmax',
+  'rad_dsm_accum',
+  'topo_slope',
+  'topo_tpi150',
+  'topo_tpi2010',
+  'topo_elev',
+  'wy',
+  'swe_peak'
+)
+
 # full df
 df.50.rf.full <- df.50 %>% 
-  select(-c(cell, x, y, pr, tmmx, tmmn, fd_fractal_dim, rad_dsm_melt, rad_dtm_melt)) %>% # don't use cell, x, y, or clim variables
+  select(all_of(keep)) %>%
   filter(
     wy != 2020) %>% # drop 2020, since it's prefire
   mutate(
@@ -588,7 +613,7 @@ toc()
 
 # --- full rf model ---
 tic('full rf.model')
-rf.full <- rf.run.save(name = 'rf_full_50_75qsnowline', df = df.50.rf.full, out.dir, rf.results, rf.var.importance)
+rf.full <- rf.run.save(name = 'rf_full_50', df = df.50.rf.full, out.dir, rf.results, rf.var.importance)
 toc()
 # took 2 hours 20 minutes
 
