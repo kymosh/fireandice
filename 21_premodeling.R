@@ -16,9 +16,7 @@ df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
 df.50 <- df.50.0 %>% 
   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
   select(-tmmx) %>% # just using tmin for modeling swe (tmmn and tmmx are highly correlated 0.99)
-  select(-topo_tpi510, -topo_tpi1200) %>% # not as correlated/strong relationship to swe
   select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevant to snow accumulation phase
-  select(-topo_aspect_cos, -topo_aspect_sin) %>% # drop these because they're really just proxies for what rad_dtm gets
   filter(
     wy != 2020, # drop 2020, since it's prefire
     swe_peak > 0 # drop all cells where there was no snow
@@ -882,3 +880,6 @@ plot(r.2021)
 r.zero <- r.2021 == 0
 r.zero <- classify(r.zero, rbind(c(0, NA)))
 plot(r.zero, col = 'red', add = TRUE, legend = FALSE)
+
+topo <- rast('data/processed/processed/tif/50m/creek/creek_topo_50m.tif')
+names(topo)
