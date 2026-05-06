@@ -1,28 +1,12 @@
 ######################
 # ASO tifs
 
-# Directory with input ASO tifs
-tif.dir <- 'data/raw/ASO/tif'
-
-# Output directory
-out.dir.tif <- here('data', 'processed', 'processed', 'tif')
-dir.create(out.dir.tif, recursive = TRUE, showWarnings = FALSE)
-
-# List files with matching keywords
-tif.files <- list.files(tif.dir, pattern = '\\.tif$', full.names = TRUE)
-
-# Filter files by basin
-creek.tifs   <- tif.files[str_detect(tif.files, 'SanJoaquin')]
-kern.tifs   <- tif.files[str_detect(tif.files, 'Kern')]
-kaweah.tifs <- tif.files[str_detect(tif.files, 'Kaweah')]
-
-# Combine Kern and Kaweah
-castle.tifs <- c(kern.tifs, kaweah.tifs)
 
 # Helper function to clip and save rasters
-clip.and.save <- function(file.path, extent.sf, out.dir.tif, dem.masked) {
+clip.and.save <- function(r.file.path, extent.sf, out.dir.tif) {
+  
   # Load SWE raster
-  tif <- rast(file.path)
+  tif <- rast(r.file.path)
   
   # Reproject extent to match SWE raster
   extent.sf <- st_transform(extent.sf, crs(tif))
@@ -31,40 +15,171 @@ clip.and.save <- function(file.path, extent.sf, out.dir.tif, dem.masked) {
   tif.crop <- crop(tif, vect(extent.sf))
   tif.mask <- mask(tif.crop, vect(extent.sf))
   
-  # Resample DEM to match SWE raster
-  if (!compareGeom(tif.mask, dem.masked, stopOnError = FALSE)) {
-    dem.masked <- resample(dem.masked, tif.mask, method = 'near')
-  }
-  
-  # Apply elevation mask for >5000ft (1524m)
-  tif.elev.masked <- mask(tif.mask, dem.masked, maskvalue = NA)
-  
   # Create output name
-  base.name <- tools::file_path_sans_ext(basename(file.path))
+  base.name <- tools::file_path_sans_ext(basename(r.file.path))
   out.name <- paste0(base.name, '_clipped.tif')
   out.path <- file.path(out.dir.tif, out.name)
   
   # Save
-  writeRaster(tif.elev.masked, out.path, overwrite = TRUE)
+  writeRaster(tif.mask, out.path, overwrite = TRUE)
+  
+  # return raster to environment
+  return(tif.mask)
 }
 
-# Clip SanJoaquin files to creek.extent
-for (f in creek.tifs) {
-  clip.and.save(f, creek.extent, out.dir.tif, dem.creek.5000)
+
+
+# ---------- setup ----------
+
+# --- tif files ---
+
+# Directory with input ASO tifs
+tif.dir <- 'data/raw/ASO/tif'
+
+# Output directory
+out.dir.tif <- 'data/processed/processed/tif/50m'
+
+# List files with matching keywords
+tif.files <- list.files(tif.dir, pattern = '\\.tif$', full.names = TRUE)
+
+# Filter files by basin
+creek.tifs   <- tif.files[str_detect(tif.files, 'SanJoaquin')]
+castle.tifs   <- tif.files[str_detect(tif.files, 'Kern|Kaweah')]
+caldor.tifs <- tif.files[str_detect(tif.files, 'American|Truckee')]
+dixie.tifs <- tif.files[str_detect(tif.files, 'Feather')]
+
+# double-check correct CRS
+fires = list(creek.tifs[1], castle.tifs[1], caldor.tifs[1], dixie.tifs[1])
+for (each in fires) {
+  r <- rast(each)
+  print(crs(r, describe = T)$code)
 }
 
-# one more time to file that had been missing
-clip.and.save(
-  file.path = 'G:/Fire_Snow_Dynamics/data/raw/ASO/tif/ASO_SanJoaquin_2024Apr29-May01_swe_50m.tif',
-  extent.sf = creek.extent,
-  out.dir.tif = out.dir.tif,
-  dem.masked = dem.creek.5000
+# --- study extent shp ---
+creek.extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_creek_simple.shp')
+castle.extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_castle_simple.shp')
+caldor.extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_caldor_simple.shp')
+dixie.extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_dixie_simple.shp')
+
+# double-check correct CRS
+fires = list(creek.extent, castle.extent, caldor.extent, dixie.extent)
+for (each in fires) {
+  print(crs(each, describe = T)$code)
+}
+
+
+# ----- run function -----
+
+# creek
+creek.swe.crop <- lapply(creek.tifs, function(f) {
+  clip.and.save(
+    r.file.path = f, 
+    extent.sf = creek.extent,
+    out.dir.tif = out.dir.tif
+  )
+})
+
+names(creek.swe.crop) <- tools::file_path_sans_ext(
+  basename(creek.tifs)
 )
 
-# Clip Kern and Kaweah files to castle.extent
-for (f in castle.tifs) {
-  clip.and.save(f, castle.extent, out.dir.tif, dem.castle.5000)
+plot(creek.swe.crop[[1]])
+
+# castle
+castle.swe.crop <- lapply(castle.tifs, function(f) {
+  clip.and.save(
+    r.file.path = f, 
+    extent.sf = castle.extent,
+    out.dir.tif = out.dir.tif
+  )
+})
+
+names(castle.swe.crop) <- tools::file_path_sans_ext(
+  basename(castle.tifs)
+)
+
+plot(castle.swe.crop[[1]])
+
+# caldor
+caldor.swe.crop <- lapply(caldor.tifs, function(f) {
+  clip.and.save(
+    r.file.path = f, 
+    extent.sf = caldor.extent,
+    out.dir.tif = out.dir.tif
+  )
+})
+
+names(caldor.swe.crop) <- tools::file_path_sans_ext(
+  basename(caldor.tifs)
+)
+
+plot(caldor.swe.crop[[1]])
+
+# dixie
+dixie.swe.crop <- lapply(dixie.tifs, function(f) {
+  clip.and.save(
+    r.file.path = f, 
+    extent.sf = dixie.extent,
+    out.dir.tif = out.dir.tif
+  )
+})
+
+names(dixie.swe.crop) <- tools::file_path_sans_ext(
+  basename(dixie.tifs)
+)
+
+plot(dixie.swe.crop[[1]])
+
+# ----- standardize names -----
+
+# renames ASO files so that dates are standardized and any "Mosaic" text is removed
+
+files <- list.files(out.dir.tif, pattern = '^ASO.*\\.tif$', full.names = TRUE)
+
+standardize.aso.name <- function(x) {
+  
+  nm <- basename(x)
+  
+  # remove Mosaic/mosaic wherever it appears
+  nm <- str_replace_all(nm, regex('_?mosaic_?', ignore_case = TRUE), '_')
+  nm <- str_replace_all(nm, '__+', '_')
+  
+  # extract date string like 2023Apr13-14 or 2021Mar31-Apr1
+  date.raw <- str_extract(nm, '\\d{4}[A-Za-z]{3}\\d{1,2}(-[A-Za-z]{3}?\\d{1,2}|-\\d{1,2})?')
+  
+  # get first date only
+  year <- str_extract(date.raw, '^\\d{4}')
+  mon <- str_extract(date.raw, '(?<=\\d{4})[A-Za-z]{3}')
+  day <- str_extract(date.raw, '(?<=\\d{4}[A-Za-z]{3})\\d{1,2}')
+  
+  date.num <- format(
+    as.Date(paste0(year, mon, day), format = '%Y%b%d'),
+    '%Y%m%d'
+  )
+  
+  # replace full original date/range with numeric first date
+  nm <- str_replace(nm, fixed(date.raw), date.num)
+  
+  # clean any repeated underscores
+  nm <- str_replace_all(nm, '__+', '_')
+  
+  nm
 }
+
+rename.df <- data.frame(
+  old.path = files,
+  old.name = basename(files),
+  new.name = sapply(files, standardize.aso.name),
+  stringsAsFactors = FALSE
+)
+
+rename.df$new.path <- file.path(out.dir.tif, rename.df$new.name)
+
+rename.df[, c('old.name', 'new.name')]
+
+# once above table looks good, go ahead and rename
+file.rename(rename.df$old.path, rename.df$new.path)
+
 
 
 
@@ -231,3 +346,9 @@ for (topo.path in topo.files) {
 
 
 
+# troubleshooting
+kern <- rast(file.path(out.dir.tif, 'ASO_Kern_20240411_swe_50m_clipped.tif'))
+kaw <- rast(file.path(out.dir.tif, 'ASO_Kaweah_20240211_swe_50m_clipped.tif'))
+plot(kern)
+plot(kaw)
+plot(kern, add = T)
