@@ -243,3 +243,13 @@ lapply(results, function(x) {
 lapply(results, function(x) {
   plot(x$dem.high)
 })
+
+
+# backup files
+backup <- list.files(out.dir.tif, pattern = '\\.tif$', full.names = TRUE)
+file.copy(backup, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/30m/', overwrite = TRUE)
+file.copy(backup, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/30m/', overwrite = TRUE)
+
+backup <- list.files(out.dir.shp, pattern = '\\.shp$', full.names = TRUE)
+file.copy(backup, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/shp/', overwrite = TRUE)
+file.copy(backup, 'J:/Fire_Snow/fireandice/data/processed/processed/shp/', overwrite = TRUE)

@@ -36,6 +36,7 @@ unique(exists)
 
 # shapefile that contains all tile that are too low in elevation
 tiles.to.remove <- read_sf('data/raw/ALS/tiles_to_remove.shp')
+# *** add in code to also remove files that are not complete! ***
 
 # ----- create list of file names -----
 prefix <- 'USGS_LPC_CA_SierraNevada_B22_'

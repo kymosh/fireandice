@@ -3,6 +3,57 @@ packages <- c( 'here', 'dplyr', 'stringr', 'terra', 'tibble', 'ggplot2', 'sf')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
+
+# ----- 5/6/26 -----
+# check shp files for getting cbi
+
+creek <- st_read('data/raw/fire_info/shp/creek_fire_perimeter.shp')
+caldor <- st_read('data/raw/fire_info/shp/caldor_fire_perimeter.shp')
+castle <- st_read('data/raw/fire_info/shp/castle_fire_perimeter.shp')
+dixie <- st_read('data/raw/fire_info/shp/dixie_fire_perimeter.shp')
+
+creek <- creek %>%
+  mutate(
+    Fire_ID = 'Creek',
+    Fire_Year = 2020,
+    Start_Day = yday(as.Date(ALARM_DATE)), 
+    End_Day = yday(as.Date(CONT_DATE))) %>%
+  select(Fire_ID, Fire_Year, Start_Day, End_Day, geometry)
+  
+
+caldor <- caldor %>%
+  mutate(
+    Fire_ID = 'Caldor',
+    Fire_Year = 2021,
+    Start_Day = 226,
+    End_Day = 294) %>%
+  select(Fire_ID, Fire_Year, Start_Day, End_Day, geometry)
+
+castle <- castle %>%
+  mutate(
+    Fire_ID = 'Castle',
+    Fire_Year = 2020,
+    Start_Day = yday(as.Date(Ig_Date)),
+    End_Day = 365) %>%
+  select(Fire_ID, Fire_Year, Start_Day, End_Day, geometry)
+
+dixie <- dixie %>%
+  mutate(
+    Fire_ID = 'Dixi',
+    Fire_Year = 2021,
+    Start_Day = 194,
+    End_Day = 298) %>%
+  select(Fire_ID, Fire_Year, Start_Day, End_Day, geometry)
+
+fires <- list(caldor, castle, dixie, creek)
+out.dir <- 'data/processed/processed/shp'
+
+lapply(fires, function(f) {
+  
+  out.file <- file.path(out.dir, paste0(f$Fire_ID[1], '_for_cbi.shp'))
+  
+  st_write(f, out.file)})
+
 # ------ 3/11/26 ------
 # move partial tiles from raw dem folder
 src.dir  <- 'J:/Fire_Snow/fireandice/data/raw/DEM/creek'
