@@ -34,6 +34,8 @@ unique(exists)
 # remove tiles that are too low in elevation
 # ==============================================================================
 
+# ----- CREEK -----
+
 # shapefile that contains all tile that are too low in elevation
 tiles.to.remove <- read_sf('data/raw/ALS/tiles_to_remove.shp')
 # *** add in code to also remove files that are not complete! ***
@@ -59,29 +61,57 @@ length(files.to.move)
 file.rename(from = files.to.move, 
             to = file.path(dest.dir, basename(files.to.move)))
 
+# ----- DIXIE -----
+
+# shapefile that contains all tiles that we wamt
+tiles.dixie <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
+
+# *** add in code to also remove tiles that are not complete! ***
+
+# ----- create list of file names -----
+prefix <- 'USGS_LPC_CA_SierraNevada_B22_'
+basenames <- paste0(prefix, tiles.to.remove$Tile)
+to.remove <- paste0(basenames, '.laz')
+
+# name dirs
+source.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek'
+dest.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek_unused'
+
+# get full paths of files 
+files.to.move <- file.path(source.dir, to.remove)
+files.to.move <- files.to.move[file.exists(files.to.move)]
+
+head(files.to.move)
+length(files.to.move)
+
+
+# move files
+file.rename(from = files.to.move, 
+            to = file.path(dest.dir, basename(files.to.move)))
+
+
+
 
 # ==============================================================================
 # code for downloading lidar tiles from USGS Rockyweb in bulk
 # ==============================================================================
 
 # read in shp file of file index
-index.11 <- read_sf('data/raw/ALS/tile_index_11.shp')
+index.dixie <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
 
-tile.ids <- index.11$Tile
-
+tile.ids <- index.dixie$Tile
+acquisition <- index.dixie$WU_NAME
 
 # ----- build RockyWeb download URLs -----
 
 base.url <- paste0(
   'https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/LPC/Projects/',
-  'CA_SierraNevada_B22/',
-  'CA_SierraNevada_11_B22/',  
-  'LAZ/'
+  'CA_SierraNevada_B22/'
 )
 
 urls <- paste0(
-  base.url,
-  'USGS_LPC_CA_SierraNevada_B22_',
+  base.url, 
+  acquisition, '/LAZ/USGS_LPC_CA_SierraNevada_B22_',
   tile.ids,
   '.laz'
 )
@@ -209,4 +239,8 @@ dest <- file.path(out.dir, basename(dem.urls))
 
 mapply(function(u, d) download.file(u, d, mode = 'wb', quiet = TRUE),
        u = dem.urls, d = dest)
+
+
+
+
 

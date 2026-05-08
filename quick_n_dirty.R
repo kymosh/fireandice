@@ -4,6 +4,21 @@ install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
 
+# ----- 5/8/26 -----
+# shp file rename
+shp.dir <- 'data/processed/processed/shp'
+files <- list.files(shp.dir, pattern = 'tile_index_1524_caldor_overlap', full.names = T)
+new.files <- file.path(
+  shp.dir,
+  sub('tile_index_1524_caldor_overlap',
+      'tile_index_1524_caldor',
+      basename(files))
+)
+
+file.rename(files, new.files)
+
+rename
+
 # ----- 5/6/26 -----
 # check shp files for getting cbi
 
