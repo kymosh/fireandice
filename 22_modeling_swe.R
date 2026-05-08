@@ -13,7 +13,6 @@ df.50 <- readRDS(file.path(dir, 'creek_long_df_50m_clean.rds'))
 #df.500 <- readRDS(file.path(dir, 'creek_long_df_500m.rds')) let's just focus on df.50 for now. 
 df.50 <- df.50 %>% 
   # mutate(sqrt_swe = sqrt(swe_peak))
-  select(-c())
 
 
 # load results DF
@@ -684,9 +683,9 @@ rf.2022 <- readRDS(file.path(dir, 'modeling/rf2022.rds'))
 #  Exploratory GLM
 # ==============================================================================
 
-gamma.base <- glm(swe_peak ~ topo_elev + I(topo_elev^2) + wy + topo_tpi150 + topo_slope + rad_dtm_accum, 
+gamma.base <- glm(swe_peak ~ topo_elev + I(topo_elev^2) + wy + topo_tpi150 + topo_slope + rad_dtm_accum + topo_aspect_cos + topo_aspect_sin + topo_tpi150 + ht_zsd + ht_zq95 + ht_zpcum1 + ht_zpcum2 + ht_zmax + gap_dist_to_canopy_mean, 
                     family = Gamma(link = log), 
-                    data = df.50.thin)
+                    data = df.50)
 
 # get pearson residuals
 fit <- fitted(gamma.base)
@@ -716,10 +715,11 @@ summary(gamma.base)
 anova(gamma.base)
 
 # Morans I on residuals
+library(spdep)
 set.seed(14)
-idx <- sample(nrow(df.50.thin), 10000)
+idx <- sample(nrow(df.50), 10000)
 
-coords <- as.matrix(df.50.thin[idx, c('x', 'y')])
+coords <- as.matrix(df.50[idx, c('x', 'y')])
 res.samp <- pearson.resid[idx]
 
 thresholds <- c(500, 1000, 2000, 5000)
@@ -766,4 +766,219 @@ cart <- rpart(swe_peak ~ cover_ground_frac +gap_gap_pct + gap_dist_to_canopy_mea
 
 
 
+
+
+
+# ==============================================================================
+#  Exploratory GAM
+# ==============================================================================
+library(mgcv)
+set.seed(14)
+
+df.test <- df.50[sample(nrow(df.50), 50000), ]
+
+# ----- gam, sqrt swe -----
+gam.test <- bam(
+  sqrt(swe_peak) ~ 
+    topo_elev + I(topo_elev^2) +
+    topo_slope +
+    topo_tpi150 +
+    rad_dtm_accum +
+    rad_dsm_accum +
+    gap_gap_pct +
+    gap_dist_to_canopy_mean +
+    cover_ground_frac +
+    ht_zpcum1 +
+    ht_zpcum2 +
+    ht_zskew +
+    cbibc +
+    factor(wy) +
+    s(x, y, bs = 'tp', k = 200),
+  data = df.test,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+summary(gam.test)
+gam.check(gam.test)
+plot(gam.test, select = 1, scheme = 2)
+vis.gam(gam.test, view = c('x', 'y'))
+
+# residuals
+df.test$gam.resid <- residuals(gam.test, type = 'pearson')
+df.moran <- df.test[complete.cases(df.test[, c('x', 'y', 'gam.resid')]), ]
+coords <- as.matrix(df.moran[, c('x', 'y')])
+
+# Morans I
+library(spdep)
+d.vals <- c(250, 500, 1000, 2000)
+for (d in d.vals) {
+  
+  nb <- dnearneigh(coords, 0, d)
+  
+  lw <- nb2listw(
+    nb,
+    style = 'W',
+    zero.policy = TRUE
+  )
+  
+  mi <- moran.test(
+    df.moran$gam.resid,
+    lw,
+    zero.policy = TRUE
+  )
+  
+  cat(
+    '\n',
+    'Distance:', d, 'm\n',
+    '-------------------------\n',
+    "Moran's I :", round(mi$estimate[['Moran I statistic']], 3), '\n',
+    'Expected I:', round(mi$estimate[['Expectation']], 5), '\n',
+    'Z-score   :', round(unname(mi$statistic), 2), '\n',
+    'P-value   :', signif(mi$p.value, 3), '\n'
+  )
+}
+
+plot(fitted(gam.test), residuals(gam.test))
+qqnorm(residuals(gam.test))
+qqline(residuals(gam.test))
+
+# ----- gam, gamma family -----
+gam.gamma <- bam(
+  swe_peak ~ 
+    topo_elev + I(topo_elev^2) +
+    topo_slope + topo_tpi150 +
+    rad_dtm_accum + rad_dsm_accum +
+    gap_gap_pct + gap_dist_to_canopy_mean +
+    cover_ground_frac +
+    ht_zpcum1 + ht_zpcum2 + ht_zskew +
+    cbibc +
+    factor(wy) +
+    s(x, y, bs = 'tp', k = 200),
+  data = df.test,
+  family = Gamma(link = 'log'),
+  method = 'fREML',
+  discrete = TRUE
+)
+
+summary(gam.gamma)
+gam.check(gam.gamma)
+plot(gam.gamma, select = 1, scheme = 2)
+vis.gam(gam.gamma, view = c('x', 'y'))
+
+# residuals
+df.test$gam.resid <- residuals(gam.gamma, type = 'pearson')
+df.moran <- df.test[complete.cases(df.test[, c('x', 'y', 'gam.resid')]), ]
+coords <- as.matrix(df.moran[, c('x', 'y')])
+
+# Morans I
+library(spdep)
+d.vals <- c(250, 500, 1000, 2000)
+for (d in d.vals) {
+  
+  nb <- dnearneigh(coords, 0, d)
+  
+  lw <- nb2listw(
+    nb,
+    style = 'W',
+    zero.policy = TRUE
+  )
+  
+  mi <- moran.test(
+    df.moran$gam.resid,
+    lw,
+    zero.policy = TRUE
+  )
+  
+  cat(
+    '\n',
+    'Distance:', d, 'm\n',
+    '-------------------------\n',
+    "Moran's I :", round(mi$estimate[['Moran I statistic']], 3), '\n',
+    'Expected I:', round(mi$estimate[['Expectation']], 5), '\n',
+    'Z-score   :', round(unname(mi$statistic), 2), '\n',
+    'P-value   :', signif(mi$p.value, 3), '\n'
+  )
+}
+
+plot(fitted(gam.gamma), residuals(gam.gamma))
+qqnorm(residuals(gam.gamma))
+qqline(residuals(gam.gamma))
+
+
+
+# ----- reduce canopy metrics -----
+gam.test <- bam(
+  sqrt(swe_peak) ~ 
+    topo_elev + I(topo_elev^2) +
+    topo_slope +
+    topo_tpi150 +
+    rad_dtm_accum +
+    gap_dist_to_canopy_mean +
+    cover_ground_frac +
+    ht_zpcum2 +
+    factor(wy) +
+    s(x, y, bs = 'tp', k = 200),
+  data = df.test,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+summary(gam.test)
+gam.check(gam.test)
+df.test$gam.resid <- residuals(gam.test, type = 'pearson')
+df.moran <- df.test[complete.cases(df.test[, c('x', 'y', 'gam.resid')]), ]
+coords <- as.matrix(df.moran[, c('x', 'y')])
+
+# Morans I
+library(spdep)
+d.vals <- c(250, 500, 1000, 2000)
+for (d in d.vals) {
+  
+  nb <- dnearneigh(coords, 0, d)
+  
+  lw <- nb2listw(
+    nb,
+    style = 'W',
+    zero.policy = TRUE
+  )
+  
+  mi <- moran.test(
+    df.moran$gam.resid,
+    lw,
+    zero.policy = TRUE
+  )
+  
+  cat(
+    '\n',
+    'Distance:', d, 'm\n',
+    '-------------------------\n',
+    "Moran's I :", round(mi$estimate[['Moran I statistic']], 3), '\n',
+    'Expected I:', round(mi$estimate[['Expectation']], 5), '\n',
+    'Z-score   :', round(unname(mi$statistic), 2), '\n',
+    'P-value   :', signif(mi$p.value, 3), '\n'
+  )
+}
+
+gam.test <- bam(
+  sqrt(swe_peak) ~ 
+    topo_elev + I(topo_elev^2) +
+    topo_slope +
+    topo_tpi150 +
+    rad_dtm_accum +
+    gap_gap_pct +
+    gap_dist_to_canopy_mean +
+    cover_ground_frac +
+    ht_zpcum1 +
+    ht_zpcum2 +
+    ht_zskew +
+    factor(wy) +
+    s(x, y, bs = 'tp', k = 200),
+  data = df.test,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+summary(gam.test)
+gam.check(gam.test)
 

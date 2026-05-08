@@ -1,3 +1,43 @@
+
+downloads.dir <- 'C:/Users/km220416/Downloads'
+out.dir <- 'data/raw/ASO/tif'
+
+tif.files <- list.files(
+  downloads.dir,
+  pattern = 'swe.*\\.tif$',
+  recursive = TRUE,
+  full.names = TRUE,
+  ignore.case = TRUE
+)
+
+# move files
+file.rename(
+  tif.files,
+  file.path(out.dir, basename(tif.files))
+)
+
+# file rename
+shp.dir <- 'data/processed/processed/shp/studyarea_extents'
+
+files <- list.files(
+  shp.dir,
+  pattern = '^study_extent_.*_32611',
+  full.names = TRUE
+)
+
+new.names <- sub(
+  '_32611',
+  '_32611_huc',
+  basename(files)
+)
+
+file.rename(
+  files,
+  file.path(shp.dir, new.names)
+)
+
+
+
 # test test
 # set working directory (PC)
 setwd("C:/Users/km220416/OneDrive - The University of Montana/thesis/fireandice")
