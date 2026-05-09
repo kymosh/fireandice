@@ -1,7 +1,200 @@
-packages <- c('terra', 'sf', 'dplyr', 'future', 'future.apply')
+packages <- c('terra', 'sf', 'dplyr', 'future', 'future.apply', 'progressr', 'tictoc')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
+# ==============================================================================
+# code for downloading lidar tiles from USGS Rockyweb in bulk
+# ==============================================================================
+
+# read in shp file of file index
+# change fire name
+index <- read_sf('data/processed/processed/shp/tile_index_1524_castle.shp')
+out.dir <- 'data/raw/ALS/laz_castle'
+
+# make sure to check shape files so you're using the correct tile_ID col
+
+tile.ids <- index$Tile
+acquisition <- index$WU_NAME
+
+# ----- build RockyWeb download URLs -----
+
+base.url <- paste0(
+  'https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/LPC/Projects/',
+  'CA_SierraNevada_B22/'
+)
+
+urls <- paste0(
+  base.url, 
+  acquisition, '/LAZ/USGS_LPC_CA_SierraNevada_B22_',
+  tile.ids,
+  '.laz'
+)
+
+
+
+# ----- set up parallelism -----
+
+# 2 workers works best for rockyweb downloads
+plan(multisession, workers = 2)
+
+dest.files <- file.path(out.dir, basename(urls))
+
+# ----- test -----
+test.urls <- urls[1:5]
+test.dest <- dest.files[1:5]
+
+
+# ----- download function -----
+
+min.size <- 50 * 1024^2 # 50 MB
+
+download.one <- function(url, dest, min.size) {
+  
+  # if the file already exists locally AND it's at least the min size, do nothing
+  if (file.exists(dest) && file.info(dest)$size >= min.size) return(TRUE)
+  # if the file already exists locally but it's too small, remove it
+  if (file.exists(dest)) file.remove(dest)
+  
+  # download the file
+  ok <- tryCatch(
+    identical(download.file(url, dest, mode = 'wb', quiet = TRUE), 0L),
+    error = function(e) FALSE
+  )
+  
+  # if download was not successful, remove it
+  if (!ok) {
+    if (file.exists(dest)) file.remove(dest)
+    return(FALSE)
+  }
+  
+  # after downloading, check again for files that are too small
+  if (!file.exists(dest) || file.info(dest)$size < min.size) {
+    if (file.exists(dest)) file.remove(dest)
+    return(FALSE)
+  }
+  
+  TRUE
+}
+
+options(timeout = 1000)
+
+handlers(global = TRUE)
+handlers('txtprogressbar')
+
+# run on test first
+results <- future_mapply(
+  FUN = download.one,
+  url = test.urls,
+  dest = test.dest,
+  SIMPLIFY = T,
+  min.size = min.size
+)
+
+# run on all 
+tic('Downloading ALS Tiles')
+
+with_progress({
+  
+  p <- progressor(along = urls)
+  
+  results <- future_mapply(
+    FUN = function(url, dest) {
+      out <- download.one(url, dest, min.size)
+      p()
+      out
+    },
+    url = urls,
+    dest = dest.files,
+    SIMPLIFY = TRUE
+  )
+})
+
+toc()
+
+
+
+results <- future_mapply(
+  FUN = download.one,
+  url = urls,
+  dest = dest.files,
+  SIMPLIFY = T,
+  min.size = min.size
+)
+
+
+
+
+
+
+# ==============================================================================
+# code for downloading DEM tifs from USGS Rockyweb in bulk
+# ==============================================================================
+
+# extract tile names from creek batch
+
+tile.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/raw/ALS/laz_creek'
+
+files <- list.files(tile.dir, pattern = '\\.laz$', full.names = FALSE)
+
+tile.ids <- sub('.*_', '', tools::file_path_sans_ext(files))
+
+tile.ids[1:10]  # sanity check
+
+# basenames like: USGS_LPC_CA_SierraNevada_B22_11SKB7732
+laz.files <- list.files(tile.dir, pattern = '\\.laz$', full.names = FALSE)
+tile.basenames <- tools::file_path_sans_ext(laz.files)
+tile.basenames[1:5]
+
+tile.ids <- sub('.*_', '', tile.basenames)
+tile.ids[1:5]
+
+work.units <- c(
+  'CA_SierraNevada_11_B22',
+  'CA_SierraNevada_13_B22',
+  'CA_SierraNevada_14_B22'
+)
+
+# Base URL for DEM products (OPR)
+base <- 'https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/OPR/Projects/CA_SierraNevada_B22'
+
+
+get_unit_links <- function(unit) {
+  url <- paste0(base, '/', unit, '/0_file_download_links.txt')
+  raw <- tryCatch(readLines(url, warn = FALSE), error = function(e) character(0))
+  if (!length(raw)) return(character(0))
+  
+  # Some of these "txt" files behave like one long line: split into tokens (URLs)
+  tokens <- unlist(strsplit(raw, '\\s+'))
+  tokens[nzchar(tokens)]
+}
+
+# Pull all links once per work unit
+unit.links <- setNames(lapply(work.units, get_unit_links), work.units)
+
+# sanity check: should be BIG, non-zero
+sapply(unit.links, length)
+
+# match using tile id, keep only .tif
+dem.urls <- unique(unlist(lapply(tile.ids, function(id) {
+  hits <- unlist(lapply(unit.links, function(x) x[grepl(id, x, fixed = TRUE)]))
+  hits
+}), use.names = FALSE))
+
+dem.urls <- dem.urls[grepl('\\.tif$', dem.urls, ignore.case = TRUE)]
+length(dem.urls)
+dem.urls[1:10]
+
+# ------ download ------
+out.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/raw/DEM'
+
+dest <- file.path(out.dir, basename(dem.urls))
+
+mapply(function(u, d) download.file(u, d, mode = 'wb', quiet = TRUE),
+       u = dem.urls, d = dest)
+
+
+
+# ----------- OLD -------------
 # ==============================================================================
 # select only needed tiles from Liz's harddrive
 # ==============================================================================
@@ -88,157 +281,6 @@ length(files.to.move)
 # move files
 file.rename(from = files.to.move, 
             to = file.path(dest.dir, basename(files.to.move)))
-
-
-
-
-# ==============================================================================
-# code for downloading lidar tiles from USGS Rockyweb in bulk
-# ==============================================================================
-
-# read in shp file of file index
-index.dixie <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
-
-tile.ids <- index.dixie$Tile
-acquisition <- index.dixie$WU_NAME
-
-# ----- build RockyWeb download URLs -----
-
-base.url <- paste0(
-  'https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/LPC/Projects/',
-  'CA_SierraNevada_B22/'
-)
-
-urls <- paste0(
-  base.url, 
-  acquisition, '/LAZ/USGS_LPC_CA_SierraNevada_B22_',
-  tile.ids,
-  '.laz'
-)
-
-# make this where we want the files to go
-out.dir <- normalizePath('J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek', mustWork = FALSE)
-dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
-
-# ----- set up parallelism -----
-
-# 2 workers works best for rockyweb downloads
-plan(multisession, workers = 2)
-
-dest.files <- file.path(out.dir, basename(urls))
-
-# ----- test -----
-test.urls <- urls[1:5]
-test.dest <- dest.files[1:5]
-
-
-# ----- download function -----
-
-min.size <- 100*1024^2
-
-download.one <- function(url, dest, min.size) {
-  
-  options(timeout = 600)
-  
-  # If file exists and is big enough, keep it
-  if (file.exists(dest) && file.info(dest)$size >= min.size) return(TRUE)
-  if (file.exists(dest)) file.remove(dest)
-  
-  # Attempt download
-  ok <- tryCatch(
-    identical(download.file(url, dest, mode = 'wb', quiet = TRUE), 0L),
-    error = function(e) FALSE
-  )
-  
-  if (!ok) {
-    if (file.exists(dest)) file.remove(dest)
-    return(FALSE)
-  }
-  
-  # Post-download sanity check (this is the real gate)
-  if (file.info(dest)$size < min.size) {
-    file.remove(dest)
-    return(FALSE)
-  }
-  
-  TRUE
-}
-
-    
-
-
-results <- future_mapply(
-  FUN = download.one,
-  url = test.urls,
-  dest = test.dest,
-  SIMPLIFY = T
-)
-
-# ==============================================================================
-# code for downloading DEM tifs from USGS Rockyweb in bulk
-# ==============================================================================
-
-# extract tile names from creek batch
-
-tile.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/raw/ALS/laz_creek'
-
-files <- list.files(tile.dir, pattern = '\\.laz$', full.names = FALSE)
-
-tile.ids <- sub('.*_', '', tools::file_path_sans_ext(files))
-
-tile.ids[1:10]  # sanity check
-
-# basenames like: USGS_LPC_CA_SierraNevada_B22_11SKB7732
-laz.files <- list.files(tile.dir, pattern = '\\.laz$', full.names = FALSE)
-tile.basenames <- tools::file_path_sans_ext(laz.files)
-tile.basenames[1:5]
-
-tile.ids <- sub('.*_', '', tile.basenames)
-tile.ids[1:5]
-
-work.units <- c(
-  'CA_SierraNevada_11_B22',
-  'CA_SierraNevada_13_B22',
-  'CA_SierraNevada_14_B22'
-)
-
-# Base URL for DEM products (OPR)
-base <- 'https://rockyweb.usgs.gov/vdelivery/Datasets/Staged/Elevation/OPR/Projects/CA_SierraNevada_B22'
-
-
-get_unit_links <- function(unit) {
-  url <- paste0(base, '/', unit, '/0_file_download_links.txt')
-  raw <- tryCatch(readLines(url, warn = FALSE), error = function(e) character(0))
-  if (!length(raw)) return(character(0))
-  
-  # Some of these "txt" files behave like one long line: split into tokens (URLs)
-  tokens <- unlist(strsplit(raw, '\\s+'))
-  tokens[nzchar(tokens)]
-}
-
-# Pull all links once per work unit
-unit.links <- setNames(lapply(work.units, get_unit_links), work.units)
-
-# sanity check: should be BIG, non-zero
-sapply(unit.links, length)
-
-# match using tile id, keep only .tif
-dem.urls <- unique(unlist(lapply(tile.ids, function(id) {
-  hits <- unlist(lapply(unit.links, function(x) x[grepl(id, x, fixed = TRUE)]))
-  hits
-}), use.names = FALSE))
-
-dem.urls <- dem.urls[grepl('\\.tif$', dem.urls, ignore.case = TRUE)]
-length(dem.urls)
-dem.urls[1:10]
-
-# ------ download ------
-out.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/raw/DEM'
-
-dest <- file.path(out.dir, basename(dem.urls))
-
-mapply(function(u, d) download.file(u, d, mode = 'wb', quiet = TRUE),
-       u = dem.urls, d = dest)
 
 
 
