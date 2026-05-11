@@ -8,8 +8,11 @@ lapply(packages, library, character.only = T)
 
 # read in shp file of file index
 # change fire name
-index <- read_sf('data/processed/processed/shp/tile_index_1524_castle.shp')
-out.dir <- 'data/raw/ALS/laz_castle'
+index <- read_sf('data/processed/processed/shp/tile_index_1524_caldor.shp')
+
+# chose out.dir depending on which computer you're on
+out.dir <- 'data/raw/ALS/laz_castle' # processing computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_caldor' # km computer
 
 # make sure to check shape files so you're using the correct tile_ID col
 
@@ -113,19 +116,42 @@ toc()
 
 
 
-results <- future_mapply(
+# ----- check for missing tiles -----
+downloaded.files <- list.files(out.dir, pattern = '\\.laz$', full.names = F)
+
+# extract tile ID from filename
+downloaded.ids <- downloaded.files %>%
+  tools::file_path_sans_ext() %>%
+  sub('USGS_LPC_CA_SierraNevada_B22_', '', .)
+
+# tile IDs that should have downloaded but are missing
+missing.ids <- setdiff(tile.ids, downloaded.ids)
+
+length(missing.ids)
+missing.ids
+
+# rerun just on missing ids
+missing.urls <- urls[tile.ids %in% missing.ids]
+missing.dest <- dest.files[tile.ids %in% missing.ids]
+
+results.missing <- future_mapply(
   FUN = download.one,
-  url = urls,
-  dest = dest.files,
-  SIMPLIFY = T,
-  min.size = min.size
+  url = missing.urls,
+  dest = missing.dest,
+  MoreArgs = list(min.size = min.size),
+  SIMPLIFY = TRUE
 )
 
+download.check <- data.frame(
+  tile = tile.ids,
+  acquisition = acquisition,
+  url = urls,
+  dest = dest.files,
+  downloaded = results
+)
 
-
-
-
-
+failed <- subset(download.check, !downloaded)
+failed
 # ==============================================================================
 # code for downloading DEM tifs from USGS Rockyweb in bulk
 # ==============================================================================
@@ -286,3 +312,4 @@ file.rename(from = files.to.move,
 
 
 
+s <- st_read('data/processed/processed/shp/tile_index_1524_caldor.shp')
