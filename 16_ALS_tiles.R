@@ -53,6 +53,8 @@ min.size <- 50 * 1024^2 # 50 MB
 
 download.one <- function(url, dest, min.size) {
   
+  options(timeout = 1000)
+  
   # if the file already exists locally AND it's at least the min size, do nothing
   if (file.exists(dest) && file.info(dest)$size >= min.size) return(TRUE)
   # if the file already exists locally but it's too small, remove it
@@ -79,7 +81,7 @@ download.one <- function(url, dest, min.size) {
   TRUE
 }
 
-options(timeout = 1000)
+
 
 handlers(global = TRUE)
 handlers('txtprogressbar')
@@ -403,13 +405,110 @@ downloaded.demids <- downloaded.dems %>%
   sub('USGS_OPR_CA_SierraNevada_B22_', '', .)
 
 # tile IDs that should have downloaded but are missing
-missing.dems <- setdiff(tile.ids, downloaded.demids)
+missing.dems <- setdiff(dem.tile.ids, downloaded.demids)
 
 length(missing.dems)
 missing.dems
 
 missing.urls <- urls[tile.ids %in% missing.dems]
 missing.dest <- dest.files[tile.ids %in% missing.dems]
+
+results.missing <- future_mapply(
+  FUN = download.one,
+  url = missing.urls,
+  dest = missing.dest,
+  MoreArgs = list(min.size = min.size),
+  SIMPLIFY = TRUE
+)
+
+# ----- dixie ------
+# determine tile names
+dem.index <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
+
+# chose out.dir depending on which computer you're on
+#out.dir <- 'data/raw/DEM/dixie' # processing computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/dixie' # km computer
+
+dem.tile.ids <- dem.index$Tile
+dem.acquisition <- dem.index$WU_NAME
+
+# build urls
+base.url <- paste0(
+  'https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/OPR/Projects/',
+  'CA_SierraNevada_B22/'
+)
+
+file.names <- paste0(
+  'USGS_OPR_CA_SierraNevada_B22_bh_',
+  dem.tile.ids,
+  '.tif'
+)
+
+urls <- paste0(
+  base.url,
+  dem.acquisition,
+  '/TIFF/',
+  file.names
+)
+
+# build destination file paths
+dest.names <- gsub('_bh_', '_', basename(urls))
+dest.files <- file.path(out.dir, dest.names)
+
+# settings
+min.size <- 5 * 1024^2 # 5 MB
+options(timeout = 1000)
+plan(multisession, workers = 2)
+handlers(global = TRUE)
+handlers('txtprogressbar')
+
+# test 
+test.urls <- urls[1:5]
+test.dest <- dest.files[1:5]
+
+results <- future_mapply(
+  FUN = download.one,
+  url = test.urls,
+  dest = test.dest,
+  SIMPLIFY = T,
+  min.size = min.size
+)
+
+# download
+tic('Downloading DEM tiles')
+with_progress({
+  
+  p <- progressor(along = urls)
+  
+  results <- future_mapply(
+    FUN = function(url, dest) {
+      out <- download.one(url, dest, min.size)
+      p()
+      out
+    },
+    url = urls,
+    dest = dest.files,
+    SIMPLIFY = TRUE
+  )
+})
+toc()
+
+# check for missing tiles 
+downloaded.dems <- list.files(out.dir, pattern = '\\.tif$', full.names = F)
+
+# extract tile ID from filename
+downloaded.demids <- downloaded.dems %>%
+  tools::file_path_sans_ext() %>%
+  sub('USGS_OPR_CA_SierraNevada_B22_', '', .)
+
+# tile IDs that should have downloaded but are missing
+missing.dems <- setdiff(dem.tile.ids, downloaded.demids)
+
+length(missing.dems)
+missing.dems
+
+missing.urls <- urls[dem.tile.ids %in% missing.dems]
+missing.dest <- dest.files[dem.tile.ids %in% missing.dems]
 
 results.missing <- future_mapply(
   FUN = download.one,

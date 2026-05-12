@@ -4,7 +4,20 @@ install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
 
+
+
 # ----- 5/8/26 -----
+
+# check shp files for correct naming
+shp.0 <- st_read('data/processed/processed/shp/tile_index_1524_dixie.shp')
+
+shp <- shp.0 %>% 
+  mutate(
+    Tile = coalesce(Tile_ID, Tile)) %>%
+  select(-Tile_ID)
+
+st_write(shp, 'data/processed/processed/shp/tile_index_1524_dixie.shp', delete_dsn = T)
+
 # shp file rename
 shp.dir <- 'data/processed/processed/shp'
 files <- list.files(shp.dir, pattern = 'tile_index_1524_caldor_overlap', full.names = T)
