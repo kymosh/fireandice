@@ -152,19 +152,25 @@ download.check <- data.frame(
 
 failed <- subset(download.check, !downloaded)
 failed
+
+
+
+
+
+
 # ==============================================================================
 # code for downloading DEM tifs from USGS Rockyweb in bulk
 # ==============================================================================
 
+# ----- creek -----
+# different areas have slightly different naming conventions, so these codes are not interchangeable between areas
 # extract tile names from creek batch
-
-tile.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/raw/ALS/laz_creek'
+tile.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_creek'
 
 files <- list.files(tile.dir, pattern = '\\.laz$', full.names = FALSE)
 
 tile.ids <- sub('.*_', '', tools::file_path_sans_ext(files))
-
-tile.ids[1:10]  # sanity check
+tile.ids[1:5]  # sanity check
 
 # basenames like: USGS_LPC_CA_SierraNevada_B22_11SKB7732
 laz.files <- list.files(tile.dir, pattern = '\\.laz$', full.names = FALSE)
@@ -210,7 +216,7 @@ dem.urls <- dem.urls[grepl('\\.tif$', dem.urls, ignore.case = TRUE)]
 length(dem.urls)
 dem.urls[1:10]
 
-# ------ download ------
+# --- download ---
 out.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/raw/DEM'
 
 dest <- file.path(out.dir, basename(dem.urls))
@@ -219,7 +225,199 @@ mapply(function(u, d) download.file(u, d, mode = 'wb', quiet = TRUE),
        u = dem.urls, d = dest)
 
 
+# ----- caldor ------
+# determine tile names
+index <- read_sf('data/processed/processed/shp/tile_index_1524_caldor.shp')
+dem.index <- subset(index, !Tile %in% missing.ids) # take out the ones that were too small
 
+# chose out.dir depending on which computer you're on
+out.dir <- 'data/raw/DEM/caldor' # processing computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/caldor' # km computer
+
+dem.tile.ids <- dem.index$Tile
+dem.acquisition <- dem.index$WU_NAME
+
+# build urls
+base.url <- paste0(
+  'https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/OPR/Projects/',
+  'CA_SierraNevada_B22/'
+)
+
+file.names <- ifelse(
+  grepl('_5_', acquisition),
+  paste0('USGS_OPR_CA_SierraNevada_B22_bh_', dem.tile.ids, '.tif'),
+  paste0('USGS_OPR_CA_SierraNevada_B22_', dem.tile.ids, '.tif')
+)
+
+urls <- paste0(
+  base.url,
+  acquisition,
+  '/TIFF/',
+  file.names
+)
+
+# build destination file paths
+dest.names <- gsub('_bh_', '_', basename(urls))
+dest.files <- file.path(out.dir, dest.names)
+
+# settings
+min.size <- 5 * 1024^2 # 5 MB
+options(timeout = 1000)
+plan(multisession, workers = 2)
+handlers(global = TRUE)
+handlers('txtprogressbar')
+
+# test 
+test.urls <- urls[1:5]
+test.dest <- dest.files[1:5]
+
+results <- future_mapply(
+  FUN = download.one,
+  url = test.urls,
+  dest = test.dest,
+  SIMPLIFY = T,
+  min.size = min.size
+)
+
+# download
+tic('Downloading DEM tiles')
+with_progress({
+  
+  p <- progressor(along = urls)
+  
+  results <- future_mapply(
+    FUN = function(url, dest) {
+      out <- download.one(url, dest, min.size)
+      p()
+      out
+    },
+    url = urls,
+    dest = dest.files,
+    SIMPLIFY = TRUE
+  )
+})
+toc()
+
+# check for missing tiles 
+downloaded.dems <- list.files(out.dir, pattern = '\\.tif$', full.names = F)
+
+# extract tile ID from filename
+downloaded.demids <- downloaded.dems %>%
+  tools::file_path_sans_ext() %>%
+  sub('USGS_OPR_CA_SierraNevada_B22_', '', .)
+
+# tile IDs that should have downloaded but are missing
+missing.dems <- setdiff(tile.ids, downloaded.demids)
+
+length(missing.dems)
+missing.dems
+
+missing.urls <- urls[tile.ids %in% missing.dems]
+missing.dest <- dest.files[tile.ids %in% missing.dems]
+
+results.missing <- future_mapply(
+  FUN = download.one,
+  url = missing.urls,
+  dest = missing.dest,
+  MoreArgs = list(min.size = min.size),
+  SIMPLIFY = TRUE
+)
+# ----- castle ------
+# determine tile names
+dem.index <- read_sf('data/processed/processed/shp/tile_index_1524_castle.shp')
+
+# chose out.dir depending on which computer you're on
+out.dir <- 'data/raw/DEM/castle' # processing computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/castle' # km computer
+
+dem.tile.ids <- dem.index$Tile
+dem.acquisition <- dem.index$WU_NAME
+
+# build urls
+base.url <- paste0(
+  'https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/OPR/Projects/',
+  'CA_SierraNevada_B22/'
+)
+
+file.names <- ifelse(
+  grepl('_9_', dem.acquisition),
+  paste0('USGS_OPR_CA_SierraNevada_B22_bh_', dem.tile.ids, '.tif'),
+  paste0('USGS_OPR_CA_SierraNevada_B22_be_', dem.tile.ids, '.tif')
+)
+
+urls <- paste0(
+  base.url,
+  dem.acquisition,
+  '/TIFF/',
+  file.names
+)
+
+# build destination file paths
+dest.names <- gsub('_(bh|be)_', '_', basename(urls))
+dest.files <- file.path(out.dir, dest.names)
+
+# settings
+min.size <- 5 * 1024^2 # 5 MB
+options(timeout = 1000)
+plan(multisession, workers = 2)
+handlers(global = TRUE)
+handlers('txtprogressbar')
+
+# test 
+test.urls <- urls[1:5]
+test.dest <- dest.files[1:5]
+
+results <- future_mapply(
+  FUN = download.one,
+  url = test.urls,
+  dest = test.dest,
+  SIMPLIFY = T,
+  min.size = min.size
+)
+
+# download
+tic('Downloading DEM tiles')
+with_progress({
+  
+  p <- progressor(along = urls)
+  
+  results <- future_mapply(
+    FUN = function(url, dest) {
+      out <- download.one(url, dest, min.size)
+      p()
+      out
+    },
+    url = urls,
+    dest = dest.files,
+    SIMPLIFY = TRUE
+  )
+})
+toc()
+
+# check for missing tiles 
+downloaded.dems <- list.files(out.dir, pattern = '\\.tif$', full.names = F)
+
+# extract tile ID from filename
+downloaded.demids <- downloaded.dems %>%
+  tools::file_path_sans_ext() %>%
+  sub('USGS_OPR_CA_SierraNevada_B22_', '', .)
+
+# tile IDs that should have downloaded but are missing
+missing.dems <- setdiff(tile.ids, downloaded.demids)
+
+length(missing.dems)
+missing.dems
+
+missing.urls <- urls[tile.ids %in% missing.dems]
+missing.dest <- dest.files[tile.ids %in% missing.dems]
+
+results.missing <- future_mapply(
+  FUN = download.one,
+  url = missing.urls,
+  dest = missing.dest,
+  MoreArgs = list(min.size = min.size),
+  SIMPLIFY = TRUE
+)
 # ----------- OLD -------------
 # ==============================================================================
 # select only needed tiles from Liz's harddrive
@@ -311,5 +509,16 @@ file.rename(from = files.to.move,
 
 
 
+extra.ids <- setdiff(downloaded.ids, tile.ids)
 
-s <- st_read('data/processed/processed/shp/tile_index_1524_caldor.shp')
+length(extra.ids)
+extra.ids
+
+files <- list.files(out.dir, pattern = '_bh_', full.names = TRUE)
+
+new.files <- file.path(
+  out.dir,
+  gsub('_bh_', '_', basename(files))
+)
+
+file.rename(files, new.files)
