@@ -22,15 +22,17 @@ workers <- 10 # failed at 16
 buffer <- 20
 
 # test block settings 
-x0 <- 310000
-y0 <- 4130000
+x0 <- 745870
+y0 <- 4296400
 block.m <- 6000
 
-run.test.block <- FALSE  # set FALSE to run all tiles
+run.test.block <- TRUE  # set FALSE to run all tiles
 
-las.dir <- 'data/raw/ALS/laz_creek'
-dtm.dir <- 'data/raw/DEM/creek'
-out.dir <- 'data/processed/ALS/normalized/creek'
+j.dir <- 'J:/Fire_Snow/fireandice'
+
+las.dir <- file.path(j.dir, 'data/raw/ALS/laz_caldor')
+dtm.dir <-  file.path(j.dir, 'data/raw/DEM/caldor')
+out.dir <-  file.path(j.dir, 'data/processed/ALS/normalized/caldor')
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -166,6 +168,7 @@ normalize <- function(las.file, dtm.file, out.dir, buffer = 20) {
     dtm <- crop(dtm, e.buf)
     
     las.norm <- normalize_height(las, dtm)
+    las.norm <- filter_poi(las.norm, Z >= -5 & Z <= 150)
     writeLAS(las.norm, out.file)
     
     rm(las, dtm, las.norm)

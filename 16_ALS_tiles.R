@@ -517,6 +517,76 @@ results.missing <- future_mapply(
   MoreArgs = list(min.size = min.size),
   SIMPLIFY = TRUE
 )
+
+
+# ==============================================================================
+# Divide into acquisitions for overlapping areas
+# ==============================================================================
+# only caldor and dixie have overlapping tiles (I think)
+
+fire <- 'dixie'
+
+index <- read_sf(paste0('data/processed/processed/shp/tile_index_1524_', fire, '.shp'))
+
+als.dir <- file.path('J:/Fire_Snow/fireandice/data/raw/ALS', paste0('laz_', fire))
+
+# all LAZ files currently mixed together
+files <- list.files(als.dir, pattern = '\\.laz$', full.names = TRUE)
+
+# make lookup table from index
+tile.lookup <- index %>%
+  st_drop_geometry() %>%
+  select(Tile, WU_NAME) %>%
+  distinct()
+
+# extract tile ID from filename and create table with old and new file paths
+file.info <- data.frame(
+  file = files,
+  filename = basename(files)
+) %>%
+  mutate(
+    Tile = str_remove(filename, '^USGS_LPC_CA_SierraNevada_B22_'),
+    Tile = str_remove(Tile, '\\.laz$')
+  ) %>%
+  left_join(tile.lookup, by = 'Tile') %>%
+  mutate(
+    new.dir = file.path(als.dir, WU_NAME),
+    new.file = file.path(new.dir, filename)
+  )
+
+# check everything
+table(file.info$WU_NAME, useNA = 'ifany')
+
+missing.acq <- filter(file.info, is.na(WU_NAME))
+missing.acq
+# shouldn't be missing anything
+
+# create new folders
+dir.create(als.dir, recursive = TRUE, showWarnings = FALSE)
+
+unique.dirs <- unique(file.info$new.dir[!is.na(file.info$new.dir)])
+
+invisible(lapply(unique.dirs, dir.create, recursive = TRUE, showWarnings = FALSE))
+
+ok <- file.rename(
+  file.info$file[!is.na(file.info$WU_NAME)],
+  file.info$new.file[!is.na(file.info$WU_NAME)]
+)
+
+table(ok)
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ----------- OLD -------------
 # ==============================================================================
 # select only needed tiles from Liz's harddrive

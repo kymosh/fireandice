@@ -3,7 +3,7 @@ packages <- c( 'here', 'exactextractr', 'terra', 'tidyverse', 'ggplot2', 'RColor
 lapply(packages, library, character.only = TRUE)
 
 # create directory 
-tif.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
+tif.dir <- 'data/processed/processed/tif'
 
 # read in necessary data
 lc <- rast('J:/Fire_Snow/fireandice/data/raw/background_variables/tif/creek_NALCMS_2020.tif')
