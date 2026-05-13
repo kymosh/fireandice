@@ -1,9 +1,3 @@
-# scripts/normalize_creek_dtm.R
-
-
-
-# run in command prompt with this code:
-# "C:\Program Files\R\R-4.5.2\bin\Rscript.exe" scripts\normalize.R
 
 # ----- runtime notes -----
 # 2889 tiles ran in 413 minutes
@@ -17,10 +11,9 @@ suppressPackageStartupMessages({
   library(future.apply)
 })
 
-# -----------------------
-# USER SETTINGS
-# -----------------------
-
+# --------------------------------------------------------------------------------------------
+# INPUTS
+# --------------------------------------------------------------------------------------------
 
 run.test.block <- FALSE  # set FALSE to run all tiles
 
@@ -31,7 +24,13 @@ acq <- 'CA_SierraNevada_5_2022'
 #j.dir <- 'J:/Fire_Snow/fireandice' # km computer
 j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice'
 
-# ----- automatic (don't touch) -----
+# tiles to test (only need if running the test block)
+test.tiles <- c('11SKD4406', '11SKD4407', '11SKD4306', '11SKD4307')
+
+# --------------------------------------------------------------------------------------------
+# Normalization - don't touch!
+# --------------------------------------------------------------------------------------------
+
 workers <- 10 # failed at 16
 buffer <- 20
 
@@ -61,13 +60,11 @@ log.msg('out.dir:', out.dir)
 # -----------------------
 # Build LAScatalog 
 # -----------------------
+
 ctg.full <- readLAScatalog(las.dir)
 
 d <- ctg.full@data
 nms <- names(d)
-
-# tiles to test
-test.tiles <- c('11SKD4406', '11SKD4407', '11SKD4306', '11SKD4307')
 
 # filename column
 file.col <- nms[grep('filename$|^file$|^files?$|fullpath', nms, ignore.case = TRUE)][1]
@@ -86,6 +83,7 @@ log.msg('Test files found:', length(files.sub.test))
 # -----------------------
 # Pair LAS <-> DTM by tile code
 # -----------------------
+
 las.files <- list.files(las.dir, pattern = '\\.la[sz]$', full.names = TRUE, ignore.case = TRUE)
 dtm.files <- list.files(dtm.dir, pattern = '\\.(tif|tiff|img)$', full.names = TRUE, ignore.case = TRUE)
 
