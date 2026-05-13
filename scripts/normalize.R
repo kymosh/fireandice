@@ -23,11 +23,12 @@ suppressPackageStartupMessages({
 workers <- 10 # failed at 16
 buffer <- 20
 
-run.test.block <- TRUE  # set FALSE to run all tiles
+run.test.block <- FALSE  # set FALSE to run all tiles
 
 fire <- 'caldor'
 acq <- 'CA_SierraNevada_8_2022'
-j.dir <- 'J:/Fire_Snow/fireandice'
+#j.dir <- 'J:/Fire_Snow/fireandice' # km computer
+j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice'
 
 las.dir <- file.path(j.dir, paste0('data/raw/ALS/laz_', fire), acq)
 dtm.dir <-  file.path(j.dir, 'data/raw/DEM', fire)
@@ -122,16 +123,22 @@ if (nrow(dups) > 0) {
           paste(head(dups$tile.code, 5), collapse = ' | '))
 }
 
-# Subset to 36-tile block if requested
+# Subset to test block if requested
 if (isTRUE(run.test.block)) {
-  pairs.run <- pairs[pairs$las.file %in% files.sub.test, , drop = FALSE]
+  
+  pairs.run <- pairs %>%
+    filter(tile.code %in% test.tiles)
+  
   log.msg('Pairs in test block:', nrow(pairs.run))
-  stopifnot(nrow(pairs.run) == length(files.sub.test))
+  log.msg('Test tile codes found:', paste(pairs.run$tile.code, collapse = ', '))
+  
+  stopifnot(nrow(pairs.run) == length(test.tiles))
+  
 } else {
+  
   pairs.run <- pairs
   log.msg('Pairs in full run:', nrow(pairs.run))
 }
-
 # -----------------------
 # Normalize function (resume-safe)
 # -----------------------
@@ -232,3 +239,8 @@ elapsed.min <- as.numeric(difftime(t1, t0, units = 'mins'))
 log.msg('Finished. Elapsed minutes:', round(elapsed.min, 2))
 log.msg('Outputs that exist:', length(list.files(out.dir, pattern = '_norm\\.laz$', full.names = TRUE)), ' total')
 
+# inspect
+f <- list.files(out.dir, pattern = '_norm\\.laz$', full.names = TRUE)[1]
+las <- readLAS(f)
+hist(las$Z, breaks = 100)
+plot(las)
