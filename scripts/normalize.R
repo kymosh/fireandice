@@ -1,5 +1,7 @@
 # scripts/normalize_creek_dtm.R
 
+
+
 # run in command prompt with this code:
 # "C:\Program Files\R\R-4.5.2\bin\Rscript.exe" scripts\normalize.R
 
@@ -21,18 +23,15 @@ suppressPackageStartupMessages({
 workers <- 10 # failed at 16
 buffer <- 20
 
-# test block settings 
-x0 <- 745870
-y0 <- 4296400
-block.m <- 6000
-
 run.test.block <- TRUE  # set FALSE to run all tiles
 
+fire <- 'caldor'
+acq <- 'CA_SierraNevada_8_2022'
 j.dir <- 'J:/Fire_Snow/fireandice'
 
-las.dir <- file.path(j.dir, 'data/raw/ALS/laz_caldor')
-dtm.dir <-  file.path(j.dir, 'data/raw/DEM/caldor')
-out.dir <-  file.path(j.dir, 'data/processed/ALS/normalized/caldor')
+las.dir <- file.path(j.dir, paste0('data/raw/ALS/laz_', fire), acq)
+dtm.dir <-  file.path(j.dir, 'data/raw/DEM', fire)
+out.dir <-  file.path(j.dir, 'data/processed/ALS/normalized', fire)
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -61,30 +60,22 @@ ctg.full <- readLAScatalog(las.dir)
 d <- ctg.full@data
 nms <- names(d)
 
-# --- extent columns  ---
-xmn.name <- nms[grep('Min\\.X|^xmin$|Xleft',   nms, ignore.case = TRUE)][1]
-xmx.name <- nms[grep('Max\\.X|^xmax$|Xright',  nms, ignore.case = TRUE)][1]
-ymn.name <- nms[grep('Min\\.Y|^ymin$|Ybottom', nms, ignore.case = TRUE)][1]
-ymx.name <- nms[grep('Max\\.Y|^ymax$|Ytop',    nms, ignore.case = TRUE)][1]
-
-xmn <- d[[xmn.name]]; xmx <- d[[xmx.name]]
-ymn <- d[[ymn.name]]; ymx <- d[[ymx.name]]
-
-# --- bbox for 36 tiles ---
-xmin.b <- x0 - block.m / 2
-xmax.b <- x0 + block.m / 2
-ymin.b <- y0 - block.m / 2
-ymax.b <- y0 + block.m / 2
-
-keep <- (xmx > xmin.b) & (xmn < xmax.b) &
-  (ymx > ymin.b) & (ymn < ymax.b)
+# tiles to test
+test.tiles <- c('11SKD4406', '11SKD4407', '11SKD4306', '11SKD4307')
 
 # filename column
 file.col <- nms[grep('filename$|^file$|^files?$|fullpath', nms, ignore.case = TRUE)][1]
+
+# keep files whose names contain one of the test tile IDs
+tile.pattern <- paste(test.tiles, collapse = '|')
+
+keep <- grepl(tile.pattern, basename(d[[file.col]]))
+
 files.sub.test <- d[[file.col]][keep]
 
 log.msg('Catalog tiles total:', nrow(d))
-log.msg('Test block tiles:', length(files.sub.test))
+log.msg('Test tiles:', paste(test.tiles, collapse = ', '))
+log.msg('Test files found:', length(files.sub.test))
 
 # -----------------------
 # Pair LAS <-> DTM by tile code
@@ -133,7 +124,7 @@ if (nrow(dups) > 0) {
 
 # Subset to 36-tile block if requested
 if (isTRUE(run.test.block)) {
-  pairs.run <- pairs[toupper(basename(pairs$las.file)) %in% toupper(basename(files.sub.test)), , drop = FALSE]
+  pairs.run <- pairs[pairs$las.file %in% files.sub.test, , drop = FALSE]
   log.msg('Pairs in test block:', nrow(pairs.run))
   stopifnot(nrow(pairs.run) == length(files.sub.test))
 } else {
@@ -144,6 +135,10 @@ if (isTRUE(run.test.block)) {
 # -----------------------
 # Normalize function (resume-safe)
 # -----------------------
+
+log.msg('LAS files found:', length(las.files))
+log.msg('DTM files found:', length(dtm.files))
+
 normalize <- function(las.file, dtm.file, out.dir, buffer = 20) {
   
   out.file <- file.path(
