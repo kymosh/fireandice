@@ -20,19 +20,24 @@ suppressPackageStartupMessages({
 # -----------------------
 # USER SETTINGS
 # -----------------------
-workers <- 10 # failed at 16
-buffer <- 20
+
 
 run.test.block <- FALSE  # set FALSE to run all tiles
 
 fire <- 'caldor'
-acq <- 'CA_SierraNevada_8_2022'
+acq <- 'CA_SierraNevada_5_2022'
+
+# pick depending on which computer
 #j.dir <- 'J:/Fire_Snow/fireandice' # km computer
 j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice'
 
+# ----- automatic (don't touch) -----
+workers <- 10 # failed at 16
+buffer <- 20
+
 las.dir <- file.path(j.dir, paste0('data/raw/ALS/laz_', fire), acq)
 dtm.dir <-  file.path(j.dir, 'data/raw/DEM', fire)
-out.dir <-  file.path(j.dir, 'data/processed/ALS/normalized', fire)
+out.dir <-  file.path(j.dir, 'data/processed/processed/laz/normalized', fire, acq)
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 
