@@ -8,11 +8,13 @@ lapply(packages, library, character.only = T)
 
 # read in shp file of file index
 # change fire name
-index <- read_sf('data/processed/processed/shp/tile_index_1524_caldor.shp')
+index <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
+index <- read_sf('data/processed/processed/shp/tile_index_dixie_7.shp')
 
 # chose out.dir depending on which computer you're on
 out.dir <- 'data/raw/ALS/laz_castle' # processing computer
-out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_caldor' # km computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie' # km computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie/CA_SierraNevada_7_2022' # km computer
 
 # make sure to check shape files so you're using the correct tile_ID col
 
@@ -155,11 +157,48 @@ download.check <- data.frame(
 failed <- subset(download.check, !downloaded)
 failed
 
+# troubleshooting
+missing.check <- data.frame(
+  tile = tile.ids,
+  url = urls,
+  dest = dest.files,
+  downloaded = tile.ids %in% downloaded.ids,
+  exists = file.exists(dest.files),
+  size.mb = ifelse(file.exists(dest.files),
+                   round(file.info(dest.files)$size / 1024^2, 2),
+                   NA)
+)
 
+missing.check <- missing.check[!missing.check$downloaded, ]
 
+missing.check[, c('tile', 'exists', 'size.mb', 'url')]
 
+library(httr)
 
+missing.check$status <- sapply(missing.check$url, function(u) {
+  res <- tryCatch(HEAD(u, timeout(30)), error = function(e) NULL)
+  if (is.null(res)) NA_integer_ else status_code(res)
+})
 
+table(missing.check$status, useNA = 'ifany')
+missing.check[missing.check$status != 200 | is.na(missing.check$status), ]
+
+options(timeout = 3000)
+for (i in seq_along(missing.urls)) {
+  
+  cat(i, '/', length(missing.urls), ': ',
+      basename(missing.dest[i]), '\n')
+  
+  try(
+    download.file(
+      url = missing.urls[i],
+      destfile = missing.dest[i],
+      mode = 'wb',
+      quiet = TRUE
+    ),
+    silent = TRUE
+  )
+}
 # ==============================================================================
 # code for downloading DEM tifs from USGS Rockyweb in bulk
 # ==============================================================================

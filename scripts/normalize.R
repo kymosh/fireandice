@@ -17,12 +17,12 @@ suppressPackageStartupMessages({
 
 run.test.block <- FALSE  # set FALSE to run all tiles
 
-fire <- 'caldor'
-acq <- 'CA_SierraNevada_5_2022'
+fire <- 'dixie'
+acq <- 'CA_SierraNevada_4_2022'
 
 # pick depending on which computer
-#j.dir <- 'J:/Fire_Snow/fireandice' # km computer
-j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice'
+j.dir <- 'J:/Fire_Snow/fireandice' # km computer
+#j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice'
 
 # tiles to test (only need if running the test block)
 test.tiles <- c('11SKD4406', '11SKD4407', '11SKD4306', '11SKD4307')
