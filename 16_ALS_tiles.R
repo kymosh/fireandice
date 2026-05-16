@@ -164,6 +164,7 @@ for (i in seq_along(missing.urls)) {
 
 
 # ----- check for partial downloads -----
+# create dataframe
 check.downloads <- data.frame(
   tile = tile.ids,
   url = urls,
@@ -177,7 +178,6 @@ check.downloads$local.bytes <- NA_real_
 has.local <- check.downloads$local.exists
 
 check.downloads$local.bytes[has.local] <- file.info(check.downloads$dest[has.local])$size
-
 
 # get size that download should be (remote.bytes)
 get.remote.size <- function(u) {
@@ -225,9 +225,9 @@ check.downloads <- check.downloads %>%
   )
 
 # summary
-table(check.downloads$complete, useNA = 'ifany')
-table(check.downloads$partial, useNA = 'ifany')
-table(check.downloads$missing, useNA = 'ifany')
+table(check.downloads$complete, useNA = 'ifany') # want all to be TRUE
+table(check.downloads$partial, useNA = 'ifany') # want all to be FALSE
+table(check.downloads$missing, useNA = 'ifany') # want all to be FALSE
 
 # if partial downloads, do this next:
 bad.downloads <- check.downloads %>%
