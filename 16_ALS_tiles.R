@@ -1,4 +1,4 @@
-packages <- c('terra', 'sf', 'dplyr', 'future', 'future.apply', 'progressr', 'tictoc')
+packages <- c('terra', 'sf', 'dplyr', 'future', 'future.apply', 'progressr', 'tictoc', 'httr')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -9,10 +9,10 @@ lapply(packages, library, character.only = T)
 # read in shp file of file index
 # change fire name
 index <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
-index <- read_sf('data/processed/processed/shp/tile_index_dixie_6.shp')
+index <- read_sf('data/processed/processed/shp/tile_index_dixie_4.shp')
 
 # chose out.dir depending on which computer you're on
-out.dir <- 'data/raw/ALS/laz_dixie/CA_SierraNevada_6_2022' # processing computer
+out.dir <- 'data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022' # processing computer
 out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie' # km computer
 out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022' # km computer
 
@@ -36,19 +36,12 @@ urls <- paste0(
 
 
 
-# ----- set up parallelism -----
+# ----- set up  -----
 
 # 2 workers works best for rockyweb downloads
 plan(multisession, workers = 2)
 
 dest.files <- file.path(out.dir, basename(urls))
-
-# ----- test -----
-test.urls <- urls[1:5]
-test.dest <- dest.files[1:5]
-
-
-# ----- download function -----
 
 min.size <- 50 * 1024^2 # 50 MB
 
@@ -82,12 +75,14 @@ download.one <- function(url, dest, min.size) {
   TRUE
 }
 
-
-
 handlers(global = TRUE)
 handlers('txtprogressbar')
 
-# run on test first
+
+# ----- test -----
+test.urls <- urls[1:5]
+test.dest <- dest.files[1:5]
+
 results <- future_mapply(
   FUN = download.one,
   url = test.urls,
@@ -96,7 +91,7 @@ results <- future_mapply(
   min.size = min.size
 )
 
-# run on all 
+# ----- run on all -----
 tic('Downloading ALS Tiles')
 
 with_progress({
@@ -168,64 +163,84 @@ for (i in seq_along(missing.urls)) {
 }
 
 
-
-
-
-
-
-download.check <- data.frame(
-  tile = tile.ids,
-  acquisition = acquisition,
-  url = urls,
-  dest = dest.files,
-  downloaded = results
-)
-
-failed <- subset(download.check, !downloaded)
-failed
-
-# troubleshooting
-missing.check <- data.frame(
+# ----- check for partial downloads -----
+check.downloads <- data.frame(
   tile = tile.ids,
   url = urls,
-  dest = dest.files,
-  downloaded = tile.ids %in% downloaded.ids,
-  exists = file.exists(dest.files),
-  size.mb = ifelse(file.exists(dest.files),
-                   round(file.info(dest.files)$size / 1024^2, 2),
-                   NA)
+  dest = dest.files
 )
 
-missing.check <- missing.check[!missing.check$downloaded, ]
+# local file sizes
+check.downloads$local.exists <- file.exists(check.downloads$dest)
 
-missing.check[, c('tile', 'exists', 'size.mb', 'url')]
+check.downloads$local.bytes <- NA_real_
+has.local <- check.downloads$local.exists
 
-library(httr)
+check.downloads$local.bytes[has.local] <-
+  file.info(check.downloads$dest[has.local])$size
 
-missing.check$status <- sapply(missing.check$url, function(u) {
-  res <- tryCatch(HEAD(u, timeout(30)), error = function(e) NULL)
-  if (is.null(res)) NA_integer_ else status_code(res)
+# remote file sizes from HEAD request
+check.downloads$remote.bytes <- sapply(check.downloads$url, function(u) {
+  res <- tryCatch(httr::HEAD(u, timeout(30)), error = function(e) NULL)
+  
+  if (is.null(res) || httr::status_code(res) != 200) {
+    return(NA_real_)
+  }
+  
+  as.numeric(httr::headers(res)[['content-length']])
 })
 
-table(missing.check$status, useNA = 'ifany')
-missing.check[missing.check$status != 200 | is.na(missing.check$status), ]
-
-options(timeout = 3000)
-for (i in seq_along(missing.urls)) {
+# if remote bytes is NA, use this code instead!
+get.remote.size <- function(u) {
   
-  cat(i, '/', length(missing.urls), ': ',
-      basename(missing.dest[i]), '\n')
-  
-  try(
-    download.file(
-      url = missing.urls[i],
-      destfile = missing.dest[i],
-      mode = 'wb',
-      quiet = TRUE
+  res <- tryCatch(
+    httr::GET(
+      u,
+      httr::add_headers(Range = 'bytes=0-0'),
+      httr::timeout(30)
     ),
-    silent = TRUE
+    error = function(e) NULL
   )
+  
+  if (is.null(res) || !httr::status_code(res) %in% c(200, 206)) {
+    return(NA_real_)
+  }
+  
+  cr <- httr::headers(res)[['content-range']]
+  
+  if (!is.null(cr)) {
+    return(as.numeric(sub('.*/', '', cr)))
+  }
+  
+  len <- httr::headers(res)[['content-length']]
+  
+  if (!is.null(len)) {
+    return(as.numeric(len))
+  }
+  
+  NA_real_
 }
+check.downloads$remote.bytes <- sapply(check.downloads$url, get.remote.size)
+table(is.na(check.downloads$remote.bytes), useNA = 'ifany')
+
+
+# compare
+check.downloads <- check.downloads %>%
+  mutate(
+    local.mb = round(local.bytes / 1024^2, 2),
+    remote.mb = round(remote.bytes / 1024^2, 2),
+    complete = local.exists & !is.na(remote.bytes) & local.bytes == remote.bytes,
+    partial = local.exists & !is.na(remote.bytes) & local.bytes < remote.bytes,
+    too.large = local.exists & !is.na(remote.bytes) & local.bytes > remote.bytes,
+    missing = !local.exists
+  )
+
+# summary
+table(check.downloads$complete, useNA = 'ifany')
+table(check.downloads$partial, useNA = 'ifany')
+table(check.downloads$missing, useNA = 'ifany')
+
+
 # ==============================================================================
 # code for downloading DEM tifs from USGS Rockyweb in bulk
 # ==============================================================================
