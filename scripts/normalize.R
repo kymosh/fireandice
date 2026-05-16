@@ -18,7 +18,7 @@ suppressPackageStartupMessages({
 run.test.block <- FALSE  # set FALSE to run all tiles
 
 fire <- 'dixie'
-acq <- 'CA_SierraNevada_4_2022'
+acq <- 'CA_SierraNevada_7_2022'
 
 # pick depending on which computer
 j.dir <- 'J:/Fire_Snow/fireandice' # km computer
@@ -35,7 +35,7 @@ workers <- 10 # failed at 16
 buffer <- 20
 
 las.dir <- file.path(j.dir, paste0('data/raw/ALS/laz_', fire), acq)
-dtm.dir <-  file.path(j.dir, 'data/raw/DEM', fire)
+dtm.dir <-  file.path(j.dir, 'data/raw/DEM', fire, acq)
 out.dir <-  file.path(j.dir, 'data/processed/processed/laz/normalized', fire, acq)
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -247,3 +247,4 @@ f <- list.files(out.dir, pattern = '_norm\\.laz$', full.names = TRUE)[1]
 las <- readLAS(f)
 hist(las$Z, breaks = 100)
 plot(las)
+
