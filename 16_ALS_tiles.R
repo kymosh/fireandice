@@ -9,16 +9,15 @@ lapply(packages, library, character.only = T)
 # read in shp file of file index
 # change fire name
 index <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
-index <- read_sf('data/processed/processed/shp/tile_index_dixie_7.shp')
+index <- read_sf('data/processed/processed/shp/tile_index_dixie_6.shp')
 
 # chose out.dir depending on which computer you're on
-out.dir <- 'data/raw/ALS/laz_castle' # processing computer
+out.dir <- 'data/raw/ALS/laz_dixie/CA_SierraNevada_6_2022' # processing computer
 out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie' # km computer
-out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie/CA_SierraNevada_7_2022' # km computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022' # km computer
 
 # make sure to check shape files so you're using the correct tile_ID col
-
-tile.ids <- index$Tile
+tile.ids <- index$Tile_ID
 acquisition <- index$WU_NAME
 
 # ----- build RockyWeb download URLs -----
@@ -55,7 +54,7 @@ min.size <- 50 * 1024^2 # 50 MB
 
 download.one <- function(url, dest, min.size) {
   
-  options(timeout = 1000)
+  options(timeout = 3000)
   
   # if the file already exists locally AND it's at least the min size, do nothing
   if (file.exists(dest) && file.info(dest)$size >= min.size) return(TRUE)
@@ -138,13 +137,41 @@ missing.ids
 missing.urls <- urls[tile.ids %in% missing.ids]
 missing.dest <- dest.files[tile.ids %in% missing.ids]
 
-results.missing <- future_mapply(
-  FUN = download.one,
-  url = missing.urls,
-  dest = missing.dest,
-  MoreArgs = list(min.size = min.size),
-  SIMPLIFY = TRUE
-)
+options(timeout = 3000)
+
+results.missing <- logical(length(missing.urls))
+
+for (i in seq_along(missing.urls)) {
+  
+  cat('\n', i, '/', length(missing.urls), ': ', basename(missing.dest[i]), '\n')
+  
+  if (file.exists(missing.dest[i])) file.remove(missing.dest[i])
+  
+  ok <- tryCatch(
+    identical(
+      download.file(
+        url = missing.urls[i],
+        destfile = missing.dest[i],
+        mode = 'wb',
+        quiet = FALSE,
+        method = 'libcurl'
+      ),
+      0L
+    ),
+    error = function(e) FALSE,
+    warning = function(w) FALSE
+  )
+  
+  results.missing[i] <- ok && file.exists(missing.dest[i])
+  
+  cat('success:', results.missing[i], '\n')
+}
+
+
+
+
+
+
 
 download.check <- data.frame(
   tile = tile.ids,
