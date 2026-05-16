@@ -8,16 +8,16 @@ lapply(packages, library, character.only = T)
 
 # read in shp file of file index
 # change fire name
-index <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
-index <- read_sf('data/processed/processed/shp/tile_index_dixie_4.shp')
+index <- read_sf('data/processed/processed/shp/tile_index_1524_castle.shp')
+#index <- read_sf('data/processed/processed/shp/tile_index_dixie_7.shp')
 
 # chose out.dir depending on which computer you're on
-out.dir <- 'data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022' # processing computer
-out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie' # km computer
-out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022' # km computer
+#out.dir <- 'data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022' # processing computer
+#out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie' # km computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_castle/CA_SierraNevada_9_14_2022' # km computer
 
 # make sure to check shape files so you're using the correct tile_ID col
-tile.ids <- index$Tile_ID
+tile.ids <- index$Tile
 acquisition <- index$WU_NAME
 
 # ----- build RockyWeb download URLs -----
@@ -176,21 +176,10 @@ check.downloads$local.exists <- file.exists(check.downloads$dest)
 check.downloads$local.bytes <- NA_real_
 has.local <- check.downloads$local.exists
 
-check.downloads$local.bytes[has.local] <-
-  file.info(check.downloads$dest[has.local])$size
+check.downloads$local.bytes[has.local] <- file.info(check.downloads$dest[has.local])$size
 
-# remote file sizes from HEAD request
-check.downloads$remote.bytes <- sapply(check.downloads$url, function(u) {
-  res <- tryCatch(httr::HEAD(u, timeout(30)), error = function(e) NULL)
-  
-  if (is.null(res) || httr::status_code(res) != 200) {
-    return(NA_real_)
-  }
-  
-  as.numeric(httr::headers(res)[['content-length']])
-})
 
-# if remote bytes is NA, use this code instead!
+# get size that download should be (remote.bytes)
 get.remote.size <- function(u) {
   
   res <- tryCatch(
@@ -240,6 +229,16 @@ table(check.downloads$complete, useNA = 'ifany')
 table(check.downloads$partial, useNA = 'ifany')
 table(check.downloads$missing, useNA = 'ifany')
 
+# if partial downloads, do this next:
+bad.downloads <- check.downloads %>%
+  filter(!complete) %>%
+  arrange(desc(partial), tile)
+
+bad.downloads %>%
+  select(tile, local.mb, remote.mb, complete, partial, too.large, missing, url, dest)
+
+# delete bad files
+file.remove(bad.downloads$dest)
 
 # ==============================================================================
 # code for downloading DEM tifs from USGS Rockyweb in bulk
