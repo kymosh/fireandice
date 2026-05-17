@@ -5,14 +5,21 @@ lapply(packages, library, character.only = T)
 
 # NOTE: the final normalization code was saved as a script in data/scripts and run through the command prompt
 
-#----------------------
+# ------------------------------------------------------------------------------
 # Catalog setup 
-#----------------------
+# ------------------------------------------------------------------------------
+fire <- 'caldor'
+acq <- 'CA_SierraNevada_8_2022'
+
+# pick depending on which computer
+j.dir <- 'J:/Fire_Snow/fireandice' # km computer
+#j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice'
 
 # normalized tiles
-ctg.norm <- readLAScatalog('data/processed/ALS/normalized/creek') 
+norm.dir <- file.path(j.dir, paste0('data/processed/processed/laz/normalized/', fire), acq)
+ctg.norm <- readLAScatalog(norm.dir) 
 
-# ----- sanity check -----
+# ----- inspect -----
 plot(ctg.norm)
 plot(ctg.norm, mapview = T, map.types = "Esri.WorldImagery")
 
@@ -27,7 +34,8 @@ plot(ctg.norm)
 # ground Z distribution
 summary(las.norm$Z[las.norm$Classification == 2])
 quantile(las.norm$Z[las.norm$Classification == 2], c(0.05, 0.5, 0.95), na.rm = TRUE)
-# mostly zero, which is what we would expect (because it's ground!)
+# we would expect lots of 0s (because it's ground!) and want to check for large outliers
+
 
 # Non-ground (likely vegetation, buildings, etc.)
 summary(las.norm$Z[las.norm$Classification != 2])
@@ -41,46 +49,37 @@ hist(
   xlab  = 'Z (m)'
 )
 
+sum(las.norm$Z < 0, na.rm = TRUE)
+mean(las.norm$Z < 0, na.rm = TRUE)
+
+sum(las.norm$Z < -0.5, na.rm = TRUE)
+mean(las.norm$Z < -0.5, na.rm = TRUE)
+
+sum(las.norm$Z < -1, na.rm = TRUE)
+mean(las.norm$Z < -1, na.rm = TRUE)
+
+mean(las.norm$Z[las.norm$Classification != 2] < -0.5, na.rm = TRUE)
+mean(las.norm$Z[las.norm$Classification != 2] < -1, na.rm = TRUE)
+
+
 # test to determine which algorithm for CHM to use is in 00_canopy_height_model_alg_exploration
 
 # =================================================================================
 # Canopy Height Model
 # =================================================================================
 
+# remove points that are below zero
+ctg.norm <- filter_poi(ctg.norm, Z >= 0)
+
 # ----- make block of 36 tiles for test -----
-d <- ctg.norm@data
-nms <- names(d)
+# tiles to test (only need if running the test block)
+test.tiles <- c('11SKD4406', '11SKD4407', '11SKD4306', '11SKD4307')
 
-# --- find extent columns (names vary by lidR version) ---
-xmn_name <- nms[grep('Min\\.X|^xmin$|Xleft',   nms, ignore.case = TRUE)][1]
-xmx_name <- nms[grep('Max\\.X|^xmax$|Xright',  nms, ignore.case = TRUE)][1]
-ymn_name <- nms[grep('Min\\.Y|^ymin$|Ybottom', nms, ignore.case = TRUE)][1]
-ymx_name <- nms[grep('Max\\.Y|^ymax$|Ytop',    nms, ignore.case = TRUE)][1]
+test.files <- ctg.norm@data$filename[
+  grepl(paste(test.tiles, collapse = '|'), basename(ctg.norm@data$filename))
+]
 
-xmn <- d[[xmn_name]]; xmx <- d[[xmx_name]]
-ymn <- d[[ymn_name]]; ymx <- d[[ymx_name]]
-
-# --- your target point ---
-x0 <- 310000
-y0 <- 4130000
-
-# --- block size ---
-block_m <- 6000  # 6 km -> ~36 1km tiles
-
-# define bbox centered on (x0, y0)
-xmin_b <- x0 - block_m/2
-xmax_b <- x0 + block_m/2
-ymin_b <- y0 - block_m/2
-ymax_b <- y0 + block_m/2
-
-# tiles that intersect the bbox
-keep <- (xmx > xmin_b) & (xmn < xmax_b) &
-  (ymx > ymin_b) & (ymn < ymax_b)
-
-files.sub <- d$filename[keep]
-
-
-ctg.sub <- readLAScatalog(files.sub)
+ctg.sub <- readLAScatalog(test.files)
 plot(ctg.sub)
 plot(ctg.sub, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
 plot(ctg.sub, chunk = TRUE)
