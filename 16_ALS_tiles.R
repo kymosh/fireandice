@@ -243,7 +243,30 @@ file.remove(bad.downloads$dest)
 # ==============================================================================
 # code for downloading DEM tifs from USGS Rockyweb in bulk
 # ==============================================================================
-
+check_missing_dems <- function(acq.check, out.dir, dem.tile.ids, dem.acquisition) {
+  
+  out.dir.check <- file.path(out.dir, acq.check)
+  
+  downloaded.dems <- list.files(
+    out.dir.check,
+    pattern = '\\.tif$',
+    full.names = FALSE
+  )
+  
+  downloaded.demids <- downloaded.dems %>%
+    tools::file_path_sans_ext() %>%
+    sub('USGS_OPR_CA_SierraNevada_B22_', '', .)
+  
+  expected.idx <- dem.acquisition == acq.check
+  
+  expected.ids <- dem.tile.ids[expected.idx]
+  
+  missing.dems <- setdiff(expected.ids, downloaded.demids)
+  
+  cat('Missing DEMs:', length(missing.dems), '\n')
+  
+  invisible(missing.dems)
+}
 # ----- creek -----
 # different areas have slightly different naming conventions, so these codes are not interchangeable between areas
 # extract tile names from creek batch
@@ -309,12 +332,22 @@ mapply(function(u, d) download.file(u, d, mode = 'wb', quiet = TRUE),
 
 # ----- caldor ------
 # determine tile names
-index <- read_sf('data/processed/processed/shp/tile_index_1524_caldor.shp')
-dem.index <- subset(index, !Tile %in% missing.ids) # take out the ones that were too small
+index.a <- read_sf('data/processed/processed/shp/tile_index_caldor_8.shp')
+index.b <- read_sf('data/processed/processed/shp/tile_index_caldor_5.shp')
 
-# chose out.dir depending on which computer you're on
-out.dir <- 'data/raw/DEM/caldor' # processing computer
-out.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/caldor' # km computer
+# standardize col names
+dem.index <- bind_rows(
+  st_drop_geometry(index.a) %>%
+    select(Tile, WU_NAME),
+  
+  st_drop_geometry(index.b) %>%
+    rename(Tile = Tile_ID, WU_NAME = WU_Name) %>%
+    select(Tile, WU_NAME)
+) %>%
+  distinct(Tile, WU_NAME, .keep_all = TRUE)
+
+# base output directory
+out.dir <- 'data/raw/DEM/caldor' # processing comp
 
 dem.tile.ids <- dem.index$Tile
 dem.acquisition <- dem.index$WU_NAME
@@ -326,21 +359,34 @@ base.url <- paste0(
 )
 
 file.names <- ifelse(
-  grepl('_5_', acquisition),
+  grepl('_5_', dem.acquisition),
   paste0('USGS_OPR_CA_SierraNevada_B22_bh_', dem.tile.ids, '.tif'),
   paste0('USGS_OPR_CA_SierraNevada_B22_', dem.tile.ids, '.tif')
 )
 
 urls <- paste0(
   base.url,
-  acquisition,
+  dem.acquisition,
   '/TIFF/',
   file.names
 )
 
-# build destination file paths
+# save into acquisition folders, but remove _bh_ from local filename
 dest.names <- gsub('_bh_', '_', basename(urls))
-dest.files <- file.path(out.dir, dest.names)
+
+dest.files <- file.path(
+  out.dir,
+  dem.acquisition,
+  dest.names
+)
+
+# create acquisition folders
+invisible(lapply(
+  unique(dirname(dest.files)),
+  dir.create,
+  recursive = TRUE,
+  showWarnings = FALSE
+))
 
 # settings
 min.size <- 5 * 1024^2 # 5 MB
@@ -380,30 +426,47 @@ with_progress({
 })
 toc()
 
-# check for missing tiles 
-downloaded.dems <- list.files(out.dir, pattern = '\\.tif$', full.names = F)
-
-# extract tile ID from filename
-downloaded.demids <- downloaded.dems %>%
-  tools::file_path_sans_ext() %>%
-  sub('USGS_OPR_CA_SierraNevada_B22_', '', .)
-
-# tile IDs that should have downloaded but are missing
-missing.dems <- setdiff(tile.ids, downloaded.demids)
-
-length(missing.dems)
-missing.dems
-
-missing.urls <- urls[tile.ids %in% missing.dems]
-missing.dest <- dest.files[tile.ids %in% missing.dems]
-
-results.missing <- future_mapply(
-  FUN = download.one,
-  url = missing.urls,
-  dest = missing.dest,
-  MoreArgs = list(min.size = min.size),
-  SIMPLIFY = TRUE
+# ----- check for missing tiles -----
+missing.dems <- check_missing_dems(
+  acq.check = 'CA_SierraNevada_8_2022',
+  out.dir = out.dir,
+  dem.tile.ids = dem.tile.ids,
+  dem.acquisition = dem.acquisition
 )
+
+expected.idx <- dem.acquisition == 'CA_SierraNevada_8_2022'
+missing.idx <- which(expected.idx & dem.tile.ids %in% missing.dems)
+missing.urls <- urls[missing.idx]
+missing.dest <- dest.files[missing.idx]
+
+# download missing DEMS
+for (i in seq_along(missing.urls)) {
+  
+  cat('\n', i, '/', length(missing.urls), ': ', basename(missing.dest[i]), '\n')
+  
+  if (file.exists(missing.dest[i])) file.remove(missing.dest[i])
+  
+  ok <- tryCatch(
+    identical(
+      download.file(
+        url = missing.urls[i],
+        destfile = missing.dest[i],
+        mode = 'wb',
+        quiet = FALSE,
+        method = 'libcurl'
+      ),
+      0L
+    ),
+    error = function(e) FALSE,
+    warning = function(w) FALSE
+  )
+  
+  results.missing[i] <- ok && file.exists(missing.dest[i])
+  
+  cat('success:', results.missing[i], '\n')
+}
+
+
 # ----- castle ------
 # determine tile names
 dem.index <- read_sf('data/processed/processed/shp/tile_index_1524_castle.shp')
@@ -503,16 +566,32 @@ results.missing <- future_mapply(
 
 # ----- dixie ------
 # determine tile names
-dem.index <- read_sf('data/processed/processed/shp/tile_index_1524_dixie.shp')
+index.a <- read_sf('data/processed/processed/shp/tile_index_dixie_4.shp')
+index.b <- read_sf('data/processed/processed/shp/tile_index_dixie_7.shp')
+index.c <- read_sf('data/processed/processed/shp/tile_index_dixie_6.shp')
 
-# chose out.dir depending on which computer you're on
-#out.dir <- 'data/raw/DEM/dixie' # processing computer
-out.dir <- 'J:/Fire_Snow/fireandice/data/raw/DEM/dixie' # km computer
+dem.index <- bind_rows(
+  
+  st_drop_geometry(index.a) %>%
+    rename(Tile = Tile_ID) %>%
+    select(Tile, WU_NAME),
+  
+  st_drop_geometry(index.b) %>%
+    select(Tile, WU_NAME),
+  
+  st_drop_geometry(index.c) %>%
+    rename(Tile = Tile_ID) %>%
+    select(Tile, WU_NAME)
+  
+) %>%
+  distinct(Tile, WU_NAME, .keep_all = TRUE)
+
+out.dir <- 'data/raw/DEM/dixie'
+dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 dem.tile.ids <- dem.index$Tile
 dem.acquisition <- dem.index$WU_NAME
 
-# build urls
 base.url <- paste0(
   'https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/OPR/Projects/',
   'CA_SierraNevada_B22/'
@@ -531,9 +610,20 @@ urls <- paste0(
   file.names
 )
 
-# build destination file paths
 dest.names <- gsub('_bh_', '_', basename(urls))
-dest.files <- file.path(out.dir, dest.names)
+
+dest.files <- file.path(
+  out.dir,
+  dem.acquisition,
+  dest.names
+)
+
+invisible(lapply(
+  unique(dirname(dest.files)),
+  dir.create,
+  recursive = TRUE,
+  showWarnings = FALSE
+))
 
 # settings
 min.size <- 5 * 1024^2 # 5 MB
@@ -573,30 +663,47 @@ with_progress({
 })
 toc()
 
-# check for missing tiles 
-downloaded.dems <- list.files(out.dir, pattern = '\\.tif$', full.names = F)
+# ----- check for missing tiles -----
+acq.check <- 'CA_SierraNevada_6_2022'
 
-# extract tile ID from filename
-downloaded.demids <- downloaded.dems %>%
-  tools::file_path_sans_ext() %>%
-  sub('USGS_OPR_CA_SierraNevada_B22_', '', .)
-
-# tile IDs that should have downloaded but are missing
-missing.dems <- setdiff(dem.tile.ids, downloaded.demids)
-
-length(missing.dems)
-missing.dems
-
-missing.urls <- urls[dem.tile.ids %in% missing.dems]
-missing.dest <- dest.files[dem.tile.ids %in% missing.dems]
-
-results.missing <- future_mapply(
-  FUN = download.one,
-  url = missing.urls,
-  dest = missing.dest,
-  MoreArgs = list(min.size = min.size),
-  SIMPLIFY = TRUE
+missing.dems <- check_missing_dems(
+  acq.check = acq.check,
+  out.dir = out.dir,
+  dem.tile.ids = dem.tile.ids,
+  dem.acquisition = dem.acquisition
 )
+
+expected.idx <- dem.acquisition == acq.check
+missing.idx <- which(expected.idx & dem.tile.ids %in% missing.dems)
+missing.urls <- urls[missing.idx]
+missing.dest <- dest.files[missing.idx]
+options(timeout = 3000)
+results.missing <- logical(length(missing.urls))
+for (i in seq_along(missing.urls)) {
+  
+  cat('\n', i, '/', length(missing.urls), ': ', basename(missing.dest[i]), '\n')
+  
+  if (file.exists(missing.dest[i])) file.remove(missing.dest[i])
+  
+  ok <- tryCatch(
+    identical(
+      download.file(
+        url = missing.urls[i],
+        destfile = missing.dest[i],
+        mode = 'wb',
+        quiet = FALSE,
+        method = 'libcurl'
+      ),
+      0L
+    ),
+    error = function(e) FALSE,
+    warning = function(w) FALSE
+  )
+  
+  results.missing[i] <- ok && file.exists(missing.dest[i])
+  
+  cat('success:', results.missing[i], '\n')
+}
 
 
 # ==============================================================================
@@ -771,3 +878,67 @@ new.files <- file.path(
 )
 
 file.rename(files, new.files)
+
+
+library(sf)
+library(dplyr)
+library(stringr)
+
+fire <- 'dixie'
+
+dem.dir <- file.path('data/raw/DEM', fire)
+
+# combine both acquisition indexes
+index.b <-  index.b %>%
+  mutate(Tile_ID = Tile)
+
+index.all <- bind_rows(
+  st_drop_geometry(index.a),
+  st_drop_geometry(index.b),
+  st_drop_geometry(index.c)
+) %>%
+  select(Tile_ID, WU_NAME) %>%
+  distinct()
+
+# list DEMs currently in main fire folder
+dem.files <- list.files(
+  dem.dir,
+  pattern = '\\.tif$',
+  full.names = TRUE,
+  recursive = FALSE
+)
+
+# build move table
+dem.move <- data.frame(
+  file = dem.files,
+  filename = basename(dem.files)
+) %>%
+  mutate(
+    Tile_ID = str_match(filename, '([0-9]{2}[A-Z]{3}[0-9]{4})')[, 2]
+  ) %>%
+  left_join(index.all, by = 'Tile_ID') %>%
+  mutate(
+    new.dir = file.path(dem.dir, WU_NAME),
+    new.file = file.path(new.dir, filename)
+  )
+
+# check for files that did not match either index
+dem.move %>%
+  filter(is.na(WU_NAME)) %>%
+  select(filename, Tile_ID)
+
+# create acquisition folders
+invisible(lapply(
+  unique(dem.move$new.dir),
+  dir.create,
+  recursive = TRUE,
+  showWarnings = FALSE
+))
+
+# move files
+ok <- file.rename(
+  from = dem.move$file,
+  to = dem.move$new.file
+)
+
+table(ok)
