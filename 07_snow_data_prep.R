@@ -1,33 +1,30 @@
-packages <- c( 'here', 'terra', 
-               'tidyverse', 'sf', 'spatialEco')
+packages <- c('tidyverse', 'sf', 'spatialEco', 'terra')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
-# just checking to see status of SWE data
-swe <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_2020_0414_SUPERswe_50m_clipped.tif'))
+# ----------------------------------------------------------------------------------
+# SDD
+# ----------------------------------------------------------------------------------
 
-dem <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_creek_elev.tif'))
-res(dem)
+fire <- 'caldor'
+year <- '2023'
 
-
-
-#### SDD ####
-par(mfrow = c(1,1))
-sdd <- rast(here('data', 'raw', 'SDD', 'creek_sdd_wy2021.tif'))
+sdd <- rast(paste0('data/raw/SDD/', fire, '_sdd_wy', year, '_6974.tif'))
 plot(sdd)
-crs(sdd, describe = T)$code
+res(sdd)
 sdd.32611 <- project(sdd, 'EPSG:32611', method = 'near')
 res(sdd.32611)
+plot(sdd)
     
     
 # reproject SDD to 32611 and mask to study area
 
-in.dir <- here('data', 'raw', 'SDD')
+in.dir <- 'data/raw/SDD'
 out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/snow_metrics'
 temp.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/other_metrics'
-template <- rast(here(temp.dir, 'nasadem_creek_500m_1524.tif'))
+template <- rast(file.path(temp.dir, 'nasadem_creek_500m_1524.tif'))
 
-sdd.files <- list.files(in.dir, pattern = '^creek_sdd.*\\.tif$', full.names = T)
+sdd.files <- list.files(in.dir, pattern = '^(creek|castle)_sdd.*\\.tif$', full.names = T)
 
 for (f in sdd.files) {
   r <- rast(f)
@@ -66,7 +63,9 @@ new.paths <- file.path(out.dir, new.names)
 file.rename(aso.files, new.paths)
 
 
-####### SWE ####### 
+# ----------------------------------------------------------------------------------
+# SWE
+# ----------------------------------------------------------------------------------
 # reclip to match new elevation
 
 # open one file just to test
@@ -363,3 +362,331 @@ mean(abs(values(d)) > 30, na.rm = TRUE)
 
 # percent with small differences
 mean(abs(values(d)) <= 5, na.rm = TRUE)
+
+
+
+# troubleshooting
+sdd.dir <- 'data/raw/SDD'
+sdd.files <- list.files(path = sdd.dir, pattern = '\\.tif$', full.names = T)
+
+for (s in sdd.files) {
+  r <- rast(s)
+  print(res(r))
+}
+
+
+
+
+sdd.files
+creek <- rast(file.path(sdd.dir, 'old_SDD_downloads/creek_sdd_wy2025.tif'))
+res(creek)
+creek.32611 <- project(creek, 'EPSG:32611', method = 'near')
+res(creek)
+
+c <- rast(creek.files[5])
+res(c)
+c.32611 <- project(c , 'EPSG:32611', method = 'near')
+res(c.32611)
+
+creek.files <- list.files('data/raw/SDD/old_SDD_downloads', pattern = '\\.tif$', full.names = T)
+for (s in creek.files) {
+  r <- rast(s)
+  print(res(r))
+}
+
+for (c in creek.files[5:9]) {
+  r <- rast(s)
+  print(res(r))
+  c.32611 <- project(r, 'EPSG:32611', method = 'near')
+  print(res(c.32611))
+}
+
+r <- rast(creek.files[5])
+r.32611 <- project(r, template, method = 'near')
+res(r.32611)
+plot(r.32611)
+
+r <- rast(file.path(sdd.dir, 'old_SDD_downloads/creek_sdd_wy2025.tif'))
+crs(r) <- '+proj=sinu +R=6371007.181 +nadgrids=@null +wktext' # force CRS to the native MODIS projection that it was exported in 
+r.32611 <- project(r, template, method = 'near')
+res(r.32611)
+plot(r.32611)
+
+r.32611
+
+ext(r)
+ext(r.32611)
+ext(template)
+
+global(r.32611, range, na.rm = TRUE)
+
+freq(r.32611, useNA = 'always')
+
+global(r, range, na.rm = TRUE)
+plot(r)
+crs(r)
+
+
+
+for (s in sdd.files) {
+  r <- rast(s)
+  print(crs(r))
+}
+
+
+
+# castle fire
+castle.extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_castle_simple.shp')
+castle.extent <- castle.extent %>%
+  select(-area)
+plot(castle.extent, color = NA, border = 'red')
+
+c.2023 <- rast('data/raw/SDD/castle_sdd_wy2023_4326.tif')
+plot(c.2023)
+c.2023.32611 <- project(c.2023, 'EPSG:32611', res = res(template), origin = c(0, 0),  method = 'near')
+plot(c.2023.32611)
+plot(castle.extent, color = NA, border = 'red', add = T)
+c.2023.32611.crop <- crop(c.2023.32611, castle.extent)
+plot(c.2023.32611.crop)
+plot(castle.extent, color = NA, border = 'red', add = T)
+
+r <- rast('data/raw/SDD/castle_sdd_wy2024_native_500.tif')
+# plot(extent.6974, add = T)
+r.32611 <- project(r, 'EPSG:32611', res = res(template), origin = c(0, 0),  method = 'near')
+plot(r.32611)
+plot(castle.extent, color = NA, border = 'red', add = T)
+r.32611.crop <- crop(r.32611, castle.extent)
+plot(r.32611.crop)
+plot(castle.extent, color = NA, border = 'red', add = T)
+
+
+
+
+
+
+s.32611 <- crop(
+  s.32611,
+  ext(extent) + 1000
+)
+
+plot(s.32611)
+plot(extent, add = TRUE)
+
+ext(extent)
+extent.v <- vect(extent)
+
+target <- rast(
+  ext = ext(extent.v) + 1000,
+  resolution = 452.7575,
+  crs = crs(extent.v)
+)
+
+s.32611 <- project(
+  s,
+  target,
+  method = 'near'
+)
+
+plot(s.32611)
+plot(extent.v, add = TRUE)
+
+
+extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_castle_simple.shp')
+extent.v <- vect(extent)
+
+s <- rast('data/raw/SDD/castle_sdd_wy2023_6974_5.tif')
+
+extent.modis <- project(extent.v, crs(s))
+
+plot(s)
+plot(extent.modis, add = TRUE)
+
+
+# try transforming shapefile to 4326
+extent.4326 <- st_transform(extent, 'EPSG:4326')
+extent.4326 <- extent.4326 %>%
+  select(-area)
+st_write(extent.4326, 'data/processed/processed/shp/studyarea_extents/study_extent_castle_4326.shp', append = FALSE)
+plot(extent.4326)
+crs(extent.4326, describe = T)$code
+
+extent.6974 <- st_transform(extent, crs(s))
+extent.6974 <- extent.6974 %>%
+  select(-area)
+st_write(extent.4326, 'data/processed/processed/shp/studyarea_extents/study_extent_castle_4326.shp', append = FALSE)
+plot(extent.4326)
+crs(extent.4326, describe = T)$code
+
+library(terra)
+library(sf)
+
+extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_castle_simple.shp')
+extent.v <- vect(extent)
+
+s <- rast('data/raw/SDD/castle_sdd_wy2023_6974_2.tif')
+
+target <- rast(
+  ext = ext(extent.v) + 2000,
+  resolution = 452.7575,
+  crs = crs(extent.v)
+)
+
+s.32611 <- project(
+  s,
+  target,
+  method = 'near'
+)
+
+plot(s.32611)
+plot(extent.v, add = TRUE)
+
+
+# ----- caldor fire -----
+extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_caldor_simple.shp')
+s <- rast('data/raw/SDD/caldor_sdd_wy2025_native.tif')
+s.32611 <- project(s, 'EPSG:32610', res = res(template), origin = c(0, 0),  method = 'near')
+plot(s.32611)
+plot(extent, add = T)
+
+s.32611 <- crop(
+  s.32611,
+  ext(extent) + 1000
+)
+
+plot(s.32611)
+plot(extent, add = TRUE)
+
+ext(extent)
+extent.v <- vect(extent)
+
+target <- rast(
+  ext = ext(extent.v) + 1000,
+  resolution = 452.7575,
+  crs = crs(extent.v)
+)
+
+s.32611 <- project(
+  s,
+  target,
+  method = 'near'
+)
+
+plot(s.32611)
+plot(extent.v, add = TRUE)
+
+
+
+
+# ----- DIXIE fire -----
+extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_dixie_simple.shp')
+s <- rast('data/raw/SDD/dixie_sdd_wy2022_6974.tif')
+plot(s)
+s.32611 <- project(s, 'EPSG:32610', res = res(template), origin = c(0, 0),  method = 'near')
+plot(s.32611)
+plot(extent, add = T)
+
+s.32611 <- crop(
+  s.32611,
+  ext(extent) + 1000
+)
+
+plot(s.32611)
+plot(extent, add = TRUE)
+
+ext(extent)
+extent.v <- vect(extent)
+
+target <- rast(
+  ext = ext(extent.v) + 1000,
+  resolution = 452.7575,
+  crs = crs(extent.v)
+)
+
+s.32611 <- project(
+  s,
+  target,
+  method = 'near'
+)
+
+plot(s.32611)
+plot(extent.v, add = TRUE)
+
+
+
+
+# ----- CREEK fire -----
+extent <- st_read('data/processed/processed/shp/studyarea_extents/study_extent_creek_simple.shp')
+s <- rast('data/raw/SDD/creek_sdd_wy2023_native_500.tif')
+plot(s)
+s.32611 <- project(s, 'EPSG:32611', res = res(template), origin = c(0, 0),  method = 'near')
+plot(s.32611, add = T)
+plot(extent, add = T)
+
+s.32611 <- crop(
+  s.32611,
+  ext(extent) + 1000
+)
+
+plot(s.32611)
+plot(extent, add = TRUE)
+
+ext(extent)
+extent.v <- vect(extent)
+
+target <- rast(
+  ext = ext(extent.v) + 1000,
+  resolution = 452.7575,
+  crs = crs(extent.v)
+)
+
+s.32611 <- project(
+  s,
+  target,
+  method = 'near'
+)
+
+plot(s.32611)
+plot(extent.v, add = TRUE)
+
+
+# --------- SDD ---------
+
+# this code takes the SDD raster of all of CA for the definted year and reprojects, clips to the defined study area, and saves the output
+
+sdd.fires <- function(fire, year, overwrite = TRUE) {
+  
+  message('Processing ', fire, ' WY', year, '...')
+  
+  # template used to define target CRS and resolution
+  temp.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/other_metrics'
+  template <- rast(file.path(temp.dir, 'nasadem_creek_500m_1524.tif'))
+  
+  # sdd for all of california
+  ca.sdd.modis <- rast(paste0('data/raw/SDD/ca_sdd_wy', year, '_native.tif'))
+  
+  # shapefile
+  extent <- st_read(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire , '_simple.shp'))
+  # remove extra variable
+  extent <- extent %>%
+    select(-area)
+  extent <- st_transform(extent, crs(template))
+  
+  # reproject, crop, and mask
+  sdd.32611 <- project(ca.sdd.modis, crs(template), res = res(template), method = 'near')
+  sdd.crop <- crop(sdd.32611, vect(extent))
+  sdd.mask <- mask(sdd.crop, vect(extent))
+  plot(sdd.mask)
+  plot(extent, color = NA, border = 'red', add = T)
+  
+  out.dir <- paste0('data/processed/processed/tif/500m/', fire, '/snow_metrics')
+  writeRaster(sdd.mask, file.path(out.dir, paste0(fire, '_sdd_wy', year, '_500m.tif')))
+
+}
+
+process.sdd('castle', 2023)
+process.sdd('castle', 2024)
+process.sdd('castle', 2025)
+
+process.sdd('caldor', 2023)
+process.sdd('caldor', 2024)
+process.sdd('caldor', 2025)
