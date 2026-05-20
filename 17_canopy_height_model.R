@@ -12,11 +12,11 @@ fire <- 'caldor'
 acq <- 'CA_SierraNevada_8_2022'
 
 # pick depending on which computer
-j.dir <- 'J:/Fire_Snow/fireandice' # km computer
-#j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice'
+j.dir <- 'data/processed/processed' # processing comp
+#j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/processed/processed'
 
 # normalized tiles
-norm.dir <- file.path(j.dir, paste0('data/processed/processed/laz/normalized/', fire), acq)
+norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
 ctg.norm <- readLAScatalog(norm.dir) 
 
 # ----- inspect -----
@@ -26,6 +26,10 @@ plot(ctg.norm, mapview = T, map.types = "Esri.WorldImagery")
 # look at one normalized tile
 norm.file <- ctg.norm@data$filename[1]
 las.norm <- readLAS(norm.file)
+
+# table of classification points
+table(las.norm$Classification)
+# only classes 1 and 2, so just ground and "not ground"
 
 # visualization
 plot(las.norm, color = 'Z', legend = T)
@@ -68,60 +72,71 @@ mean(las.norm$Z[las.norm$Classification != 2] < -1, na.rm = TRUE)
 # Canopy Height Model
 # =================================================================================
 
-# remove points that are below zero
-ctg.norm <- filter_poi(ctg.norm, Z >= 0)
+# to test or not to test
+run.test <- FALSE # set TRUE for test, FALSE for full run
 
-# ----- make block of 36 tiles for test -----
-# tiles to test (only need if running the test block)
 test.tiles <- c('11SKD4406', '11SKD4407', '11SKD4306', '11SKD4307')
 
-test.files <- ctg.norm@data$filename[
-  grepl(paste(test.tiles, collapse = '|'), basename(ctg.norm@data$filename))
-]
+# if TRUE, just run on test tiles, if FALSE, keep full ctg
+if (run.test) {
+  
+  test.files <- ctg.norm@data$filename[
+    grepl(paste(test.tiles, collapse = '|'), basename(ctg.norm@data$filename))
+  ]
+  
+  ctg.run <- readLAScatalog(test.files)
+  
+} else {
+  
+  ctg.run <- ctg.norm
+}
 
-ctg.sub <- readLAScatalog(test.files)
-plot(ctg.sub)
-plot(ctg.sub, mapview = TRUE, map.types = "Esri.WorldImagery")  # Interactive map of catalog tiles with Esri imagery basemap
-plot(ctg.sub, chunk = TRUE)
+plot(ctg.run, chunk = TRUE)
 
-# ----- check results -----
-chm.vrt <- vrt(tifs)
-plot(chm.vrt)
+# filter points to remove obvious bad high/low points
+opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
 
-# build a point density raster at the same resolution
-opt_output_files(ctg.sub) <- file.path(out.dir, 'density_{ORIGINALFILENAME}')
-dens <- grid_density(ctg.sub, res = 1)
+# ----- CHM Settings -----
 
-# mosaic for quick viewing if dens is tiled output
-plot(dens, main = 'Point density (pts / m^2)')
+# 1m resolution
+res.m <- 1
 
-# percent NA overall
-v <- values(chm.vrt, mat = FALSE)
-pct.na <- mean(is.na(v)) * 100
-pct.na
+out.dir <- file.path(j.dir, paste0('tif/1m/', fire, '/', fire, '_chm_6340/', acq))
+dir.create(out.dir, recursive = T, showWarnings = F)
 
-
-# ----- set up parallel -----
+# parallel processing settings
 plan(multisession, workers = 10)
 set_lidr_threads(1) # important to avoid nested parallelism
 
-# ----- CHM settings and output -----
-res.m <- 1
+opt_progress(ctg.run) <- TRUE
+opt_chunk_size(ctg.run) <- 0 # process tile by tile
+opt_chunk_buffer(ctg.run) <-  0 # buffer not needed for CHM
+opt_laz_compression(ctg.run) <- TRUE   
 
-out.dir <- 'data/processed/processed/tif/1m/creek_chm_6340'
-dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
-
-opt_progress(ctg.norm) <- TRUE
-opt_chunk_size(ctg.norm) <- 0 # process tile by tile
-opt_chunk_buffer(ctg.norm) <-  0 # buffer not needed for CHM
-opt_laz_compression(ctg.norm) <- TRUE   
-
-
-opt_output_files(ctg.norm) <- file.path(out.dir, 'creek_chm_{ORIGINALFILENAME}')
+opt_output_files(ctg.run) <- file.path(out.dir, paste0(fire, '_chm_{ORIGINALFILENAME}'))
 
 # ----- run CHM -----
 
-chm <- rasterize_canopy(ctg.norm, res = res.m, algorithm = p2r())
+# started at 6:48pm on 5/17
+# restart catalog processing at failed chunk
+opt_restart(ctg.run) <- 0
+
+start.time <- Sys.time()
+chm <- rasterize_canopy(ctg.run, res = res.m, algorithm = p2r(subcircle = 0.2))
+print(Sys.time() - start.time)
+
+# ----- check results -----
+tif.files <- list.files(out.dir, pattern = '\\.tif', full.names = T)
+tifs <- lapply(tif.files, rast)
+plot(tifs[[1]])
+
+test.tif <- do.call(mosaic, c(tifs, fun = 'max'))
+plot(test.tif)
+
+chm.vrt <- vrt(tifs)
+plot(chm.vrt)
+
+
 # START 10:13am 1/29/26
 # END 16:07 1/30/26
 # RUNTIME: 30 hours
