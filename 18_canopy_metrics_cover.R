@@ -6,6 +6,8 @@ lapply(packages, library, character.only = T)
 #  Cover Metrics
 # ==============================================================================
 
+# this is the code to calculate laz - based pixel metrics for canopy cover and height
+
 cover.metrics <- function(z, cl) {
   
   ok <- !is.na(z) & !is.na(cl)
@@ -34,85 +36,97 @@ cover.metrics <- function(z, cl) {
 
 
 
-
 # ==============================================================================
 #  Cover Metrics Run
 # ==============================================================================
 
-ctg.norm <- readLAScatalog('data/processed/processed/laz/normalized/creek') 
 
-# ----- test on 5 tiles -----
+# ----- Catalog setup -----
 
-dir.test.36 <- 'data/processed/ALS/normalized_laz_test_tiles'
-files.test.36 <- list.files(dir.test.36, full.names = TRUE)
-ctg.test.36 <- readLAScatalog(files.test.36)
+fire <- 'caldor'
+acq <- 'CA_SierraNevada_8_2022'
 
-files.test.5 <- files.test.36[1:5]
-ctg.test.5 <- readLAScatalog(files.test.5)
+# pick depending on which computer
+j.dir <- 'data/processed/processed' # processing comp
+#j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/processed/processed'
 
-# full normalized catalog
-ctg.norm <- readLAScatalog('data/processed/processed/laz/normalized/creek') 
+# normalized tiles
+norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
+ctg.norm <- readLAScatalog(norm.dir) 
 
-# ----- test on subset of 5 tiles first -----
 
-# parallel
+# to test or not to test
+run.test <- TRUE # set TRUE for test, FALSE for full run
+
+# if TRUE, just run on test tiles, if FALSE, keep full ctg
+if (run.test) {
+  
+  files <- list.files(norm.dir, pattern = '\\.la[sz]$', full.names = TRUE)
+  test.files <- files[2:6]
+  ctg.run <- readLAScatalog(test.files)
+  
+} else {
+  
+  ctg.run <- ctg.norm
+}
+
+plot(ctg.run, chunk = TRUE)
+
+# filter points to remove obvious bad high/low points
+opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
+
+
+# ----- settings -----
 set_lidr_threads(1)
-plan(multisession, workers = 2)
+plan(multisession, workers = ifelse(run.test, 2, 12))
 
 # catalog options
-opt_progress(ctg.test.5) <- TRUE
-opt_chunk_size(ctg.test.5) <- 0
-opt_chunk_buffer(ctg.test.5) <- 0
-opt_laz_compression(ctg.test.5) <- TRUE
-opt_select(ctg.test.5) <- 'xyzc'
+opt_progress(ctg.run) <- TRUE
+opt_chunk_size(ctg.run) <- 0
+opt_chunk_buffer(ctg.run) <- 0
+opt_laz_compression(ctg.run) <- TRUE
+opt_select(ctg.run) <- 'xyzc'
 
 # outputs
-out.dir.50m <- 'data/processed/processed/tif/50m/creek/cover_test_5'
-dir.create(out.dir.50m, recursive = TRUE, showWarnings = FALSE)
-opt_output_files(ctg.test.5) <- file.path(out.dir.50m, 'cover_{ORIGINALFILENAME}')
+if (run.test) {
+  out.dir <- paste0('data/processed/processed/tif/50m/tests/', fire, '_cover_test')
+} else {
+  out.dir <- paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/cover_metrics_6340')
+}
 
-# run
-cover.stack.50m <- pixel_metrics(ctg.test.5,
-                                  ~ cover.metrics(Z, Classification),
-                                  res = 50)
+dir.create(out.dir, showWarnings = FALSE, recursive = TRUE)
 
+opt_output_files(ctg.run) <- file.path(out.dir, 'cover_{ORIGINALFILENAME}')
 
-# ----- final run -----
-
-# parallel settings
-set_lidr_threads(1)
-plan(multisession, workers = 12)
-
-# lidr options
-opt_progress(ctg.norm) <- TRUE
-opt_chunk_size(ctg.norm) <- 0
-opt_chunk_buffer(ctg.norm) <- 0
-opt_laz_compression(ctg.norm) <- TRUE
-opt_select(ctg.norm) <- 'xyzc'  # only read what you need
-
-# outputs
-out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_6340'
-dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
-opt_output_files(ctg.norm) <- file.path(out.dir, 'cover_{ORIGINALFILENAME}')
-
-# RUN
+# ----- run -----
 start.time <- Sys.time()
-cover.stack.50m.full <- pixel_metrics(ctg.norm,
-                                       ~ cover.metrics(Z, Classification),
-                                       res = 50)
+
+cover.stack.50m <- pixel_metrics(
+  ctg.run,
+  ~ cover.metrics(Z, Classification),
+  res = 50
+)
+
 end.time <- Sys.time()
 
 message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
 
-# height metrics took 1894 min (31.56 hours)
-# cover metrics took 1795 min 
+
+
+
+
+
+# height metrics for creek took 1894 min (31.56 hours)
+# cover metrics for creek took 1795 min 
 
 # ------- check ------
-test <- rast("data/processed/processed/tif/50m/creek/canopy_metrics/6340/cover_metrics_6340/cover_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif")
-test2 <- rast("data/processed/processed/tif/50m/creek/canopy_metrics/6340/cover_metrics_6340/cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif")
+test.files <- list.files(out.dir, full.names = T)
+test1 <- rast(test.files[1])
+test2 <- rast(test.files[2])
 
-crs(test, describe = TRUE)$code
-res(test)
+plot(test1)
+crs(test1, describe = TRUE)$code
+res(test1)
 plot(test2)
 plot(test)
 
@@ -162,6 +176,129 @@ crs(test4, describe = TRUE)$code
 res(test4)
 origin(test4)
 
+# ------ run cover metrics function -----
+
+# function to calculate 50m lidar-based canopy cover metrics from normalized laz files
+# save native EPSG:6340 outputs
+# reproject/resample
+# outputs to the appropriate UTM template grid (EPSG:32610 or EPSG:32611)
+
+run.cover.metrics <- function(fire, acq, template, run.test = TRUE) {
+  
+  # determine correct epsg code per fire
+  epsg <- dplyr::case_when(
+    fire == 'castle' ~ 32611, 
+    fire %in% c('caldor', 'dixie') ~ 32610
+  )
+  
+  j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
+  norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq) # where normalized files live
+  ctg.norm <- readLAScatalog(norm.dir)
+    
+  # if run.test == TRUE, only run on 5 tiles. Select FALSE for full run
+  if (run.test) {
+    files <- list.files(norm.dir, pattern = '\\.la[sz]$', full.names = TRUE)
+    test.files <- files[2:6]
+    ctg.run <- readLAScatalog(test.files)
+  } else {
+    ctg.run <- ctg.norm
+  }
+  
+  # filter out obviously bad values
+  opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
+  
+  # --- settings ---
+  set_lidr_threads(1)
+  plan(multisession, workers = ifelse(run.test, 2, 12))
+  
+  opt_progress(ctg.run) <- TRUE
+  opt_chunk_size(ctg.run) <- 0
+  opt_chunk_buffer(ctg.run) <- 0
+  opt_laz_compression(ctg.run) <- TRUE
+  opt_select(ctg.run) <- 'xyzc'
+  
+# --- outputs ---
+  # different directories depending on if test or not
+  if (run.test) {
+    out.dir <- paste0(j.dir, '/tif/50m/tests/', fire, '_cover_test')
+  } else {
+    out.dir <- paste0(j.dir, '/tif/50m/', fire, '/canopy_metrics/cover_metrics_6340')
+  }
+  
+  dir.create(out.dir, showWarnings = FALSE, recursive = TRUE)
+  
+  opt_output_files(ctg.run) <- file.path(out.dir, 'cover_{ORIGINALFILENAME}')
+  
+  # --- run ---
+  start.time <- Sys.time()
+  
+  # calculate metrics
+  cover.stack.50m <- pixel_metrics(
+    ctg.run,
+    ~ cover.metrics(Z, Classification),
+    res = 50
+  )
+  
+  
+  # --- reproject ---
+  
+  # templates reprojection
+  
+  template.32610 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_American_20230131_swe_50m_clipped.tif')
+  template.32611 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_Kern_20240508_swe_50m_clipped.tif')
+  
+  # choose correct template
+  if (epsg == 32610) {
+    template <- rast(template.32610)
+  } else if (epsg == 32611) {
+    template <- rast(template.32611)
+  }
+  
+  # reproject output to correct epsg
+  cover.stack.50m.proj <- terra::project(
+    cover.stack.50m,
+    template,
+    method = 'near'
+  )
+  
+  # outdir for reprojected files
+  out.dir.proj <- paste0(
+    j.dir,
+    '/tif/50m/',
+    fire,
+    '/canopy_metrics/cover_metrics_',
+    epsg
+  )
+  
+  dir.create(out.dir.proj, showWarnings = FALSE, recursive = TRUE)
+  
+  # save
+  writeRaster(
+    cover.stack.50m.proj,
+    file.path(out.dir.proj, paste0(fire, '_cover_metrics_', epsg, '.tif')),
+    overwrite = TRUE
+  )
+  
+  end.time <- Sys.time()
+  message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
+  
+  cover.stack.50m.proj
+}
+
+
+# ----- run function -----
+
+cover.stack.50m <- run.cover.metrics(
+  fire = 'caldor',
+  acq = 'CA_SierraNevada_5_2022',
+  run.test = TRUE
+)
+
+
+
+
+
+
 # ==============================================================================
 #  Mosaic into single raster
 # ==============================================================================
@@ -182,3 +319,26 @@ water <- get_nhdphr(AOI = creek, type = 'nhdwaterbody')
 
 cover.masked <- mask(m, water, inverse = TRUE)
 writeRaster(cover.masked, 'data/processed/processed/tif/50m/creek/canopy_metrics/creek_cover_metrics_50m_32611_masked.tif', overwrite = TRUE)
+
+
+
+
+
+
+# delete later
+
+snow.files <- list.files(file.path(j.dir, 'tif/50m/snow_metrics'), pattern = '\\.tif', full.names = T)
+snow <- lapply(snow.files, rast)
+
+snow.check <- data.frame(
+  file = basename(snow.files),
+  crs = sapply(snow, crs),
+  xres = sapply(snow, function(x) res(x)[1]),
+  yres = sapply(snow, function(x) res(x)[2]),
+  xorigin = sapply(snow, function(x) origin(x)[1]),
+  yorigin = sapply(snow, function(x) origin(x)[2])
+)
+
+snow.check
+
+

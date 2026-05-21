@@ -8,8 +8,8 @@ lapply(packages, library, character.only = T)
 # ------------------------------------------------------------------------------
 # Catalog setup 
 # ------------------------------------------------------------------------------
-fire <- 'caldor'
-acq <- 'CA_SierraNevada_8_2022'
+fire <- 'dixie'
+acq <- 'CA_SierraNevada_7_2022'
 
 # pick depending on which computer
 j.dir <- 'data/processed/processed' # processing comp
@@ -18,6 +18,9 @@ j.dir <- 'data/processed/processed' # processing comp
 # normalized tiles
 norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
 ctg.norm <- readLAScatalog(norm.dir) 
+
+# to test or not to test
+run.test <- FALSE # set TRUE for test, FALSE for full run
 
 # ----- inspect -----
 plot(ctg.norm)
@@ -72,8 +75,7 @@ mean(las.norm$Z[las.norm$Classification != 2] < -1, na.rm = TRUE)
 # Canopy Height Model
 # =================================================================================
 
-# to test or not to test
-run.test <- FALSE # set TRUE for test, FALSE for full run
+# shouldn't need to change anything in this section!
 
 test.tiles <- c('11SKD4406', '11SKD4407', '11SKD4306', '11SKD4307')
 
@@ -112,17 +114,16 @@ opt_progress(ctg.run) <- TRUE
 opt_chunk_size(ctg.run) <- 0 # process tile by tile
 opt_chunk_buffer(ctg.run) <-  0 # buffer not needed for CHM
 opt_laz_compression(ctg.run) <- TRUE   
-
 opt_output_files(ctg.run) <- file.path(out.dir, paste0(fire, '_chm_{ORIGINALFILENAME}'))
 
 # ----- run CHM -----
 
 # started at 6:48pm on 5/17
 # restart catalog processing at failed chunk
-opt_restart(ctg.run) <- 0
+# opt_restart(ctg.run) <- 1
 
 start.time <- Sys.time()
-chm <- rasterize_canopy(ctg.run, res = res.m, algorithm = p2r(subcircle = 0.2))
+chm <- rasterize_canopy(ctg.run, res = res.m, algorithm = p2r(subcircle = 0.2), overwrite = TRUE)
 print(Sys.time() - start.time)
 
 # ----- check results -----

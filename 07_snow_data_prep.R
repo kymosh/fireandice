@@ -6,7 +6,7 @@ lapply(packages, library, character.only = TRUE)
 # SDD
 # ----------------------------------------------------------------------------------
 
-# this code takes the SDD raster of all of CA for the definted year and reprojects, clips to the defined study area, and saves the output
+# this code takes the SDD raster of all of CA for the defined year and reprojects, clips to the defined study area, and saves the output
 
 sdd.fires <- function(fire, year, overwrite = TRUE) {
   
@@ -145,7 +145,9 @@ for (f in aso.files) {
 
 # since some have different origins and (veryyyy slightly) different resolutions, must match to template grid
 
-template <- rast(aso.files[12]) # has 50 res and 0,0 origin
+template.32610 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_American_20230131_swe_50m_clipped.tif')
+template.32611 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_Kern_20240508_swe_50m_clipped.tif')
+# has 50 res and 0,0 origin
 
 # put aligned files here temporarily 
 tmp.dir <- file.path(out.dir, 'aso_aligned_temp')
