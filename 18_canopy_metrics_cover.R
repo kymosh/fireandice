@@ -6,7 +6,7 @@ lapply(packages, library, character.only = T)
 #  Cover Metrics
 # ==============================================================================
 
-# this is the code to calculate laz - based pixel metrics for canopy cover and height
+# this is the code to calculate laz - based pixel metrics for canopy cover
 
 cover.metrics <- function(z, cl) {
   
@@ -34,147 +34,6 @@ cover.metrics <- function(z, cl) {
   )
 }
 
-
-
-# ==============================================================================
-#  Cover Metrics Run
-# ==============================================================================
-
-
-# ----- Catalog setup -----
-
-fire <- 'caldor'
-acq <- 'CA_SierraNevada_8_2022'
-
-# pick depending on which computer
-j.dir <- 'data/processed/processed' # processing comp
-#j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/processed/processed'
-
-# normalized tiles
-norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
-ctg.norm <- readLAScatalog(norm.dir) 
-
-
-# to test or not to test
-run.test <- TRUE # set TRUE for test, FALSE for full run
-
-# if TRUE, just run on test tiles, if FALSE, keep full ctg
-if (run.test) {
-  
-  files <- list.files(norm.dir, pattern = '\\.la[sz]$', full.names = TRUE)
-  test.files <- files[2:6]
-  ctg.run <- readLAScatalog(test.files)
-  
-} else {
-  
-  ctg.run <- ctg.norm
-}
-
-plot(ctg.run, chunk = TRUE)
-
-# filter points to remove obvious bad high/low points
-opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
-
-
-# ----- settings -----
-set_lidr_threads(1)
-plan(multisession, workers = ifelse(run.test, 2, 12))
-
-# catalog options
-opt_progress(ctg.run) <- TRUE
-opt_chunk_size(ctg.run) <- 0
-opt_chunk_buffer(ctg.run) <- 0
-opt_laz_compression(ctg.run) <- TRUE
-opt_select(ctg.run) <- 'xyzc'
-
-# outputs
-if (run.test) {
-  out.dir <- paste0('data/processed/processed/tif/50m/tests/', fire, '_cover_test')
-} else {
-  out.dir <- paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/cover_metrics_6340')
-}
-
-dir.create(out.dir, showWarnings = FALSE, recursive = TRUE)
-
-opt_output_files(ctg.run) <- file.path(out.dir, 'cover_{ORIGINALFILENAME}')
-
-# ----- run -----
-start.time <- Sys.time()
-
-cover.stack.50m <- pixel_metrics(
-  ctg.run,
-  ~ cover.metrics(Z, Classification),
-  res = 50
-)
-
-end.time <- Sys.time()
-
-message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
-
-
-
-
-
-
-# height metrics for creek took 1894 min (31.56 hours)
-# cover metrics for creek took 1795 min 
-
-# ------- check ------
-test.files <- list.files(out.dir, full.names = T)
-test1 <- rast(test.files[1])
-test2 <- rast(test.files[2])
-
-plot(test1)
-crs(test1, describe = TRUE)$code
-res(test1)
-plot(test2)
-plot(test)
-
-# -------- reproject -------
-
-dem50 <- rast('data/processed/processed/tif/50m/creek/other_metrics/nasadem_creek_50m_1524.tif')
-
-cover.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/6340/cover_metrics_6340'
-cover.files <- list.files(cover.dir, pattern = '\\.tif$', full.names = TRUE)
-length(cover.files)
-cover.files.test <- cover.files[1:5]
-
-out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
-
-dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
-
-start.time <- Sys.time()
-for (f in cover.files) {
-  
-  r <- rast(f)
-  
-  r.32611 <- project(r, 'EPSG:32611', method = 'bilinear')
-  
-  # crop dem50 to this tile extent, snapping to dem50grid
-  tmpl.tile <- crop(dem50, ext(r.32611), snap = 'out')
-  
-  r.align <- resample(r.32611, tmpl.tile)
-  
-  out.file <- file.path(out.dir, basename(f))
-  writeRaster(r.align, out.file, overwrite = TRUE)
-}
-end.time <- Sys.time()
-message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
-# creek data took 23.28 min
-
-# ----- check -----
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
-test3 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif'))
-test4 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif'))
-
-plot(test3)
-crs(test3, describe = TRUE)$code
-res(test3)
-origin(test3)
-plot(test4)
-crs(test4, describe = TRUE)$code
-res(test4)
-origin(test4)
 
 # ------ run cover metrics function -----
 
@@ -290,11 +149,26 @@ run.cover.metrics <- function(fire, acq, template, run.test = TRUE) {
 
 cover.stack.50m <- run.cover.metrics(
   fire = 'caldor',
-  acq = 'CA_SierraNevada_5_2022',
-  run.test = TRUE
+  acq = 'CA_SierraNevada_8_2022',
+  run.test = FALSE
 )
 
+# height metrics for creek took 1894 min (31.56 hours)
+# cover metrics for creek took 1795 min 
 
+# ----- check -----
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
+test3 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif'))
+test4 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif'))
+
+plot(test3)
+crs(test3, describe = TRUE)$code
+res(test3)
+origin(test3)
+plot(test4)
+crs(test4, describe = TRUE)$code
+res(test4)
+origin(test4)
 
 
 
