@@ -671,6 +671,10 @@ sdd.fires <- function(fire, year, overwrite = TRUE) {
     select(-area)
   extent <- st_transform(extent, crs(template))
   
+  # redefine modis CRS 
+  sin.crs <- "+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m"
+  crs(ca.sdd.modis) <- sin.crs
+  
   # reproject, crop, and mask
   sdd.32611 <- project(ca.sdd.modis, crs(template), res = res(template), method = 'near')
   sdd.crop <- crop(sdd.32611, vect(extent))
@@ -679,14 +683,28 @@ sdd.fires <- function(fire, year, overwrite = TRUE) {
   plot(extent, color = NA, border = 'red', add = T)
   
   out.dir <- paste0('data/processed/processed/tif/500m/', fire, '/snow_metrics')
-  writeRaster(sdd.mask, file.path(out.dir, paste0(fire, '_sdd_wy', year, '_500m.tif')))
+  dir.create(out.dir, showWarnings = FALSE, recursive = TRUE)
+  writeRaster(sdd.mask, file.path(out.dir, paste0(fire, '_sdd_wy', year, '_500m.tif')), overwrite = TRUE)
 
 }
 
-process.sdd('castle', 2023)
-process.sdd('castle', 2024)
-process.sdd('castle', 2025)
+sdd.fires('castle', 2023)
+sdd.fires('castle', 2024)
+sdd.fires('castle', 2025)
 
-process.sdd('caldor', 2023)
-process.sdd('caldor', 2024)
-process.sdd('caldor', 2025)
+sdd.fires('caldor', 2023)
+sdd.fires('caldor', 2024)
+sdd.fires('caldor', 2025)
+
+sdd.fires('dixie', 2022)
+sdd.fires('dixie', 2023)
+sdd.fires('dixie', 2024)
+sdd.fires('dixie', 2025)
+
+sdd.fires('creek', 2021)
+sdd.fires('creek', 2022)
+sdd.fires('creek', 2023)
+sdd.fires('creek', 2024)
+sdd.fires('creek', 2025)
+
+
