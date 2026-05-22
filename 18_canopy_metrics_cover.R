@@ -177,12 +177,12 @@ cover.stack.50m <- run.cover.metrics(
 )
 # done
 
+
 cover.stack.50m <- run.cover.metrics(
   fire = 'caldor',
   acq = 'CA_SierraNevada_5_2022',
   run.test = FALSE
 )
-
 
 # --- castle ---
 cover.stack.50m <- run.cover.metrics(
