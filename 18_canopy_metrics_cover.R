@@ -42,7 +42,7 @@ cover.metrics <- function(z, cl) {
 # reproject/resample
 # outputs to the appropriate UTM template grid (EPSG:32610 or EPSG:32611)
 
-run.cover.metrics <- function(fire, acq, template, run.test = TRUE) {
+run.cover.metrics <- function(fire, acq, run.test = TRUE) {
   
   # determine correct epsg code per fire
   epsg <- dplyr::case_when(
@@ -81,7 +81,7 @@ run.cover.metrics <- function(fire, acq, template, run.test = TRUE) {
   if (run.test) {
     out.dir <- paste0(j.dir, '/tif/50m/tests/', fire, '_cover_test')
   } else {
-    out.dir <- paste0(j.dir, '/tif/50m/', fire, '/canopy_metrics/cover_metrics_6340')
+    out.dir <- paste0(j.dir, '/tif/50m/', fire, '/canopy_metrics/cover_metrics_6340/', acq)
   }
   
   dir.create(out.dir, showWarnings = FALSE, recursive = TRUE)
@@ -99,57 +99,115 @@ run.cover.metrics <- function(fire, acq, template, run.test = TRUE) {
   )
   
   
-  # --- reproject ---
-  
-  # templates reprojection
+  # --- reproject per tile ---
   
   template.32610 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_American_20230131_swe_50m_clipped.tif')
   template.32611 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_Kern_20240508_swe_50m_clipped.tif')
   
-  # choose correct template
+  # determine epsg 
   if (epsg == 32610) {
     template <- rast(template.32610)
   } else if (epsg == 32611) {
     template <- rast(template.32611)
+  } else {
+    stop('No template defined for EPSG: ', epsg)
   }
   
-  # reproject output to correct epsg
-  cover.stack.50m.proj <- terra::project(
-    cover.stack.50m,
-    template,
-    method = 'near'
-  )
-  
-  # outdir for reprojected files
-  out.dir.proj <- paste0(
-    j.dir,
-    '/tif/50m/',
-    fire,
-    '/canopy_metrics/cover_metrics_',
-    epsg
-  )
+  # define out.dir depending on if test or not
+  if (run.test) {
+    
+    out.dir.proj <- paste0(
+      j.dir, '/tif/50m/tests/',
+      fire, '_cover_test_proj'
+    )
+    
+  } else {
+    
+    out.dir.proj <- paste0(
+      j.dir, '/tif/50m/', fire,
+      '/canopy_metrics/cover_metrics_', epsg,
+      '/', acq
+    )
+  }
   
   dir.create(out.dir.proj, showWarnings = FALSE, recursive = TRUE)
   
-  # save
-  writeRaster(
-    cover.stack.50m.proj,
-    file.path(out.dir.proj, paste0(fire, '_cover_metrics_', epsg, '.tif')),
-    overwrite = TRUE
-  )
+  native.files <- list.files(out.dir, pattern = '^cover_.*\\.tif$', full.names = TRUE)
+  
+  proj.files <- character(length(native.files))
+  
+  for (i in seq_along(native.files)) {
+    
+    f <- native.files[i]
+    r <- rast(f)
+    
+    r.proj <- terra::project(
+      r,
+      template,
+      method = 'near',
+      align_only = TRUE
+    )
+    
+    # preserve layer names
+    names(r.proj) <- names(r)
+    
+    proj.files[i] <- file.path(out.dir.proj, basename(f))
+    
+    writeRaster(
+      r.proj,
+      proj.files[i],
+      overwrite = TRUE
+    )
+  }
   
   end.time <- Sys.time()
   message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
   
-  cover.stack.50m.proj
+  proj.files
 }
 
 
 # ----- run function -----
 
+# --- caldor ---
 cover.stack.50m <- run.cover.metrics(
   fire = 'caldor',
   acq = 'CA_SierraNevada_8_2022',
+  run.test = FALSE
+)
+# done
+
+cover.stack.50m <- run.cover.metrics(
+  fire = 'caldor',
+  acq = 'CA_SierraNevada_5_2022',
+  run.test = FALSE
+)
+
+
+# --- castle ---
+cover.stack.50m <- run.cover.metrics(
+  fire = 'castle',
+  acq = 'CA_SierraNevada_9_14_2022',
+  run.test = FALSE
+)
+
+# --- dixie ---
+cover.stack.50m <- run.cover.metrics(
+  fire = 'dixie',
+  acq = 'CA_SierraNevada_6_2022',
+  run.test = FALSE
+)
+# started, didn't finish because I never updated script :(
+
+cover.stack.50m <- run.cover.metrics(
+  fire = 'dixie',
+  acq = 'CA_SierraNevada_4_2022',
+  run.test = FALSE
+)
+
+cover.stack.50m <- run.cover.metrics(
+  fire = 'dixie',
+  acq = 'CA_SierraNevada_7_2022',
   run.test = FALSE
 )
 
@@ -157,12 +215,29 @@ cover.stack.50m <- run.cover.metrics(
 # cover metrics for creek took 1795 min 
 
 # ----- check -----
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/canopy_metrics/cover_metrics_32611'
-test3 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7940_norm.tif'))
-test4 <- rast(file.path(out.dir, 'cover_USGS_LPC_CA_SierraNevada_B22_11SKB7840_norm.tif'))
 
+# check test
+out.dir <- 'data/processed/processed/tif/50m/tests/caldor_cover_test'
+out.dir <- 'data/processed/processed/tif/50m/caldor/canopy_metrics/cover_metrics_32610/CA_SierraNevada_5_2022'
+test.files <- list.files(out.dir, pattern = '\\.tif', full.names = T)
+test <- lapply(test.files, rast)
+test.m <- do.call(mosaic, test)
+plot(test.m)
+plot(rast(test.files[1]))
+crs(test.m, describe = T)$code
+res(test.m)
+origin(test.m)
+
+# check final
+out.dir <- 'data/processed/processed/tif/50m/caldor/canopy_metrics/cover_metrics_6340/CA_SierraNevada_8_2022'
+test.files <- list.files(out.dir, pattern = '\\.tif', full.names = T)
+test <- lapply(test.files, rast)
+test.m <- do.call(mosaic, test)
+plot(rast(test.files[1]))
+
+plot(test.m)
 plot(test3)
-crs(test3, describe = TRUE)$code
+crs(test.m, describe = TRUE)$code
 res(test3)
 origin(test3)
 plot(test4)
@@ -201,18 +276,17 @@ writeRaster(cover.masked, 'data/processed/processed/tif/50m/creek/canopy_metrics
 
 # delete later
 
-snow.files <- list.files(file.path(j.dir, 'tif/50m/snow_metrics'), pattern = '\\.tif', full.names = T)
-snow <- lapply(snow.files, rast)
-
-snow.check <- data.frame(
-  file = basename(snow.files),
-  crs = sapply(snow, crs),
-  xres = sapply(snow, function(x) res(x)[1]),
-  yres = sapply(snow, function(x) res(x)[2]),
-  xorigin = sapply(snow, function(x) origin(x)[1]),
-  yorigin = sapply(snow, function(x) origin(x)[2])
+# fix names
+cover.names <- c(
+  'canopy_open_2m',
+  'cover_2m',
+  'pzabove5',
+  'pzabove10',
+  'ground_frac'
 )
 
-snow.check
-
-
+for (f in test.files) {
+  r <- rast(f)
+  names(r) <- cover.names
+  writeRaster(r, f, overwrite = TRUE)
+}
