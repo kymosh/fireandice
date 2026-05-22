@@ -2,9 +2,223 @@ packages <- c('lidR', 'dplyr', 'future', 'future.apply')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
+# -----  this will replace the above script -----
+
+# ==============================================================================
+#  Height Metrics Function
+# ==============================================================================
+
+height.metrics <- function(z, cl) {
+  
+  z.canopy <- z[z > 2 & cl != 2]
+  
+  if (length(z.canopy) == 0) {
+    example <- stdmetrics_z(1:10)
+    out <- as.list(rep(NA_real_, length(example)))
+    names(out) <- names(example)
+    out$zmax_true <- NA_real_
+  } else {
+    out <- as.list(stdmetrics_z(z.canopy))
+    out$zmax_true <- max(z.canopy)
+  }
+  
+  # drop metric that is meaningless by construction
+  out$pzabove2 <- NULL
+  
+  out
+}
 
 
 
+# ------ run height metrics function -----
+
+# function to calculate 50m lidar-based canopy height metrics from normalized laz files
+# save native EPSG:6340 outputs
+# reproject/resample
+# outputs to the appropriate UTM template grid (EPSG:32610 or EPSG:32611)
+
+run.height.metrics <- function(fire, acq, run.test = TRUE) {
+  
+  # determine correct epsg code per fire
+  epsg <- dplyr::case_when(
+    fire == 'castle' ~ 32611, 
+    fire %in% c('caldor', 'dixie') ~ 32610
+  )
+  
+  j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
+  norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq) # where normalized files live
+  ctg.norm <- readLAScatalog(norm.dir)
+  
+  # if run.test == TRUE, only run on 5 tiles. Select FALSE for full run
+  if (run.test) {
+    files <- list.files(norm.dir, pattern = '\\.la[sz]$', full.names = TRUE)
+    test.files <- files[2:6]
+    ctg.run <- readLAScatalog(test.files)
+  } else {
+    ctg.run <- ctg.norm
+  }
+  
+  # filter out obviously bad values
+  opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
+  
+  # --- settings ---
+  set_lidr_threads(1)
+  plan(multisession, workers = ifelse(run.test, 2, 12))
+  
+  opt_progress(ctg.run) <- TRUE
+  opt_chunk_size(ctg.run) <- 0
+  opt_chunk_buffer(ctg.run) <- 0
+  opt_laz_compression(ctg.run) <- TRUE
+  opt_select(ctg.run) <- 'xyzc'
+  
+  # --- outputs ---
+  # different directories depending on if test or not
+  if (run.test) {
+    out.dir <- paste0(j.dir, '/tif/50m/tests/', fire, '_height_test')
+  } else {
+    out.dir <- paste0(j.dir, '/tif/50m/', fire, '/canopy_metrics/height_metrics_6340/', acq)
+  }
+  
+  dir.create(out.dir, showWarnings = FALSE, recursive = TRUE)
+  
+  opt_output_files(ctg.run) <- file.path(out.dir, 'height_{ORIGINALFILENAME}')
+  
+  # --- run ---
+  start.time <- Sys.time()
+  
+  # calculate metrics
+  height.stack.50m <- pixel_metrics(
+    ctg.run,
+    ~ height.metrics(Z, Classification),
+    res = 50
+  )
+  
+  
+  # --- reproject per tile ---
+  
+  template.32610 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_American_20230131_swe_50m_clipped.tif')
+  template.32611 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_Kern_20240508_swe_50m_clipped.tif')
+  
+  # determine epsg 
+  if (epsg == 32610) {
+    template <- rast(template.32610)
+  } else if (epsg == 32611) {
+    template <- rast(template.32611)
+  } else {
+    stop('No template defined for EPSG: ', epsg)
+  }
+  
+  # define out.dir depending on if test or not
+  if (run.test) {
+    
+    out.dir.proj <- paste0(
+      j.dir, '/tif/50m/tests/',
+      fire, '_height_test_proj'
+    )
+    
+  } else {
+    
+    out.dir.proj <- paste0(
+      j.dir, '/tif/50m/', fire,
+      '/canopy_metrics/height_metrics_', epsg,
+      '/', acq
+    )
+  }
+  
+  dir.create(out.dir.proj, showWarnings = FALSE, recursive = TRUE)
+  
+  native.files <- list.files(out.dir, pattern = '^height_.*\\.tif$', full.names = TRUE)
+  
+  proj.files <- character(length(native.files))
+  
+  for (i in seq_along(native.files)) {
+    
+    f <- native.files[i]
+    r <- rast(f)
+    
+    r.proj <- terra::project(
+      r,
+      template,
+      method = 'near',
+      align_only = TRUE
+    )
+    
+    # preserve layer names
+    names(r.proj) <- names(r)
+    
+    proj.files[i] <- file.path(out.dir.proj, basename(f))
+    
+    writeRaster(
+      r.proj,
+      proj.files[i],
+      overwrite = TRUE
+    )
+  }
+  
+  end.time <- Sys.time()
+  message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
+  
+  proj.files
+}
+
+
+# ----- run function -----
+
+# --- caldor ---
+height.stack.50m <- run.height.metrics(
+  fire = 'caldor',
+  acq = 'CA_SierraNevada_8_2022',
+  run.test = TRUE
+)
+# done
+
+
+height.stack.50m <- run.height.metrics(
+  fire = 'caldor',
+  acq = 'CA_SierraNevada_5_2022',
+  run.test = FALSE
+)
+
+# --- castle ---
+height.stack.50m <- run.height.metrics(
+  fire = 'castle',
+  acq = 'CA_SierraNevada_9_14_2022',
+  run.test = FALSE
+)
+
+# --- dixie ---
+height.stack.50m <- run.height.metrics(
+  fire = 'dixie',
+  acq = 'CA_SierraNevada_6_2022',
+  run.test = FALSE
+)
+# started, didn't finish because I never updated script :(
+
+height.stack.50m <- run.height.metrics(
+  fire = 'dixie',
+  acq = 'CA_SierraNevada_4_2022',
+  run.test = FALSE
+)
+
+height.stack.50m <- run.height.metrics(
+  fire = 'dixie',
+  acq = 'CA_SierraNevada_7_2022',
+  run.test = FALSE
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+### OLD Script below
 # ==============================================================================
 #  Calculate Height Metrics
 # ==============================================================================
@@ -186,141 +400,18 @@ res(height.test)
 
 
 
-# -----  this will replace the above script -----
 
-# ==============================================================================
-#  Height Metrics Function
-# ==============================================================================
 
-height.metrics <- function(z, cl) {
-  
-  z.canopy <- z[z > 2 & cl != 2]
-  
-  if (length(z.canopy) == 0) {
-    example <- stdmetrics_z(1:10)
-    out <- as.list(rep(NA_real_, length(example)))
-    names(out) <- names(example)
-    out$zmax_true <- NA_real_
-  } else {
-    out <- as.list(stdmetrics_z(z.canopy))
-    out$zmax_true <- max(z.canopy)
-  }
-  
-  # drop metric that is meaningless by construction
-  out$pzabove2 <- NULL
-  
-  out
-}
 
-# ------ run height metrics function -----
 
-# function to calculate 50m lidar-based canopy height metrics from normalized laz files
-# save native EPSG:6340 outputs
-# reproject/resample
-# outputs to the appropriate UTM template grid (EPSG:32610 or EPSG:32611)
 
-run.height.metrics <- function(fire, acq, run.test = TRUE) {
-  
-  # determine correct epsg code per fire
-  epsg <- dplyr::case_when(
-    fire %in% c('castle', 'creek') ~ 32611, 
-    fire %in% c('caldor', 'dixie') ~ 32610
-  )
-  
-  j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
-  norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq) # where normalized files live
-  ctg.norm <- readLAScatalog(norm.dir)
-  
-  # if run.test == TRUE, only run on 5 tiles. Select FALSE for full run
-  if (run.test) {
-    files <- list.files(norm.dir, pattern = '\\.la[sz]$', full.names = TRUE)
-    test.files <- files[2:6]
-    ctg.run <- readLAScatalog(test.files)
-  } else {
-    ctg.run <- ctg.norm
-  }
-  
-  # filter out obviously bad values
-  opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
-  
-  # --- settings ---
-  set_lidr_threads(1)
-  plan(multisession, workers = ifelse(run.test, 2, 12))
-  
-  opt_progress(ctg.run) <- TRUE
-  opt_chunk_size(ctg.run) <- 0
-  opt_chunk_buffer(ctg.run) <- 0
-  opt_laz_compression(ctg.run) <- TRUE
-  opt_select(ctg.run) <- 'xyzc'
-  
-  # --- outputs ---
-  # different directories depending on if test or not
-  if (run.test) {
-    out.dir <- paste0(j.dir, '/tif/50m/tests/', fire, '_height_test')
-  } else {
-    out.dir <- paste0(j.dir, '/tif/50m/', fire, '/canopy_metrics/height_metrics_6340')
-  }
-  
-  dir.create(out.dir, showWarnings = FALSE, recursive = TRUE)
-  
-  opt_output_files(ctg.run) <- file.path(out.dir, 'height_{ORIGINALFILENAME}')
-  
-  # --- run ---
-  start.time <- Sys.time()
-  
-  # calculate metrics
-  height.stack.50m <- pixel_metrics(
-    ctg.run,
-    ~ height.metrics(Z, Classification),
-    res = 50
-  )
-  
-  
-  # --- reproject ---
-  
-  # templates reprojection
-  
-  template.32610 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_American_20230131_swe_50m_clipped.tif')
-  template.32611 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_Kern_20240508_swe_50m_clipped.tif')
-  
-  # choose correct template
-  if (epsg == 32610) {
-    template <- rast(template.32610)
-  } else if (epsg == 32611) {
-    template <- rast(template.32611)
-  }
-  
-  # reproject output to correct epsg
-  height.stack.50m.proj <- terra::project(
-    height.stack.50m,
-    template,
-    method = 'near',
-    align_only = TRUE
-  )
-  
-  # outdir for reprojected files
-  out.dir.proj <- paste0(
-    j.dir,
-    '/tif/50m/',
-    fire,
-    '/canopy_metrics/height_metrics_',
-    epsg
-  )
-  
-  dir.create(out.dir.proj, showWarnings = FALSE, recursive = TRUE)
-  
-  # save
-  writeRaster(
-    height.stack.50m.proj,
-    file.path(out.dir.proj, paste0(fire, '_height_metrics_', epsg, '.tif')),
-    overwrite = TRUE
-  )
-  
-  end.time <- Sys.time()
-  message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
-  
-  height.stack.50m.proj
-}
+
+
+
+
+
+
+
 
 # ==============================================================================
 #  Mosaic into single raster
