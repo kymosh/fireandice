@@ -8,11 +8,14 @@ lapply(packages, library, character.only = TRUE)
 
 # this code takes the SDD raster of all of CA for the defined year and reprojects, clips to the defined study area, and saves the output
 
-sdd.fires <- function(fire, year, overwrite = TRUE) {
+sdd.fires <- function(fire, year, epsg, overwrite = TRUE) {
   
   message('Processing ', fire, ' WY', year, '...')
   
-  # template used to define target CRS and resolution
+  # define target CRS
+  target.crs <- paste0('EPSG:', epsg)
+  
+  # template used to define resolution
   temp.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/other_metrics'
   template <- rast(file.path(temp.dir, 'nasadem_creek_500m_1524.tif'))
   
@@ -24,15 +27,15 @@ sdd.fires <- function(fire, year, overwrite = TRUE) {
   # remove extra variable
   extent <- extent %>%
     select(-area)
-  extent <- st_transform(extent, crs(template))
+  extent <- st_transform(extent, target.crs)
   
   # redefine modis CRS 
   sin.crs <- "+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m"
   crs(ca.sdd.modis) <- sin.crs
   
   # reproject, crop, and mask
-  sdd.32611 <- project(ca.sdd.modis, crs(template), res = res(template), method = 'near')
-  sdd.crop <- crop(sdd.32611, vect(extent))
+  sdd.3261x <- project(ca.sdd.modis, target.crs, res = res(template), method = 'near')
+  sdd.crop <- crop(sdd.3261x, vect(extent))
   sdd.mask <- mask(sdd.crop, vect(extent))
   plot(sdd.mask)
   plot(extent, color = NA, border = 'red', add = T)
@@ -43,24 +46,25 @@ sdd.fires <- function(fire, year, overwrite = TRUE) {
   
 }
 
-sdd.fires('castle', 2023)
-sdd.fires('castle', 2024)
-sdd.fires('castle', 2025)
+# ----- run function for each fire, each year -----
+sdd.fires('castle', 2023, epsg = 32611)
+sdd.fires('castle', 2024, epsg = 32611)
+sdd.fires('castle', 2025, epsg = 32611)
 
-sdd.fires('caldor', 2023)
-sdd.fires('caldor', 2024)
-sdd.fires('caldor', 2025)
+sdd.fires('caldor', 2023, epsg = 32610)
+sdd.fires('caldor', 2024, epsg = 32610)
+sdd.fires('caldor', 2025, epsg = 32610)
 
-sdd.fires('dixie', 2022)
-sdd.fires('dixie', 2023)
-sdd.fires('dixie', 2024)
-sdd.fires('dixie', 2025)
+sdd.fires('dixie', 2022, epsg = 32610)
+sdd.fires('dixie', 2023, epsg = 32610)
+sdd.fires('dixie', 2024, epsg = 32610)
+sdd.fires('dixie', 2025, epsg = 32610)
 
-sdd.fires('creek', 2021)
-sdd.fires('creek', 2022)
-sdd.fires('creek', 2023)
-sdd.fires('creek', 2024)
-sdd.fires('creek', 2025)
+sdd.fires('creek', 2021, epsg = 32611)
+sdd.fires('creek', 2022, epsg = 32611)
+sdd.fires('creek', 2023, epsg = 32611)
+sdd.fires('creek', 2024, epsg = 32611)
+sdd.fires('creek', 2025, epsg = 32611)
 
 
 ##### rename SWE files that are clipped to 5000 to reflect that so I can change them to the correct elevations withough losing them
@@ -143,80 +147,76 @@ for (f in aso.files) {
   print(origin(r))
 }
 
+
+# ----------------------------------------------------------------------------------
+# Align SWE rasters so they all have the same origin, resolution, and respective CRS
+# ----------------------------------------------------------------------------------
+
 # since some have different origins and (veryyyy slightly) different resolutions, must match to template grid
 
-template.32610 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_American_20230131_swe_50m_clipped.tif')
-template.32611 <- file.path(j.dir, 'tif/50m/snow_metrics/ASO_Kern_20240508_swe_50m_clipped.tif')
-# has 50 res and 0,0 origin
+snow.dir <- 'data/processed/processed/tif/50m/snow_metrics'
+template.32610 <- rast(file.path(snow.dir, 'ASO_American_20230131_swe_50m_clipped.tif'))
+template.32611 <- rast(file.path(snow.dir, 'ASO_Kern_20240508_swe_50m_clipped.tif'))
 
-# put aligned files here temporarily 
-tmp.dir <- file.path(out.dir, 'aso_aligned_temp')
-dir.create(tmp.dir, showWarnings = F)
+tmp.dir <- file.path(snow.dir, 'aso_aligned_temp')
+dir.create(tmp.dir, showWarnings = FALSE, recursive = TRUE)
 
-for (f in aso.files[1:11]) {
-  r <- rast(f)
-  r.align <- project(r, template, method = 'near') # align to template grid
-  writeRaster(r.align, file.path(tmp.dir, basename(f)), overwrite = TRUE)
-}
+aso.files <- list.files(snow.dir, pattern = '\\.tif', full.names = T)
 
-aligned.aso <- list.files(tmp.dir, pattern = 'ASO', full.names = TRUE)
-
-# verify to make sure they have the correct res, origin, and crs after reprojecting
-
-for (f in aligned.aso) {
-  r <- rast(f)
-  print(res(r))
-}
-
-for (f in aligned.aso) {
-  r <- rast(f)
-  print(origin(r))
-}
-
-
-pre.align <- rast(file.path(out.dir, 'ASO_SanJoaquin_2020_0414_swe_50m_1524.tif'))
-post.align <- rast(file.path(tmp.dir, 'ASO_SanJoaquin_2020_0414_swe_50m_1524.tif'))
-
-plot(pre.align)
-plot(post.align)
-
-names(pre.align)
-names(post.align)
-
-summary(values(pre.align))
-summary(values(post.align))
-
-# write rasters to replace 
-file.copy(list.files(tmp.dir, full.names=TRUE),
-          dirname(aso.files[1]),
-          overwrite=TRUE)
-
-# final check
-aso.files <- list.files(out.dir, pattern = '^ASO_', full.names = TRUE)
-
-# check CRS
 for (f in aso.files) {
+  
   r <- rast(f)
-  print(crs(r, describe = T)$code)
+  epsg <- crs(r, describe = TRUE)$code
+  
+  # make template grid for reprojecting
+  template.grid <- if (epsg == '32610') {
+    template.32610
+  } else if (epsg == '32611') {
+    template.32611
+  } else {
+    stop('Unexpected EPSG for ', basename(f), ': ', epsg)
+  }
+  
+  local.template <- rast(
+    ext = ext(r),
+    resolution = res(template.grid),
+    crs = crs(template.grid)
+  )
+  
+  origin(local.template) <- origin(template.grid)
+  
+  r.align <- resample(r, local.template, method = 'near')
+  
+  writeRaster(
+    r.align,
+    file.path(tmp.dir, basename(f)),
+    overwrite = TRUE
+  )
 }
 
-# check res
-for (f in aso.files) {
-  r <- rast(f)
-  print(res(r))
-}
+# --- sanity check ---
 
-# check origin
-for (f in aso.files) {
-  r <- rast(f)
-  print(origin(r))
-}
- 
-# check extent
-for (f in aso.files) {
-  r <- rast(f)
-  print(ext(r))
-}
+aligned.aso <- list.files(tmp.dir, pattern = '^ASO_.*\\.tif$', full.names = TRUE)
+
+check <- data.frame(
+  file = basename(aligned.aso),
+  epsg = sapply(aligned.aso, function(f) crs(rast(f), describe = TRUE)$code),
+  xres = sapply(aligned.aso, function(f) res(rast(f))[1]),
+  yres = sapply(aligned.aso, function(f) res(rast(f))[2]),
+  xorigin = sapply(aligned.aso, function(f) origin(rast(f))[1]),
+  yorigin = sapply(aligned.aso, function(f) origin(rast(f))[2])
+)
+
+check
+unique(check[, c('epsg', 'xres', 'yres', 'xorigin', 'yorigin')])
+
+plot(rast(aligned.aso[55]))
+plot(rast(aso.files[55]))
+# should look exactly the same
+
+
+
+
 
 # ------- combine into single SWE rasterstack -------
 swe.stack <- rast(aso.files)
