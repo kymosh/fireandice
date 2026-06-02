@@ -68,8 +68,9 @@ run.cover.metrics <- function(fire, acq, run.test = TRUE) {
   
   # --- settings ---
   set_lidr_threads(1)
-  plan(multisession, workers = ifelse(run.test, 2, 12))
+  plan(multisession, workers = ifelse(run.test, 2, 10)) # usually 12, temp changed to 10
   
+  opt_restart(ctg.run)<- 266 # usually set to 1
   opt_progress(ctg.run) <- TRUE
   opt_chunk_size(ctg.run) <- 0
   opt_chunk_buffer(ctg.run) <- 0
@@ -183,6 +184,7 @@ cover.stack.50m <- run.cover.metrics(
   acq = 'CA_SierraNevada_5_2022',
   run.test = FALSE
 )
+# done
 
 # --- castle ---
 cover.stack.50m <- run.cover.metrics(
@@ -190,6 +192,7 @@ cover.stack.50m <- run.cover.metrics(
   acq = 'CA_SierraNevada_9_14_2022',
   run.test = FALSE
 )
+# done
 
 # --- dixie ---
 cover.stack.50m <- run.cover.metrics(
@@ -197,19 +200,25 @@ cover.stack.50m <- run.cover.metrics(
   acq = 'CA_SierraNevada_6_2022',
   run.test = FALSE
 )
-# started, didn't finish because I never updated script :(
+# done
+
 
 cover.stack.50m <- run.cover.metrics(
   fire = 'dixie',
   acq = 'CA_SierraNevada_4_2022',
   run.test = FALSE
 )
+# starting at chunk 266
+
+chunk <- readRDS('C:/Users/km220416/AppData/Local/Temp/RtmpwXxKzs/chunk266.rds')
+chunk
 
 cover.stack.50m <- run.cover.metrics(
   fire = 'dixie',
   acq = 'CA_SierraNevada_7_2022',
   run.test = FALSE
 )
+# done
 
 # height metrics for creek took 1894 min (31.56 hours)
 # cover metrics for creek took 1795 min 
@@ -352,8 +361,9 @@ run.height.metrics <- function(fire, acq, run.test = TRUE) {
   
   # --- settings ---
   set_lidr_threads(1)
-  plan(multisession, workers = ifelse(run.test, 2, 12))
+  plan(multisession, workers = ifelse(run.test, 2, 10)) # usually 12, temp set to 10
   
+  opt_restart(ctg.run)<- 266 # usually set to 1 or comment out
   opt_progress(ctg.run) <- TRUE
   opt_chunk_size(ctg.run) <- 0
   opt_chunk_buffer(ctg.run) <- 0
@@ -457,9 +467,9 @@ run.height.metrics <- function(fire, acq, run.test = TRUE) {
 height.stack.50m <- run.height.metrics(
   fire = 'caldor',
   acq = 'CA_SierraNevada_8_2022',
-  run.test = TRUE
+  run.test = FALSE
 )
-# done
+# need to run
 
 
 height.stack.50m <- run.height.metrics(
@@ -467,6 +477,7 @@ height.stack.50m <- run.height.metrics(
   acq = 'CA_SierraNevada_5_2022',
   run.test = FALSE
 )
+# starting at chunk 266
 
 # --- castle ---
 height.stack.50m <- run.height.metrics(
@@ -474,6 +485,7 @@ height.stack.50m <- run.height.metrics(
   acq = 'CA_SierraNevada_9_14_2022',
   run.test = FALSE
 )
+# done
 
 # --- dixie ---
 height.stack.50m <- run.height.metrics(
@@ -481,19 +493,21 @@ height.stack.50m <- run.height.metrics(
   acq = 'CA_SierraNevada_6_2022',
   run.test = FALSE
 )
-# started, didn't finish because I never updated script :(
+# done
 
 height.stack.50m <- run.height.metrics(
   fire = 'dixie',
   acq = 'CA_SierraNevada_4_2022',
   run.test = FALSE
 )
+# done
 
 height.stack.50m <- run.height.metrics(
   fire = 'dixie',
   acq = 'CA_SierraNevada_7_2022',
   run.test = FALSE
 )
+# done
 
 # ==============================================================================
 #  Mosaic into single raster
@@ -515,3 +529,15 @@ m.masked <- mask(m, water, inverse = TRUE)
 
 # save
 writeRaster(m.masked, 'data/processed/processed/tif/50m/creek/canopy_metrics/creek_height_metrics_50m_32611_masked.tif', overwrite = TRUE)
+
+
+# troubleshooting
+fire <- 'caldor'
+acq <- 'CA_SierraNevada_5_2022'
+
+j.dir <- 'data/processed/processed'
+norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
+
+ctg.run <- readLAScatalog(norm.dir)
+
+basename(ctg.run@data$filename[266])
