@@ -8,16 +8,17 @@ lapply(packages, library, character.only = T)
 
 # read in shp file of file index
 # change fire name
-index <- read_sf('data/processed/processed/shp/tile_index_1524_castle.shp')
-#index <- read_sf('data/processed/processed/shp/tile_index_dixie_7.shp')
+# index <- read_sf('data/processed/processed/shp/tile_index_1524_castle.shp')
+index <- read_sf('data/processed/processed/shp/tile_index_dixie_6_low.shp')
 
 # chose out.dir depending on which computer you're on
 #out.dir <- 'data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022' # processing computer
 #out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie' # km computer
-out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_castle/CA_SierraNevada_9_14_2022' # km computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie/CA_SierraNevada_7_2022_low' # km computer
+dir.create(out.dir, showWarnings = F, recursive = T)
 
 # make sure to check shape files so you're using the correct tile_ID col
-tile.ids <- index$Tile
+tile.ids <- index$Tile_ID
 acquisition <- index$WU_NAME
 
 # ----- build RockyWeb download URLs -----
@@ -426,7 +427,7 @@ with_progress({
 })
 toc()
 
-# ----- check for missing tiles -----
+# --- check for missing tiles ---
 missing.dems <- check_missing_dems(
   acq.check = 'CA_SierraNevada_8_2022',
   out.dir = out.dir,
@@ -566,9 +567,9 @@ results.missing <- future_mapply(
 
 # ----- dixie ------
 # determine tile names
-index.a <- read_sf('data/processed/processed/shp/tile_index_dixie_4.shp')
-index.b <- read_sf('data/processed/processed/shp/tile_index_dixie_7.shp')
-index.c <- read_sf('data/processed/processed/shp/tile_index_dixie_6.shp')
+index.a <- read_sf('data/processed/processed/shp/tile_index_dixie_4_low.shp')
+index.b <- read_sf('data/processed/processed/shp/tile_index_dixie_7_low.shp')
+index.c <- read_sf('data/processed/processed/shp/tile_index_dixie_6_low.shp')
 
 dem.index <- bind_rows(
   
@@ -664,7 +665,7 @@ with_progress({
 toc()
 
 # ----- check for missing tiles -----
-acq.check <- 'CA_SierraNevada_6_2022'
+acq.check <- 'CA_SierraNevada_4_2022'
 
 missing.dems <- check_missing_dems(
   acq.check = acq.check,
