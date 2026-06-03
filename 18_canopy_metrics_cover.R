@@ -70,7 +70,7 @@ run.cover.metrics <- function(fire, acq, run.test = TRUE) {
   set_lidr_threads(1)
   plan(multisession, workers = ifelse(run.test, 2, 10)) # usually 12, temp changed to 10
   
-  opt_restart(ctg.run)<- 266 # usually set to 1
+  opt_restart(ctg.run)<- 756 # usually set to 1
   opt_progress(ctg.run) <- TRUE
   opt_chunk_size(ctg.run) <- 0
   opt_chunk_buffer(ctg.run) <- 0
@@ -208,7 +208,7 @@ cover.stack.50m <- run.cover.metrics(
   acq = 'CA_SierraNevada_4_2022',
   run.test = FALSE
 )
-# starting at chunk 266
+# starting at chunk 756
 
 chunk <- readRDS('C:/Users/km220416/AppData/Local/Temp/RtmpwXxKzs/chunk266.rds')
 chunk
@@ -255,50 +255,6 @@ res(test4)
 origin(test4)
 
 
-
-
-# ==============================================================================
-#  Mosaic into single raster
-# ==============================================================================
-
-out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics'
-files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
-length(files)
-raster.list <- lapply(files, rast)
-raster.collection <- sprc(raster.list)
-
-m <- mosaic(raster.collection)
-
-# --- mask out bodies of water ---
-# read in shape file of study area
-creek <- read_sf('data/processed/processed/shp/mosher_creek_studyarea/study_extent_creek_32611.shp')
-# download nhd water data
-water <- get_nhdphr(AOI = creek, type = 'nhdwaterbody')
-
-cover.masked <- mask(m, water, inverse = TRUE)
-writeRaster(cover.masked, 'data/processed/processed/tif/50m/creek/canopy_metrics/creek_cover_metrics_50m_32611_masked.tif', overwrite = TRUE)
-
-
-
-
-
-
-# delete later
-
-# fix names
-cover.names <- c(
-  'canopy_open_2m',
-  'cover_2m',
-  'pzabove5',
-  'pzabove10',
-  'ground_frac'
-)
-
-for (f in test.files) {
-  r <- rast(f)
-  names(r) <- cover.names
-  writeRaster(r, f, overwrite = TRUE)
-}
 
 
 
@@ -363,7 +319,7 @@ run.height.metrics <- function(fire, acq, run.test = TRUE) {
   set_lidr_threads(1)
   plan(multisession, workers = ifelse(run.test, 2, 10)) # usually 12, temp set to 10
   
-  opt_restart(ctg.run)<- 266 # usually set to 1 or comment out
+  opt_restart(ctg.run)<- 1 # usually set to 1 or comment out
   opt_progress(ctg.run) <- TRUE
   opt_chunk_size(ctg.run) <- 0
   opt_chunk_buffer(ctg.run) <- 0
@@ -469,7 +425,7 @@ height.stack.50m <- run.height.metrics(
   acq = 'CA_SierraNevada_8_2022',
   run.test = FALSE
 )
-# need to run
+# done
 
 
 height.stack.50m <- run.height.metrics(
@@ -477,7 +433,7 @@ height.stack.50m <- run.height.metrics(
   acq = 'CA_SierraNevada_5_2022',
   run.test = FALSE
 )
-# starting at chunk 266
+# done
 
 # --- castle ---
 height.stack.50m <- run.height.metrics(
@@ -509,35 +465,81 @@ height.stack.50m <- run.height.metrics(
 )
 # done
 
+
+
 # ==============================================================================
 #  Mosaic into single raster
 # ==============================================================================
-out.dir <- 'data/processed/processed/tif/50m/creek/canopy_metrics/height_metrics_32611'
+library(terra)
+library(sf)
+library(nhdplusTools)
+
+# ----- Acqusition 1 -----
+
+fire <- 'castle'
+acq <- 'CA_SierraNevada_9_14_2022'
+epsg <- '32611'
+metric <- 'height'
+
+
+out.dir <- paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/', metric, '_metrics_', epsg, '/', acq)
 files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
 length(files)
 raster.list <- lapply(files, rast)
 raster.collection <- sprc(raster.list)
 
 m <- mosaic(raster.collection)
+plot(m)
+crs(m, describe = T)$code
 
 # --- mask out bodies of water ---
 # read in shape file of study area
-creek <- read_sf('data/processed/processed/shp/mosher_creek_studyarea/study_extent_creek_32611.shp')
+fire.shp <- read_sf(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp'))
 # download nhd water data
-water <- get_nhdphr(AOI = creek, type = 'nhdwaterbody')
-m.masked <- mask(m, water, inverse = TRUE)
+water <- get_nhdphr(AOI = fire.shp, type = 'nhdwaterbody')
 
-# save
-writeRaster(m.masked, 'data/processed/processed/tif/50m/creek/canopy_metrics/creek_height_metrics_50m_32611_masked.tif', overwrite = TRUE)
+masked1 <- mask(m, water, inverse = TRUE)
+plot(masked1)
+
+# if not combining:
+out.file <-  paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m_', epsg, '.tif')
+
+writeRaster(masked1, out.file, overwrite = TRUE)
 
 
-# troubleshooting
-fire <- 'caldor'
+
+# ----- Acqusition 2 -----
 acq <- 'CA_SierraNevada_5_2022'
 
-j.dir <- 'data/processed/processed'
-norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
+out.dir <- paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/', metric, '_metrics_', epsg, '/', acq)
+files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+length(files)
+raster.list <- lapply(files, rast)
+raster.collection <- sprc(raster.list)
 
-ctg.run <- readLAScatalog(norm.dir)
+m <- mosaic(raster.collection)
+plot(m)
+crs(m, describe = T)$code
 
-basename(ctg.run@data$filename[266])
+# --- mask out bodies of water ---
+
+masked2 <- mask(m, water, inverse = TRUE)
+plot(masked2)
+
+# ----- combine into 1 -----
+
+# make common extent
+e <- union(ext(masked1), ext(masked2))
+
+masked1.ext <- extend(masked1, e)
+masked2.ext <- extend(masked2, e)
+
+# masked1 takes priority, masked2 fills NA
+combine <- cover(masked1.ext, masked2.ext)
+names(combine) <- names(masked2)
+plot(combine)
+
+
+out.file <-  paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m_', epsg, '.tif')
+
+writeRaster(combine, out.file, overwrite = TRUE)
