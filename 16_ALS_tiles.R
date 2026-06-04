@@ -9,12 +9,12 @@ lapply(packages, library, character.only = T)
 # read in shp file of file index
 # change fire name
 # index <- read_sf('data/processed/processed/shp/tile_index_1524_castle.shp')
-index <- read_sf('data/processed/processed/shp/tile_index_dixie_6_low.shp')
+index <- read_sf('data/processed/processed/shp/tile_index_dixie_4_low.shp')
 
 # chose out.dir depending on which computer you're on
 #out.dir <- 'data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022' # processing computer
 #out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie' # km computer
-out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie/CA_SierraNevada_7_2022_low' # km computer
+out.dir <- 'J:/Fire_Snow/fireandice/data/raw/ALS/laz_dixie/CA_SierraNevada_4_2022_low' # km computer
 dir.create(out.dir, showWarnings = F, recursive = T)
 
 # make sure to check shape files so you're using the correct tile_ID col

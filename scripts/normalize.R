@@ -18,7 +18,7 @@ suppressPackageStartupMessages({
 run.test.block <- FALSE  # set FALSE to run all tiles
 
 fire <- 'dixie'
-acq <- 'CA_SierraNevada_6_2022_low'
+acq <- 'CA_SierraNevada_4_2022_low'
 
 # pick depending on which computer
 j.dir <- 'J:/Fire_Snow/fireandice' # km computer
