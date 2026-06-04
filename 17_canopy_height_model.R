@@ -9,11 +9,11 @@ lapply(packages, library, character.only = T)
 # Catalog setup 
 # ------------------------------------------------------------------------------
 fire <- 'dixie'
-acq <- 'CA_SierraNevada_7_2022'
+acq <- 'CA_SierraNevada_4_2022_low'
 
 # pick depending on which computer
-j.dir <- 'data/processed/processed' # processing comp
-#j.dir <- 'J:/Structure_Data/Fire_Snow/fireandice/data/processed/processed'
+#j.dir <- 'data/processed/processed' # processing comp
+j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed' # km comp
 
 # normalized tiles
 norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
@@ -75,6 +75,9 @@ mean(las.norm$Z[las.norm$Classification != 2] < -1, na.rm = TRUE)
 # Canopy Height Model
 # =================================================================================
 
+workers <- 8 # 10 for processing comp
+
+
 # shouldn't need to change anything in this section!
 
 test.tiles <- c('11SKD4406', '11SKD4407', '11SKD4306', '11SKD4307')
@@ -107,7 +110,7 @@ out.dir <- file.path(j.dir, paste0('tif/1m/', fire, '/', fire, '_chm_6340/', acq
 dir.create(out.dir, recursive = T, showWarnings = F)
 
 # parallel processing settings
-plan(multisession, workers = 10)
+plan(multisession, workers = workers) 
 set_lidr_threads(1) # important to avoid nested parallelism
 
 opt_progress(ctg.run) <- TRUE
