@@ -50,7 +50,8 @@ run.cover.metrics <- function(fire, acq, run.test = TRUE) {
     fire %in% c('caldor', 'dixie') ~ 32610
   )
   
-  j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
+  # j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
+  j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed' # base directory for KM COMP
   norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq) # where normalized files live
   ctg.norm <- readLAScatalog(norm.dir)
     
@@ -68,7 +69,7 @@ run.cover.metrics <- function(fire, acq, run.test = TRUE) {
   
   # --- settings ---
   set_lidr_threads(1)
-  plan(multisession, workers = ifelse(run.test, 2, 10)) # usually 12, temp changed to 10
+  plan(multisession, workers = ifelse(run.test, 2, 4)) # usually 12, temp changed to 10
   
   opt_restart(ctg.run)<- 1 # usually set to 1
   opt_progress(ctg.run) <- TRUE
