@@ -70,7 +70,7 @@ run.cover.metrics <- function(fire, acq, run.test = TRUE) {
   set_lidr_threads(1)
   plan(multisession, workers = ifelse(run.test, 2, 10)) # usually 12, temp changed to 10
   
-  opt_restart(ctg.run)<- 756 # usually set to 1
+  opt_restart(ctg.run)<- 1 # usually set to 1
   opt_progress(ctg.run) <- TRUE
   opt_chunk_size(ctg.run) <- 0
   opt_chunk_buffer(ctg.run) <- 0
@@ -197,7 +197,7 @@ cover.stack.50m <- run.cover.metrics(
 # --- dixie ---
 cover.stack.50m <- run.cover.metrics(
   fire = 'dixie',
-  acq = 'CA_SierraNevada_6_2022',
+  acq = 'CA_SierraNevada_6_2022_low',
   run.test = FALSE
 )
 # done
@@ -205,17 +205,14 @@ cover.stack.50m <- run.cover.metrics(
 
 cover.stack.50m <- run.cover.metrics(
   fire = 'dixie',
-  acq = 'CA_SierraNevada_4_2022',
+  acq = 'CA_SierraNevada_4_2022_low',
   run.test = FALSE
 )
-# starting at chunk 756
-
-chunk <- readRDS('C:/Users/km220416/AppData/Local/Temp/RtmpwXxKzs/chunk266.rds')
-chunk
+# 
 
 cover.stack.50m <- run.cover.metrics(
   fire = 'dixie',
-  acq = 'CA_SierraNevada_7_2022',
+  acq = 'CA_SierraNevada_7_2022_low',
   run.test = FALSE
 )
 # done
@@ -446,24 +443,24 @@ height.stack.50m <- run.height.metrics(
 # --- dixie ---
 height.stack.50m <- run.height.metrics(
   fire = 'dixie',
-  acq = 'CA_SierraNevada_6_2022',
+  acq = 'CA_SierraNevada_6_2022_low',
   run.test = FALSE
 )
-# done
+# running
 
 height.stack.50m <- run.height.metrics(
   fire = 'dixie',
   acq = 'CA_SierraNevada_4_2022',
   run.test = FALSE
 )
-# done
+# 
 
 height.stack.50m <- run.height.metrics(
   fire = 'dixie',
-  acq = 'CA_SierraNevada_7_2022',
+  acq = 'CA_SierraNevada_7_2022_low',
   run.test = FALSE
 )
-# done
+# running
 
 
 
