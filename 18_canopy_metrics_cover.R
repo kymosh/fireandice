@@ -209,7 +209,7 @@ cover.stack.50m <- run.cover.metrics(
   acq = 'CA_SierraNevada_4_2022_low',
   run.test = FALSE
 )
-# 
+# done
 
 cover.stack.50m <- run.cover.metrics(
   fire = 'dixie',
@@ -472,72 +472,92 @@ library(terra)
 library(sf)
 library(nhdplusTools)
 
-# ----- Acqusition 1 -----
+# --- settings - change these ---
+fire <- 'dixie'
+epsg <- '32610'
+metric <- 'cover'
 
-fire <- 'castle'
-acq <- 'CA_SierraNevada_9_14_2022'
-epsg <- '32611'
-metric <- 'height'
+acqs <- c(
+  'CA_SierraNevada_7_2022',
+  'CA_SierraNevada_7_2022_low',
+  'CA_SierraNevada_6_2022',
+  'CA_SierraNevada_6_2022_low',
+  'CA_SierraNevada_4_2022',
+  'CA_SierraNevada_4_2022_low'
+)
 
+out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/'
+# out.dir.base <- 'data/processed/processed/tif/50m/'
 
-out.dir <- paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/', metric, '_metrics_', epsg, '/', acq)
-files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
-length(files)
-raster.list <- lapply(files, rast)
-raster.collection <- sprc(raster.list)
+# --- settings - don't touch ---
+# study area + water
+fire.shp <- read_sf(
+  paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')
+)
 
-m <- mosaic(raster.collection)
-plot(m)
-crs(m, describe = T)$code
+water <- get_nhdphr(
+  AOI = st_transform(fire.shp, 4326),
+  type = 'nhdwaterbody'
+)
 
-# --- mask out bodies of water ---
-# read in shape file of study area
-fire.shp <- read_sf(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp'))
-# download nhd water data
-water <- get_nhdphr(AOI = fire.shp, type = 'nhdwaterbody')
+water <- st_transform(water, as.numeric(epsg))
+water.v <- vect(water)
 
-masked1 <- mask(m, water, inverse = TRUE)
-plot(masked1)
+# --- mosaic together ---
+mosaic_acq <- function(acq) {
+  
+  message('Mosaicking ', acq, '...')
+  
+  out.dir <- paste0(
+    out.dir.base,
+    fire,
+    '/canopy_metrics/',
+    metric,
+    '_metrics_',
+    epsg,
+    '/',
+    acq
+  )
+  
+  files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+  
+  if (length(files) == 0) {
+    warning('No files found for ', acq)
+    return(NULL)
+  }
+  
+  r.list <- lapply(files, rast)
+  r.col <- sprc(r.list)
+  
+  m <- mosaic(r.col)
+  names(m) <- names(r.list[[1]])
+  
+  m.masked <- mask(m, water.v, inverse = TRUE)
+  names(m.masked) <- names(m)
+  
+  m.masked
+}
 
-# if not combining:
-out.file <-  paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m_', epsg, '.tif')
+# run function on each acq
+masked.list <- lapply(acqs, mosaic_acq)
 
-writeRaster(masked1, out.file, overwrite = TRUE)
+# combine
+combine <- masked.list[[1]]
 
+for (i in 2:length(masked.list)) {
+  
+  e <- union(ext(combine), ext(masked.list[[i]]))
+  
+  combine.ext <- extend(combine, e)
+  next.ext <- extend(masked.list[[i]], e)
+  
+  combine <- cover(combine.ext, next.ext)
+  names(combine) <- names(masked.list[[1]])
+}
 
-
-# ----- Acqusition 2 -----
-acq <- 'CA_SierraNevada_5_2022'
-
-out.dir <- paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/', metric, '_metrics_', epsg, '/', acq)
-files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
-length(files)
-raster.list <- lapply(files, rast)
-raster.collection <- sprc(raster.list)
-
-m <- mosaic(raster.collection)
-plot(m)
-crs(m, describe = T)$code
-
-# --- mask out bodies of water ---
-
-masked2 <- mask(m, water, inverse = TRUE)
-plot(masked2)
-
-# ----- combine into 1 -----
-
-# make common extent
-e <- union(ext(masked1), ext(masked2))
-
-masked1.ext <- extend(masked1, e)
-masked2.ext <- extend(masked2, e)
-
-# masked1 takes priority, masked2 fills NA
-combine <- cover(masked1.ext, masked2.ext)
-names(combine) <- names(masked2)
 plot(combine)
 
-
-out.file <-  paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m_', epsg, '.tif')
+# save
+out.file <- paste0(out.dir.base, fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m_', epsg, '.tif')
 
 writeRaster(combine, out.file, overwrite = TRUE)
