@@ -475,7 +475,7 @@ library(nhdplusTools)
 # --- settings - change these ---
 fire <- 'dixie'
 epsg <- '32610'
-metric <- 'cover'
+metric <- 'height'
 
 acqs <- c(
   'CA_SierraNevada_7_2022',
@@ -486,8 +486,8 @@ acqs <- c(
   'CA_SierraNevada_4_2022_low'
 )
 
-out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/'
-# out.dir.base <- 'data/processed/processed/tif/50m/'
+# out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/' # KM comp
+out.dir.base <- 'data/processed/processed/tif/50m/' # processing
 
 # --- settings - don't touch ---
 # study area + water
