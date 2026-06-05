@@ -170,6 +170,7 @@ library(nhdplusTools)
 # --- settings - change these ---
 fire <- 'dixie'
 metric <- 'chm'
+epsg <- 6339
 
 acqs <- c(
   'CA_SierraNevada_7_2022',
@@ -190,7 +191,7 @@ fire.shp <- read_sf(
 )
 
 water <- get_nhdphr(
-  AOI = st_transform(fire.shp, 4326),
+  AOI = st_transform(fire.shp, epsg),
   type = 'nhdwaterbody'
 )
 
