@@ -158,6 +158,108 @@ crs(chm.test, describe = T)$code
 res(chm.test)
 # 1 x 1
 
+
+
+# ==============================================================================
+#  Mosaic into single raster
+# ==============================================================================
+library(terra)
+library(sf)
+library(nhdplusTools)
+
+# --- settings - change these ---
+fire <- 'dixie'
+metric <- 'chm'
+
+acqs <- c(
+  'CA_SierraNevada_7_2022',
+  'CA_SierraNevada_7_2022_low',
+  'CA_SierraNevada_6_2022',
+  'CA_SierraNevada_6_2022_low',
+  'CA_SierraNevada_4_2022',
+  'CA_SierraNevada_4_2022_low'
+)
+
+out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/'
+# out.dir.base <- 'data/processed/processed/tif/1m/'
+
+# --- settings - don't touch ---
+# study area + water
+fire.shp <- read_sf(
+  paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')
+)
+
+water <- get_nhdphr(
+  AOI = st_transform(fire.shp, 4326),
+  type = 'nhdwaterbody'
+)
+
+water <- st_transform(water, as.numeric(epsg))
+water.v <- vect(water)
+
+# --- mosaic together ---
+mosaic_acq <- function(acq) {
+  
+  message('Mosaicking ', acq, '...')
+  
+  out.dir <- paste0(
+    out.dir.base,
+    fire,
+    '/',
+    fire,
+    '_chm_6340/',
+    acq
+  )
+  
+  files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+  
+  if (length(files) == 0) {
+    warning('No files found for ', acq)
+    return(NULL)
+  }
+  
+  r.list <- lapply(files, rast)
+  r.col <- sprc(r.list)
+  
+  m <- mosaic(r.col)
+  names(m) <- names(r.list[[1]])
+  
+  m.masked <- mask(m, water.v, inverse = TRUE)
+  names(m.masked) <- names(m)
+  
+  m.masked
+}
+
+# run function on each acq
+masked.list <- lapply(acqs, mosaic_acq)
+
+# combine
+combine <- masked.list[[1]]
+
+for (i in 2:length(masked.list)) {
+  
+  e <- union(ext(combine), ext(masked.list[[i]]))
+  
+  combine.ext <- extend(combine, e)
+  next.ext <- extend(masked.list[[i]], e)
+  
+  combine <- cover(combine.ext, next.ext)
+  names(combine) <- names(masked.list[[1]])
+}
+
+plot(combine)
+
+# save
+out.file <- paste0(out.dir.base, fire, '/chm_1m_', epsg, '.tif')
+
+writeRaster(combine, out.file, overwrite = TRUE)
+
+
+
+
+
+
+
 # =================================================================================
 # Reproject CHM
 # =================================================================================
