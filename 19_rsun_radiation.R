@@ -51,17 +51,72 @@ writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dtm_9tile.tif')
 # Reproject DEM to correct res and origin
 # ===========================================================================================
 
+
 # file directory
-dem.dir <- 'data/raw/DEM/creek'
-dem.files <- list.files(dem.dir, pattern = '\\.tif$', full.names = TRUE)
+fire = 'caldor'
+
+acq <- c(
+  'CA_SierraNevada_5_2022',
+  'CA_SierraNevada_8_2022'
+)
+
+# ----- create mosaic of DTM -----
+dem.dir <- paste0('data/raw/DEM/', fire, '/', acq)
+
+# function to mosaic each acquisition
+mosaic_acq <- function(acq) {
+  
+  message('Mosaicking ', acq, '...')
+  
+  dem.dir <- paste0('data/raw/DEM/', fire, '/', acq)
+  
+  files <- list.files(dem.dir, pattern = '\\.tif$', full.names = TRUE)
+  
+  if (length(files) == 0) {
+    warning('No files found for ', acq)
+    return(NULL)
+  }
+  
+  r.list <- lapply(files, rast)
+  r.col <- sprc(r.list)
+  
+  m <- mosaic(r.col)
+  
+  m
+}
+
+# run function on each acq
+dem.acq <- lapply(acq, mosaic_acq)
+
+# start with 1st raster and add each subsequent acq
+combine <- dem.acq[[1]]
+
+for (i in 2:length(dem.acq)) {
+  
+  e <- union(ext(combine), ext(dem.acq[[i]]))
+  
+  combine.ext <- extend(combine, e)
+  next.ext <- extend(dem.acq[[i]], e)
+  
+  combine <- cover(combine.ext, next.ext)
+}
+
+# check
+plot(combine)
+
+epsg <- crs(combine, describe = T)$code
+
+# save
+dir.1m <- 'data/processed/processed/tif/1m/'
+out.file <- paste0(dir.1m, fire, '_dtm_1m_', epsg, '.tif')
+writeRaster(combine, out.file, overwrite = TRUE)
 
 
-# read as raster
-start <- Sys.time()
-dem.rasters <- lapply(dem.files, rast)
-dem.r <- do.call(mosaic, dem.rasters)
-end <- Sys.time()
-message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
+
+# reproject chm to correct res
+chm.dir <- paste0(dir.1m, fire)
+chm.file <- list.files(chm.dir, ^chm)
+
 
 # template
 # get template grid from chms
@@ -104,7 +159,7 @@ chm.files <- chm.files[grepl(paste(tiles, collapse = '|'), basename(chm.files))]
 out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dsm_test_9'
 dir.create(out.dir, recursive = T, showWarnings = F)
 
-# function to make dsm from dem and chm
+# ----- function to make dsm from dem and chm -----
 dsm.from.dem.chm <- function(f) {
   
   # read in chm tile
