@@ -168,21 +168,24 @@ library(sf)
 library(nhdplusTools)
 
 # --- settings - change these ---
-fire <- 'dixie'
+fire <- 'caldor'
 metric <- 'chm'
-epsg <- 6339
+
+# out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/' # KM comp
+out.dir.base <- 'data/processed/processed/tif/1m/' # processing comp
 
 acqs <- c(
-  'CA_SierraNevada_7_2022',
-  'CA_SierraNevada_7_2022_low',
-  'CA_SierraNevada_6_2022',
-  'CA_SierraNevada_6_2022_low',
-  'CA_SierraNevada_4_2022',
-  'CA_SierraNevada_4_2022_low'
+  'CA_SierraNevada_5_2022',
+  'CA_SierraNevada_8_2022'
 )
 
-out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/'
-# out.dir.base <- 'data/processed/processed/tif/1m/'
+path <- paste0(out.dir.base, fire, '/', fire, '_chm_6340/', acqs[1])
+files <- list.files(path, full.names = T)
+r <- rast(files[1])
+
+epsg <- 32610
+
+
 
 # --- settings - don't touch ---
 # study area + water
@@ -191,12 +194,14 @@ fire.shp <- read_sf(
 )
 
 water <- get_nhdphr(
-  AOI = st_transform(fire.shp, epsg),
+  AOI = st_transform(fire.shp, 'EPSG:32610'),
   type = 'nhdwaterbody'
 )
 
-water <- st_transform(water, as.numeric(epsg))
+water <- st_transform(water, 'EPSG:6339')
 water.v <- vect(water)
+
+st_write(water, paste0('data/processed/processed/shp/nhd_water_', fire, '_6339.shp'))
 
 # --- mosaic together ---
 mosaic_acq <- function(acq) {
@@ -233,9 +238,26 @@ mosaic_acq <- function(acq) {
 
 # run function on each acq
 masked.list <- lapply(acqs, mosaic_acq)
+template <- masked.list[[1]]
+
+masked.list.32610 <- lapply(masked.list, function(x) {
+  
+  r <- project(
+    x,
+    template,
+    method = 'near',
+    align_only = TRUE
+  )
+  
+  names(r) <- names(x)
+  r
+})
+
+masked.list <- masked.list.32610
 
 # combine
 combine <- masked.list[[1]]
+
 
 for (i in 2:length(masked.list)) {
   

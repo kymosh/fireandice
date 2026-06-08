@@ -473,21 +473,20 @@ library(sf)
 library(nhdplusTools)
 
 # --- settings - change these ---
-fire <- 'dixie'
-epsg <- '32610'
+fire <- 'castle'
+epsg <- '32611'
 metric <- 'height'
 
-acqs <- c(
-  'CA_SierraNevada_7_2022',
-  'CA_SierraNevada_7_2022_low',
-  'CA_SierraNevada_6_2022',
-  'CA_SierraNevada_6_2022_low',
-  'CA_SierraNevada_4_2022',
-  'CA_SierraNevada_4_2022_low'
+acq <- c(
+  'CA_SierraNevada_9_14_2022'
+ # , 'CA_SierraNevada_8_2022'
 )
 
 # out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/' # KM comp
 out.dir.base <- 'data/processed/processed/tif/50m/' # processing
+
+in.dir <- paste0(out.dir.base, fire, '/canopy_metrics/', metric, '_metrics_', epsg, '/', acq)
+out.dir <- paste0(out.dir.base, fire, '/canopy_metrics/')
 
 # --- settings - don't touch ---
 # study area + water
@@ -496,7 +495,7 @@ fire.shp <- read_sf(
 )
 
 water <- get_nhdphr(
-  AOI = st_transform(fire.shp, 4326),
+  AOI = st_transform(fire.shp, 32611),
   type = 'nhdwaterbody'
 )
 
@@ -508,7 +507,7 @@ mosaic_acq <- function(acq) {
   
   message('Mosaicking ', acq, '...')
   
-  out.dir <- paste0(
+  in.dir <- paste0(
     out.dir.base,
     fire,
     '/canopy_metrics/',
@@ -519,7 +518,7 @@ mosaic_acq <- function(acq) {
     acq
   )
   
-  files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
+  files <- list.files(in.dir, pattern = '\\.tif$', full.names = TRUE)
   
   if (length(files) == 0) {
     warning('No files found for ', acq)
@@ -539,7 +538,7 @@ mosaic_acq <- function(acq) {
 }
 
 # run function on each acq
-masked.list <- lapply(acqs, mosaic_acq)
+masked.list <- lapply(acq, mosaic_acq)
 
 # combine
 combine <- masked.list[[1]]
@@ -557,7 +556,8 @@ for (i in 2:length(masked.list)) {
 
 plot(combine)
 
+
 # save
 out.file <- paste0(out.dir.base, fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m_', epsg, '.tif')
 
-writeRaster(combine, out.file, overwrite = TRUE)
+writeRaster(masked.list[[1]], out.file, overwrite = TRUE)
