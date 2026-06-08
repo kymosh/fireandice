@@ -51,17 +51,27 @@ writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dtm_9tile.tif')
 # Reproject DEM to correct res and origin
 # ===========================================================================================
 
+# set-up
+fire = 'dixie'
+target.crs <- '32610'
 
-# file directory
-fire = 'caldor'
+
+# directories
+base.dir <-  'J:/Fire_Snow/fireandice/data/' # KM comp
+#base.dir <-  'data/' # processing comp
+dir.1m <- paste0(base.dir, 'processed/processed/tif/1m/')
 
 acq <- c(
-  'CA_SierraNevada_5_2022',
-  'CA_SierraNevada_8_2022'
+  'CA_SierraNevada_4_2022',
+  'CA_SierraNevada_6_2022',
+  'CA_SierraNevada_4_2022_low',
+  'CA_SierraNevada_6_2022_low',
+  'CA_SierraNevada_7_2022_low',
+  'CA_SierraNevada_7_2022'
 )
 
 # ----- create mosaic of DTM -----
-dem.dir <- paste0('data/raw/DEM/', fire, '/', acq)
+dem.dir <- paste0(base.dir, 'raw/DEM/', fire, '/', acq) 
 
 # function to mosaic each acquisition
 mosaic_acq <- function(acq) {
@@ -107,28 +117,49 @@ plot(combine)
 epsg <- crs(combine, describe = T)$code
 
 # save
-dir.1m <- 'data/processed/processed/tif/1m/'
 out.file <- paste0(dir.1m, fire, '_dtm_1m_', epsg, '.tif')
 writeRaster(combine, out.file, overwrite = TRUE)
 
 
 
-# reproject chm to correct res
+# ----- reproject chm and dtm to correct res -----
 chm.dir <- paste0(dir.1m, fire)
-chm.file <- list.files(chm.dir, ^chm)
+chm.file <- list.files(chm.dir, pattern = 'chm.*\\.tif', full.names = T)
+chm <- rast(chm.file)
+dtm.file <- list.files(chm.dir, pattern = 'dtm.*\\.tif', full.names = T)
+dtm <- rast(dtm.file)
+
+# create template raster
+template <- rast(
+  ext(chm),
+  resolution = 1,
+  crs = paste0('EPSG:', target.crs)
+)
+origin(template) <- c(0, 0)
+
+# reproject
+chm.reproj <- project(
+  chm,
+  template,
+  method = 'bilinear',
+  align_only = TRUE
+)
+
+out.file <- paste0(dir.1m, fire, '_chm_1m_', target.crs, '.tif')
+writeRaster(chm.reproj, out.file, overwrite = TRUE)
 
 
-# template
-# get template grid from chms
-temp.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
-temp.files <- list.files(temp.dir, pattern = '\\.tif$', full.names = T)
-template <- lapply(temp.files, rast)
-template <- do.call(mosaic, template)
-
-# project dem onto grid
+# reproject dtm to same template
 start <- Sys.time()
-dem.32611 <- project(dem.r, template, method = 'bilinear')
-writeRaster(dem.32611, 'data/processed/processed/tif/1m/creek_dtm_1m.tif')
+dtm.reproj <- project(
+  dtm,
+  template,
+  method = 'bilinear',
+  align_only = TRUE
+)
+out.file <- paste0(dir.1m, fire, '_dtm_1m_', target.crs, '.tif')
+writeRaster(dtm.reproj, out.file, overwrite = TRUE)
+
 end <- Sys.time()
 message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
 # took 5.3 hours
@@ -159,7 +190,7 @@ chm.files <- chm.files[grepl(paste(tiles, collapse = '|'), basename(chm.files))]
 out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dsm_test_9'
 dir.create(out.dir, recursive = T, showWarnings = F)
 
-# ----- function to make dsm from dem and chm -----
+# ----- function to make dsm from dem and chm *from tiled inputs)-----
 dsm.from.dem.chm <- function(f) {
   
   # read in chm tile
@@ -190,7 +221,7 @@ plot(dsm)
 
 writeRaster(dsm, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dsm_test_9.tif')
 
-# ----- full mosaic -----
+# --- full mosaic ---
 
 # full 1m raster dem
 dem <- rast('data/processed/processed/tif/1m/creek_dtm_1m.tif')
@@ -221,6 +252,17 @@ writeRaster(dsm, 'data/processed/processed/tif/1m/creek_dsm_1m.tif')
 
 
 
+
+
+
+# ----- make DSM from full dtm and chm mosaic -----
+dtm <- rast(paste0(dir.1m, fire, '_dtm_1m_', target.crs, '.tif'))
+chm <- rast(paste0(dir.1m, fire, '_chm_1m_', target.crs, '.tif'))
+
+dsm <- dtm + chm
+
+out.file <- paste0(dir.1m, fire, '_dsm_1m_', target.crs, '.tif')
+writeRaster(dsm, out.file, overwrite = TRUE)
 
 
 # ===========================================================================================
