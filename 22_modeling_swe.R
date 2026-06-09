@@ -463,7 +463,7 @@ quantile(
 
 
 
-# ----- topo + best canopy vars -----
+# ----- ** topo + best canopy vars ** -----
 gam.topo.canopy.best <- bam(
   sqrt(swe_peak) ~
     factor(wy) +
@@ -483,7 +483,7 @@ gam.topo.canopy.best <- bam(
 # add results
 results <- rbind(
   results,
-  get.metrics(gam.topo.x, "topo + s(gap by burned) + s(ht_zmax by burned)")
+  get.metrics(gam.topo.canopy.best, "best: topo + s(gap by burned) + s(ht_zmax by burned)")
 )
 
 
@@ -551,6 +551,23 @@ boxplot(
   data = df.check
 )
 
+# calculate Morans I
+idx <- sample(nrow(df.check), 5000)
+
+df.moran <- df.check[idx, ]
+df.moran$resid <- residuals(gam.topo.canopy.best)[idx]
+
+library(spdep)
+coords <- cbind(df.moran$x, df.moran$y)
+
+nb <- knearneigh(coords, k = 8)
+nb <- knn2nb(nb)
+
+lw <- nb2listw(nb, style = "W")
+
+moran.test(df.moran$resid, lw)
+
+
 
 # ----- topo + te(canopyvars) -----
 gam.topo.te.canopy <- bam(
@@ -573,6 +590,73 @@ results <- rbind(
   results,
   get.metrics(gam.topo.te.canopy, "topo + te(gap_gap_pct, ht_zmax")
 )
+
+# ----- best + s(x.y) -----
+gam.topo.canopy.best.sxy <- bam(
+  sqrt(swe_peak) ~
+    factor(wy) +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(x, y, k = 200)
+  ,
+  data = df.check,
+  method = "fREML",
+  discrete = TRUE
+)
+
+# add results
+results <- rbind(
+  results,
+  get.metrics(gam.topo.x, "best")
+)
+
+# calculate Morans I
+idx <- sample(nrow(df.check), 5000)
+
+df.moran <- df.check[idx, ]
+df.moran$resid <- residuals(gam.topo.canopy.best.sxy)[idx]
+
+library(spdep)
+coords <- cbind(df.moran$x, df.moran$y)
+
+nb <- knearneigh(coords, k = 8)
+nb <- knn2nb(nb)
+
+lw <- nb2listw(nb, style = "W")
+
+moran.test(df.moran$resid, lw)
+
+
+
+# ----- best + s(x,y)
+gam.topo.canopy.best.sxy <- bam(
+  sqrt(swe_peak) ~
+    factor(wy) +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(x, y, k = 200)
+  ,
+  data = df.check,
+  method = "fREML",
+  discrete = TRUE
+)
+
+# add results
+results <- rbind(
+  results,
+  get.metrics(gam.topo.canopy.best.sxy, "best + s(x,y)")
+)
+
 
 # ----- explore with every metric -----
 metrics <- c(
