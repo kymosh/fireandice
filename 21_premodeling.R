@@ -29,7 +29,9 @@ df.50 <- df.50.0 %>%
       wy == 2024 ~ 1786,
       wy == 2025 ~ 2021),
     wy = as.factor(wy), # make wy a factor
-    cell = as.factor(cell) # make cell a factor
+    cell = as.factor(cell), # make cell a factor
+    burned = factor(if_else(cbibc > 0, 'burned', 'unburned'), 
+                    levels = c("unburned", "burned"))
     ) %>% 
   filter(topo_elev >= snowline,
     complete.cases(.)) %>% # drop rows with any missing values
@@ -44,6 +46,9 @@ saveRDS(df.50, file.path(dir, 'creek_long_df_50m_clean.rds'))
 saveRDS(df.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_clean.rds') # save to J: drive
 saveRDS(df.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m_clean.rds') # save to G: drive backup
 
+saveRDS(df.50, file.path(dir, 'creek_long_df_50m_raw.rds'))
+saveRDS(df.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_raw.rds') # save to J: drive
+saveRDS(df.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m_raw.rds') # save to G: drive backup
 
 # ----- df.50 SWE *THINNED* -----
 

@@ -182,6 +182,7 @@ get.metrics <- function(model, name) {
 library(mgcv)
 library(plotmyGAM)
 set.seed(14)
+set.seed(72)
 
 # if sampling
 #df.test <- df.50[sample(nrow(df.50), 50000), ]
@@ -483,7 +484,7 @@ gam.topo.canopy.best <- bam(
 # add results
 results <- rbind(
   results,
-  get.metrics(gam.topo.canopy.best, "best: topo + s(gap by burned) + s(ht_zmax by burned)")
+  get.metrics(gam.topo.canopy.best, "best, whole dataset")
 )
 
 
