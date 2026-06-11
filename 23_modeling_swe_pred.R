@@ -17,6 +17,34 @@ df.50$wy <- factor(df.50$wy)
 df.raw <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
 df.raw$wy <- factor(df.raw$wy)
 
+# add aspect class
+df.raw <- df.raw %>%
+  mutate(
+    aspect_class = case_when(
+      topo_aspect_cos > 0.5  ~ "North-facing",
+      topo_aspect_cos < -0.5 ~ "South-facing",
+      TRUE                   ~ NA_character_
+    )
+  )
+
+# add elev bands
+df.raw <- df.raw %>%
+  mutate(
+    elev_band = case_when(
+      topo_elev < 2000 ~ "Low (<2000 m)",
+      topo_elev < 2600 ~ "Mid (2000-2600 m)",
+      TRUE             ~ "High (>2600 m)"
+    ),
+    elev_band = factor(
+      elev_band,
+      levels = c(
+        "Low (<2000 m)",
+        "Mid (2000-2600 m)",
+        "High (>2600 m)"
+      )
+    )
+  )
+
 
 gam.topo.canopy.best <- bam(
   sqrt(swe_peak) ~
@@ -511,22 +539,6 @@ ggplot(
   )
 
 
-df.raw <- df.raw %>%
-  mutate(
-    elev_band = case_when(
-      topo_elev < 2000 ~ "Low (<2000 m)",
-      topo_elev < 2600 ~ "Mid (2000-2600 m)",
-      TRUE             ~ "High (>2600 m)"
-    ),
-    elev_band = factor(
-      elev_band,
-      levels = c(
-        "Low (<2000 m)",
-        "Mid (2000-2600 m)",
-        "High (>2600 m)"
-      )
-    )
-  )
 
 swe.summary <- df.raw %>%
   group_by(wy, elev_band, burned) %>%
@@ -672,6 +684,279 @@ ggplot(
     x = NULL,
     y = "Predicted peak SWE (m)"
   )
+
+# ==============================================================================
+#  elevation/gap/burnedunburned/wy
+# ==============================================================================
+elev.lookup <- df.raw %>%
+  group_by(elev_band) %>%
+  summarise(
+    elev_raw = median(topo_elev, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+elev.mean <- mean(df.raw$topo_elev, na.rm = TRUE)
+elev.sd   <- sd(df.raw$topo_elev, na.rm = TRUE)
+
+elev.lookup$topo_elev <- (elev.lookup$elev_raw - elev.mean) / elev.sd
+
+pred.elev.gap <- expand.grid(
+  gap_gap_pct = gap.seq,
+  elev_band = levels(df.raw$elev_band),
+  burned = levels(df.50$burned),
+  wy = levels(df.50$wy)
+) %>%
+  left_join(elev.lookup, by = 'elev_band')
+
+# set other values constant 
+pred.elev.gap$rad_dtm_accum <- 0
+pred.elev.gap$topo_slope <- 0
+pred.elev.gap$topo_tpi150 <- 0
+pred.elev.gap$topo_tpi2010 <- 0
+pred.elev.gap$ht_zmax <- median(df.50$ht_zmax)
+
+pred.elev.gap$burned <- factor(
+  pred.elev.gap$burned,
+  levels = levels(df.50$burned)
+)
+
+pred.elev.gap$wy <- factor(
+  pred.elev.gap$wy,
+  levels = levels(df.50$wy)
+)
+
+# --- predict ---
+p <- predict(
+  gam.topo.canopy.best,
+  newdata = pred.elev.gap,
+  se.fit = TRUE
+)
+
+# back-transform because model used sqrt(swe_peak)
+pred.elev.gap$fit <- p$fit^2
+pred.elev.gap$lwr <- (p$fit - 1.96 * p$se.fit)^2
+pred.elev.gap$upr <- (p$fit + 1.96 * p$se.fit)^2
+
+# --- unscale gap ---
+gap.mean <- mean(df.raw$gap_gap_pct, na.rm = TRUE)
+gap.sd   <- sd(df.raw$gap_gap_pct, na.rm = TRUE)
+
+pred.elev.gap$gap_raw <-
+  pred.elev.gap$gap_gap_pct * gap.sd + gap.mean
+
+# since raw gap is stored 0-1
+pred.elev.gap$gap_percent <- pred.elev.gap$gap_raw * 100
+
+# --- plot ---
+# burn status as columns, elevation bands as lines
+ggplot(
+  pred.elev.gap,
+  aes(
+    x = gap_percent,
+    y = fit,
+    color = elev_band,
+    fill = elev_band
+  )
+) +
+  geom_ribbon(
+    aes(ymin = lwr, ymax = upr),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1.0) +
+  facet_grid(wy ~ burned) +
+  theme_bw() +
+  labs(
+    x = 'Gap percentage (%)',
+    y = 'Predicted peak SWE (m)',
+    color = 'Elevation band',
+    fill = 'Elevation band'
+  )
+
+# exposure as columns, burn status as lines
+ggplot(
+  pred.elev.gap,
+  aes(
+    x = gap_percent,
+    y = fit,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1.0) +
+  facet_grid(wy ~ elev_band) +
+  scale_color_manual(
+    values = c(
+      'unburned' = 'lightblue',
+      'burned' = 'orange'
+    )
+  ) +
+  theme_bw() +
+  labs(
+    x = 'Gap percentage (%)',
+    y = 'Predicted peak SWE (m)',
+    color = NULL
+  )
+
+
+# compute differences
+burn.diff <- pred.elev.gap %>%
+  select(
+    wy,
+    elev_band,
+    gap_percent,
+    burned,
+    fit
+  ) %>%
+  pivot_wider(
+    names_from = burned,
+    values_from = fit
+  ) %>%
+  mutate(
+    burn_effect = burned - unburned
+  )
+
+
+head(burn.diff)
+
+ggplot(
+  burn.diff,
+  aes(
+    x = gap_percent,
+    y = burn_effect
+  )
+) +
+  geom_hline(
+    yintercept = 0,
+    linetype = 2,
+    color = 'gray40'
+  ) +
+  geom_line(
+    color = 'firebrick',
+    linewidth = 1
+  ) +
+  facet_grid(wy ~ elev_band) +
+  theme_bw() +
+  labs(
+    x = 'Gap percentage (%)',
+    y = 'Burned - unburned SWE (m)'
+  )
+
+# ==============================================================================
+#  aspect/gap/burnedunburned/wy
+# ==============================================================================
+solar.lookup <- data.frame(
+  sun_class = c('Low sun exposure', 'High sun exposure'),
+  rad_raw = c(
+    quantile(df.raw$rad_dtm_accum, 0.25, na.rm = TRUE),
+    quantile(df.raw$rad_dtm_accum, 0.75, na.rm = TRUE)
+  )
+)
+
+rad.mean <- mean(df.raw$rad_dtm_accum, na.rm = TRUE)
+rad.sd   <- sd(df.raw$rad_dtm_accum, na.rm = TRUE)
+
+solar.lookup$rad_dtm_accum <-
+  (solar.lookup$rad_raw - rad.mean) / rad.sd
+
+# create prediction dataset
+pred.sun.gap <- expand.grid(
+  gap_gap_pct = gap.seq,
+  sun_class = c('Low sun exposure',
+                'High sun exposure'),
+  burned = levels(df.50$burned),
+  wy = levels(df.50$wy)
+) %>%
+  left_join(solar.lookup, by = 'sun_class')
+
+# set other values constant 
+pred.sun.gap$topo_elev <- median(df.50$topo_elev)
+pred.sun.gap$topo_slope <- 0
+pred.sun.gap$topo_tpi150 <- 0
+pred.sun.gap$topo_tpi2010 <- 0
+pred.sun.gap$ht_zmax <- median(df.50$ht_zmax)
+
+pred.sun.gap$burned <- factor(
+  pred.sun.gap$burned,
+  levels = levels(df.50$burned)
+)
+
+pred.sun.gap$wy <- factor(
+  pred.sun.gap$wy,
+  levels = levels(df.50$wy)
+)
+
+# --- predict ---
+p <- predict(
+  gam.topo.canopy.best,
+  newdata = pred.sun.gap,
+  se.fit = TRUE
+)
+
+# back-transform because model used sqrt(swe_peak)
+pred.sun.gap$fit <- p$fit^2
+pred.sun.gap$lwr <- (p$fit - 1.96 * p$se.fit)^2
+pred.sun.gap$upr <- (p$fit + 1.96 * p$se.fit)^2
+
+# --- unscale gap ---
+gap.mean <- mean(df.raw$gap_gap_pct, na.rm = TRUE)
+gap.sd   <- sd(df.raw$gap_gap_pct, na.rm = TRUE)
+
+pred.sun.gap$gap_raw <-
+  pred.sun.gap$gap_gap_pct * gap.sd + gap.mean
+
+# since raw gap is stored 0-1
+pred.sun.gap$gap_percent <- pred.sun.gap$gap_raw * 100
+
+# --- plot ---
+# burn status as columns, sun exposure as lines
+ggplot(
+  pred.sun.gap,
+  aes(
+    x = gap_percent,
+    y = fit,
+    color = sun_class,
+    fill = sun_class
+  )
+) +
+  geom_ribbon(
+    aes(ymin = lwr, ymax = upr),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1.0) +
+  facet_grid(wy ~ burned) +
+  theme_bw() +
+  labs(
+    x = 'Gap percentage (%)',
+    y = 'Predicted peak SWE (m)',
+    color = NULL,
+    fill = NULL
+  )
+
+# exposure as columns, burn status as lines
+ggplot(
+  pred.sun.gap,
+  aes(
+    x = gap_percent,
+    y = fit,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1.0) +
+  facet_grid(wy ~ sun_class) +
+  scale_color_manual(
+    values = c(
+      'unburned' = 'lightblue',
+      'burned' = 'orange'
+    )
+  ) +
+  theme_bw() +
+  labs(
+    x = 'Gap percentage (%)',
+    y = 'Predicted peak SWE (m)',
+    color = NULL
+  )
+
 # ==============================================================================
 #  model comparisons!
 # ==============================================================================
@@ -688,9 +973,30 @@ model.formulas <- list(
     s(topo_tpi150) +
     s(topo_tpi2010),
   
+  topo_burned =
+    sqrt(swe_peak) ~
+    wy +
+    burned +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010),
+  
   topo_cbi =
     sqrt(swe_peak) ~
     wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) +
+    s(cbibc),
+  
+  topo_burned_cbi =
+    sqrt(swe_peak) ~
+    wy +
+    burned +
     s(topo_elev) +
     s(rad_dtm_accum) +
     s(topo_slope) +
@@ -709,9 +1015,34 @@ model.formulas <- list(
     s(gap_gap_pct, by = burned) +
     s(ht_zmax, by = burned),
   
+  topo_canopy_burned =
+    sqrt(swe_peak) ~
+    wy +
+    burned +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned),
+  
   topo_canopy_cbi =
     sqrt(swe_peak) ~
     wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) +
+    s(cbibc) +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned),
+  
+  topo_canopy_burned_cbi =
+    sqrt(swe_peak) ~
+    wy +
+    burned +
     s(topo_elev) +
     s(rad_dtm_accum) +
     s(topo_slope) +
