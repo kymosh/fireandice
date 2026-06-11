@@ -561,3 +561,5 @@ plot(combine)
 out.file <- paste0(out.dir.base, fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m_', epsg, '.tif')
 
 writeRaster(masked.list[[1]], out.file, overwrite = TRUE)
+
+

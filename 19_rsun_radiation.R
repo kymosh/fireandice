@@ -58,7 +58,7 @@ target.crs <- '32610'
 
 # directories
 base.dir <-  'J:/Fire_Snow/fireandice/data/' # KM comp
-#base.dir <-  'data/' # processing comp
+base.dir <-  'data/' # processing comp
 dir.1m <- paste0(base.dir, 'processed/processed/tif/1m/')
 
 acq <- c(
@@ -70,15 +70,20 @@ acq <- c(
   'CA_SierraNevada_7_2022'
 )
 
-# ----- create mosaic of DTM -----
-dem.dir <- paste0(base.dir, 'raw/DEM/', fire, '/', acq) 
+# ----- create mosaic of DTM (if multiple acquisitions) -----
 
 # function to mosaic each acquisition
+library(future)
+library(future.apply)
+library(terra)
+
+plan(multisession, workers = 3)  # maybe 2-3 for huge 1m rasters
+
 mosaic_acq <- function(acq) {
   
   message('Mosaicking ', acq, '...')
   
-  dem.dir <- paste0('data/raw/DEM/', fire, '/', acq)
+  dem.dir <- paste0(base.dir, 'raw/DEM/', fire, '/', acq)
   
   files <- list.files(dem.dir, pattern = '\\.tif$', full.names = TRUE)
   
@@ -87,27 +92,41 @@ mosaic_acq <- function(acq) {
     return(NULL)
   }
   
-  r.list <- lapply(files, rast)
-  r.col <- sprc(r.list)
+  r.col <- sprc(files)
   
-  m <- mosaic(r.col)
+  out.file <- paste0(
+    dir.1m,
+    fire,
+    '_dtm_1m_',
+    acq,
+    '.tif'
+  )
   
-  m
+  m <- mosaic(r.col, filename = out.file, overwrite = TRUE)
+  
+  out.file
 }
 
-# run function on each acq
-dem.acq <- lapply(acq, mosaic_acq)
+dem.acq.files <- future_lapply(acq, mosaic_acq)
+
+dem.acq <- lapply(unlist(dem.acq.files), rast)
 
 # start with 1st raster and add each subsequent acq
 combine <- dem.acq[[1]]
 
 for (i in 2:length(dem.acq)) {
-  
+  # create new extent that contains both raster areas
   e <- union(ext(combine), ext(dem.acq[[i]]))
   
+  # extend extent of OG raster
   combine.ext <- extend(combine, e)
+  # extent extent of adding raster
   next.ext <- extend(dem.acq[[i]], e)
   
+  # ensure extents are now the same
+  print(compareGeom(combine.ext, next.ext, stopOnError = FALSE))
+  
+  # merge rasters
   combine <- cover(combine.ext, next.ext)
 }
 
@@ -120,6 +139,29 @@ epsg <- crs(combine, describe = T)$code
 out.file <- paste0(dir.1m, fire, '_dtm_1m_', epsg, '.tif')
 writeRaster(combine, out.file, overwrite = TRUE)
 
+
+# ----- create mosaic of DTM (if just single acquisition) -----
+# set-up
+fire = 'castle'
+target.crs <- '32611'
+
+
+# directories
+# base.dir <-  'J:/Fire_Snow/fireandice/data/' # KM comp
+base.dir <-  'data/' # processing comp
+out.dir <- paste0(base.dir, 'processed/processed/tif/1m/', fire, '/')
+dtm.dir <- paste0(out.dir, fire, '_dtm_32611')
+out.file <- paste0(out.dir, fire, '_dtm_1m_', target.crs, '.tif')
+
+files <- list.files(dtm.dir, pattern = '\\.tif$', full.names = TRUE)
+length(files)  
+
+r.col <- sprc(files)
+  
+m <- mosaic(r.col, filename = out.file, overwrite = TRUE)
+
+# sanity check
+plot(m)
 
 
 # ----- reproject chm and dtm to correct res -----
@@ -168,6 +210,35 @@ message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minute
 # ===========================================================================================
 # Create DSM
 # ===========================================================================================
+# ----- function to make dsm from dem and chm (*from tiled inputs*)-----
+dsm.from.dtm.chm <- function(f) {
+  
+  # read in chm tile
+  chm <- rast(f)
+  
+  # crop dem to that tile's extent
+  dtm.tile <- crop(dtm, chm, snap = 'near')
+  
+  chm[is.na(chm)] <- 0
+  
+  if (!compareGeom(dtm.tile, chm, stopOnError = FALSE)) {
+    stop('DTM and CHM do not align for: ', basename(f))
+  }
+  
+  dsm <- dtm.tile + chm
+  
+  out.file <- file.path(out.dir, sub('castle_chm', 'castle_dsm', basename(f)))
+  
+  writeRaster(
+    dsm,
+    out.file,
+    overwrite = TRUE,
+    wopt = list(gdal = c('COMPRESS=LZW'))
+  )
+  
+  return(out.file)
+  
+}
 
 # ----- test mosaic first -----
 
@@ -190,26 +261,9 @@ chm.files <- chm.files[grepl(paste(tiles, collapse = '|'), basename(chm.files))]
 out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dsm_test_9'
 dir.create(out.dir, recursive = T, showWarnings = F)
 
-# ----- function to make dsm from dem and chm *from tiled inputs)-----
-dsm.from.dem.chm <- function(f) {
-  
-  # read in chm tile
-  chm <- rast(f)
-  
-  # crop dem to that tile's extent
-  dem.tile <- crop(dem, chm, snap = 'near')
-  
-  chm[is.na(chm)] <- 0
-  
-  dsm <- dem.tile + chm
-  
-  out.file <- file.path(out.dir, sub('creek_chm', 'creek_dsm', basename(f)))
-  
-  writeRaster(dsm, out.file, overwrite = T)
 
-  }
-  
-dsm.files <- lapply(chm.files, dsm.from.dem.chm)
+# run
+dsm.files <- lapply(chm.files, dsm.from.dtm.chm)
 
 # check  
 x <- rast(dsm.files[1])  
@@ -221,33 +275,46 @@ plot(dsm)
 
 writeRaster(dsm, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek_dsm_test_9.tif')
 
-# --- full mosaic ---
+# ----- full mosaic -----
 
-# full 1m raster dem
-dem <- rast('data/processed/processed/tif/1m/creek_dtm_1m.tif')
+# full 1m raster dtm
+dtm <- rast('data/processed/processed/tif/1m/castle/castle_dtm_1m_32611.tif')
 
 # chm files
 # keep chm files by tile
-chm.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
+chm.dir <- 'data/processed/processed/tif/1m/castle/castle_chm_32611'
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = T)
 
 # output directory
-out.dir <- 'data/processed/processed/tif/1m/creek_dsm'
+out.dir <- 'data/processed/processed/tif/1m/castle/castle_dsm_32611'
 dir.create(out.dir, recursive = T, showWarnings = F)
+
+# check this first!
+chm <- rast(chm.files[1])
+dtm.tile <- crop(dtm, chm, snap = 'near')
+compareGeom(dtm.tile, chm)
 
 # apply function
 start <- Sys.time()
-dsm.files <- lapply(chm.files, dsm.from.dem.chm)
+dsm.files <- lapply(chm.files, dsm.from.dtm.chm)
 end <- Sys.time()
 message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
 # 134 minutes
 
+dsm.files <- unlist(dsm.files)
+
 # combine into single mosaic
 start <- Sys.time()
-dsm <- do.call(mosaic, dsm.files)
+
+dsm <- mosaic(
+  sprc(dsm.files),
+  filename = 'data/processed/processed/tif/1m/castle/castle_dsm_1m_32611.tif',
+  overwrite = TRUE,
+  wopt = list(gdal = c('COMPRESS=LZW'))
+)
+
 end <- Sys.time()
 message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
-writeRaster(dsm, 'data/processed/processed/tif/1m/creek_dsm_1m.tif')
 # 30 minutes
 
 
@@ -256,12 +323,36 @@ writeRaster(dsm, 'data/processed/processed/tif/1m/creek_dsm_1m.tif')
 
 
 # ----- make DSM from full dtm and chm mosaic -----
-dtm <- rast(paste0(dir.1m, fire, '_dtm_1m_', target.crs, '.tif'))
-chm <- rast(paste0(dir.1m, fire, '_chm_1m_', target.crs, '.tif'))
 
-dsm <- dtm + chm
+# read in files
+target.crs <- 32610
 
-out.file <- paste0(dir.1m, fire, '_dsm_1m_', target.crs, '.tif')
+dtm.file <- paste0(dir.1m, fire, '/', fire, '_dtm_1m_', target.crs, '.tif')
+chm.file <- paste0(dir.1m, fire, '/', fire, '_chm_1m_', target.crs, '.tif')
+
+dtm <- rast(dtm.file)
+chm <- rast(chm.file)
+
+# sanity check
+plot(dtm)
+plot(chm)
+
+# check CRS
+crs(dtm) == crs(chm)
+
+# check if same
+compareGeom(dtm, chm, stopOnError = FALSE)
+
+# chm is very slightly smaller, so crop to chm
+dtm.crop <- crop(dtm, chm, snap = "near")
+
+# now check if same
+compareGeom(dtm.crop, chm, stopOnError = FALSE)
+
+# make DSM
+dsm <- dtm.crop + chm
+
+out.file <- paste0(dir.1m, fire, '/', fire, '_dsm_1m_', target.crs, '.tif')
 writeRaster(dsm, out.file, overwrite = TRUE)
 
 
@@ -538,3 +629,51 @@ for (each in res) {
   file <- paste0('creek_rad_', each, '.tif')
   file.copy(file.path(in.dir, file), out.dir, overwrite = TRUE)
 }
+
+
+
+
+
+# troubleshoot
+e <- union(ext(dem.acq[[1]]), ext(dem.acq[[2]]))
+template <- rast(
+  ext = e,
+  resolution = 1,
+  crs = 'EPSG:32610'
+)
+origin(template) <- c(0, 0)
+
+dem.acq.32610 <- lapply(dem.acq, function(r) {
+  project(
+    r,
+    template,
+    method = 'near',
+    align_only = TRUE
+  )
+})
+plot(dem.acq.32610[[1]])
+plot(dem.acq.32610[[2]], add = T)
+
+combine <- dem.acq.32610[[1]]
+
+for (i in 2:length(dem.acq.32610)) {
+  # create new extent that contains both raster areas
+  e <- union(ext(combine), ext(dem.acq.32610[[i]]))
+  
+  # extend extent of OG raster
+  combine.ext <- extend(combine, e)
+  # extent extent of adding raster
+  next.ext <- extend(dem.acq.32610[[i]], e)
+  
+  # ensure extents are now the same
+  print(compareGeom(combine.ext, next.ext, stopOnError = FALSE))
+  
+  # merge rasters
+  combine <- cover(combine.ext, next.ext)
+}
+
+# check
+plot(combine)
+
+out.file <- paste0(dir.1m, fire, '_dtm_1m_32610.tif')
+writeRaster(combine, out.file, overwrite = TRUE)
