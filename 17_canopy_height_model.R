@@ -168,7 +168,7 @@ library(sf)
 library(nhdplusTools)
 
 # --- settings - change these ---
-fire <- 'caldor'
+fire <- 'castle'
 metric <- 'chm'
 
 # out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/' # KM comp
@@ -284,28 +284,37 @@ writeRaster(combine, out.file, overwrite = TRUE)
 
 
 # =================================================================================
-# Reproject CHM
+# Reproject CHM to target CRS
 # =================================================================================
 
-in.dir  <- 'data/processed/processed/tif/1m/creek_chm_6340'
+# NOTE: this code has been used for dtm not just chm! Make sure in.dir is what you want
+# in.dir  <- 'data/processed/processed/tif/1m/castle/castle_chm_6340'
 # in.dir <- 'data/processed/processed/tif/1m/creek_chm_test_36'
-out.dir <- 'data/processed/processed/tif/1m/creek_chm_32611'
+in.dir <- 'data/raw/DEM/castle'
+out.dir <- 'data/processed/processed/tif/1m/castle/castle_dtm_32611'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 files <- list.files(in.dir, pattern = '\\.tif$', full.names = TRUE)
 length(files)
 
+# check CRS
+r <- rast(files[1])
+crs(r, describe = T)$code
+
 # ----- create template -----
 
-# load in 30m raster in 32611 of study area
-dem30 <- rast('data/processed/processed/tif/30m/nasadem_creek_30m_1524.tif')
+# load in raster with correct CRS
+template <- rast('data/processed/processed/tif/50m/castle/canopy_metrics/castle_cover_metrics_50m.tif')
 
-crs(dem30, describe = T)$code # 32611
-res(dem30)
-origin(dem30)
+crs(template, describe = T)$code # 32611
+res(template)
+origin(template)
+
+target.crs <- crs(template)
+dem.origin <- origin(template)
 
 # ----- function to project + write one tile -----
-project_one <- function(f, out.dir, dem.origin) {
+project_one <- function(f, out.dir, target.crs, dem.origin) {
   
   library(terra)
   
@@ -318,13 +327,13 @@ project_one <- function(f, out.dir, dem.origin) {
   # convert tile extent -> polygon, project polygon -> target CRS, then get extent
   tile.poly <- as.polygons(ext(r))
   crs(tile.poly) <- crs(r)  # assign source CRS
-  tile.poly.32611 <- project(tile.poly, 'EPSG:32611')
+  tile.poly.32611 <- project(tile.poly, target.crs)
   tile.ext.32611 <- ext(tile.poly.32611)
   
   # build 1m template cropped to this tile
   template <- rast(ext = tile.ext.32611,
                    res = 1,
-                   crs = 'EPSG:32611')
+                   crs = target.crs)
   
   # inherit DEM grid alignment
   origin(template) <- dem.origin
@@ -344,24 +353,26 @@ project_one <- function(f, out.dir, dem.origin) {
 plan(multisession, workers = 8)
 terraOptions(threads = 1)
 
-dem.origin <- origin(dem30)
-#test on 36 tiles first
+
+#test on 5 tiles first
+test.files <- files[1:5]
 
 start.time <- Sys.time()
 out.files <- future_lapply(files,
                            FUN = project_one,
                            out.dir = out.dir,
+                           target.crs = target.crs,
                            dem.origin = dem.origin,
                            future.seed = TRUE)
 end.time <- Sys.time()
 message('Reproj finished at: ', format(end.time, '%Y-%m-%d %H:%M:%S'))
 message('Elapsed minutes: ', round(as.numeric(difftime(end.time, start.time, units = 'mins')), 2))
-# elapsed time: 15.78 minutes
+# elapsed time: 5 - 15.78 minutes
 
 # ----- check -----
 outs <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
-samp <- outs[1:10]
-x <- rast(sample[1])
+samp <- outs[1:5]
+x <- rast(samp[1])
 plot(x)
 crs(x, describe = TRUE)$code
 res(x)
