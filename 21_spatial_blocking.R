@@ -13,6 +13,7 @@ epsg <- 32611
 block.m <- 8000
 test.prop <- 0.20
 set.seed(15)
+res <- 500
 
 # study area polygon
 study <- st_read(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')) %>%
@@ -20,12 +21,13 @@ study <- st_read(paste0('data/processed/processed/shp/studyarea_extents/study_ex
 
 # dataframe
 dir <- paste0('data/processed/processed/rds/', fire) 
-df.50 <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_clean.rds')))
+df <- readRDS(file.path(dir, paste0(fire, '_long_df_', res, 'm_clean.rds')))
+# df <- readRDS(file.path(dir, 'old/creek_long_df_50m_clean_beforeblocked.rds')) # this is just checking the 50m again
 
 
 
 # your model data as points
-dat.sf <- st_as_sf(df.50, coords = c('x', 'y'), crs = epsg, remove = FALSE)
+dat.sf <- st_as_sf(df, coords = c('x', 'y'), crs = epsg, remove = FALSE)
 
 sb <- cv_spatial(
   x = dat.sf,
@@ -57,24 +59,53 @@ ggplot(sb$blocks) +
   geom_sf(aes(fill = split)) +
   theme_bw()
 
-# proportion numbers
+# proportion numbers per fold
 sb$blocks %>%
   st_drop_geometry() %>%
   count(folds) %>%
   mutate(prop = n / sum(n))
 
-
+# proportion of pixels per fold
 dat.blocked %>%
   st_drop_geometry() %>%
   count(split) %>%
   mutate(prop = n / sum(n))
 
+dat.blocked %>%
+  st_drop_geometry() %>%
+  count(fold_id) %>%
+  mutate(prop = n / sum(n))
+
+# check SDD years are balanced across train/test test
+dat.blocked %>%
+  st_drop_geometry() %>%
+  count(wy, split) %>%
+  group_by(wy) %>%
+  mutate(prop = n / sum(n))
+
+dat.blocked %>%
+  st_drop_geometry() %>%
+  distinct(x, y, wy, fold_id, split) %>%
+  count(x, y) %>%
+  filter(n > 1)
+
+dat.blocked %>%
+  st_drop_geometry() %>%
+  group_by(x, y) %>%
+  summarize(
+    n_folds = n_distinct(fold_id),
+    n_splits = n_distinct(split),
+    .groups = 'drop'
+  ) %>%
+  filter(n_folds > 1 | n_splits > 1)
+
+
 # remove geometry
 dat.blocked <- st_drop_geometry(dat.blocked)
 # save
-saveRDS(dat.blocked, file.path(dir, paste0(fire, '_df_50m.rds')))
-saveRDS(dat.blocked, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '_df_50m.rds'))
-saveRDS(dat.blocked, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '_df_50m.rds'))
+saveRDS(dat.blocked, file.path(dir, paste0(fire, '_df_', res, 'm.rds')))
+saveRDS(dat.blocked, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
+saveRDS(dat.blocked, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
 
 
 
