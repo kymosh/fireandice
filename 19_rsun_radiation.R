@@ -1,6 +1,10 @@
 packages <- c('dplyr', 'tidyr', 'tools', 'exactextractr', 'terra')
 lapply(packages, library, character.only = T)
 
+packages <- c('sf', 'mapview', 'lidR', 'dplyr', 'raster', 'future', 'future.apply', 'stringr', 'terra')
+install.packages(setdiff(packages, rownames(installed.packages())))
+lapply(packages, library, character.only = T)
+
 # ===========================================================================================
 # Create 9-tile test mosaic for testing r.sun
 # ===========================================================================================
@@ -322,13 +326,17 @@ message('Finished in ', round(difftime(end, start, units = 'mins'), 2), ' minute
 
 
 
-# ----- make DSM from full dtm and chm mosaic -----
 
+
+# ----- make DSM from full dtm and chm mosaic -----
+fire <- 'dixie'
+res <- '5m'
+in.dir <- paste0('data/processed/processed/tif/', res, '/', fire, '/')
 # read in files
 target.crs <- 32610
 
-dtm.file <- paste0(dir.1m, fire, '/', fire, '_dtm_1m_', target.crs, '.tif')
-chm.file <- paste0(dir.1m, fire, '/', fire, '_chm_1m_', target.crs, '.tif')
+dtm.file <- paste0(in.dir, fire, '_dtm_', res, '.tif')
+chm.file <- paste0(in.dir, fire, '_chm_', res, '.tif')
 
 dtm <- rast(dtm.file)
 chm <- rast(chm.file)
@@ -343,17 +351,156 @@ crs(dtm) == crs(chm)
 # check if same
 compareGeom(dtm, chm, stopOnError = FALSE)
 
-# chm is very slightly smaller, so crop to chm
-dtm.crop <- crop(dtm, chm, snap = "near")
+# if chm is very slightly smaller, crop to chm
+#dtm.crop <- crop(dtm, chm, snap = "near")
 
 # now check if same
-compareGeom(dtm.crop, chm, stopOnError = FALSE)
+#compareGeom(dtm.crop, chm, stopOnError = FALSE)
 
 # make DSM
-dsm <- dtm.crop + chm
+dsm <- dtm + chm
 
-out.file <- paste0(dir.1m, fire, '/', fire, '_dsm_1m_', target.crs, '.tif')
+out.file <- paste0(in.dir, fire, '_dsm_', res, '.tif')
 writeRaster(dsm, out.file, overwrite = TRUE)
+
+
+# ===========================================================================================
+# Resample dsm and dtm to 5m
+# ===========================================================================================
+# ---castle and caldor ---
+fire <- 'dixie'
+in.dir <- paste0('data/processed/processed/tif/1m/', fire)
+out.dir <- paste0('data/processed/processed/tif/5m/', fire)
+dir.create(out.dir, showWarnings = F, recursive = T)
+#surface <- '(dsm|dtm)' #chose one
+surface <- 'chm'
+
+
+files <- list.files(in.dir, pattern = paste0(fire, '_', surface, '.*\\.tif$'), full.names = T)
+
+for (f in files) {
+  r <- rast(f)
+  r.5 <- aggregate(r, fact = 5, fun = mean, na.rm = TRUE)
+  # determine whether file is DSM or DTM
+  #surface <- if (grepl('_dsm', basename(f))) 'dsm' else 'dtm'
+  out.file <- file.path(out.dir, paste0(fire, '_', surface, '_5m.tif'))
+  writeRaster(r.5, out.file)
+}
+
+# check
+files <- list.files(out.dir, full.names = T)
+plot(rast(files[2]))
+
+
+
+# --- just for dixie ---
+fire <- 'dixie'
+in.dir <- paste0('data/processed/processed/tif/1m/')
+out.dir <- paste0('data/processed/processed/tif/5m/', fire)
+dir.create(out.dir, showWarnings = F, recursive = T)
+
+files <- list.files(in.dir, pattern = paste0(fire, '_dtm.*\\.tif$'), full.names = T)
+x <- rast(files[1])
+res(x)
+
+plan(multisession, workers = 10)
+
+process_file <- function(f) {
+  
+  library(terra)
+  
+  message('Processing ', basename(f))
+  
+  r <- rast(f)
+  
+  # aggregate native 0.5 m raster to 5 m
+  fact <- round(5 / res(r)[1])
+  r.5 <- aggregate(r, fact = fact, fun = mean, na.rm = TRUE)
+  
+  # make 5 m EPSG:32610 template
+  e.32610 <- project(ext(r.5), from = crs(r.5), to = 'epsg:32610')
+  
+  template <- rast(
+    ext = e.32610,
+    res = 5,
+    crs = 'epsg:32610'
+  )
+  
+  origin(template) <- c(0, 0)
+  
+  r.32610 <- project(
+    r.5,
+    template,
+    method = 'bilinear'
+  )
+  
+  surface <- if (grepl('_dsm', basename(f))) 'dsm' else 'dtm'
+  
+  acq <- sub(
+    paste0('^', fire, '_', surface, '_1m_'),
+    '',
+    tools::file_path_sans_ext(basename(f))
+  )
+  
+  out.file <- file.path(
+    out.dir,
+    paste0(fire, '_', surface, '_5m_', acq, '_32610.tif')
+  )
+  
+  writeRaster(r.32610, out.file, overwrite = TRUE)
+  
+  out.file
+}
+
+out.files <- future_lapply(files, process_file)
+
+plan(sequential)
+
+
+# once all 5m acqs have been mosaiced:
+files <- list.files(out.dir, pattern = '\\.tif$', full.names = T)
+
+for (f in files) {
+  r <- rast(f)
+  cat('\n', basename(f), '\n')
+  print(dim(r))
+  print(ext(r))
+  print(res(r))
+  print(origin(r))
+  print(crs(r, describe = TRUE)$code)
+}
+
+dem.acq <- lapply(files, rast)
+
+# start with 1st raster and add each subsequent acq
+combine <- dem.acq[[1]]
+
+for (i in 2:length(dem.acq)) {
+  # create new extent that contains both raster areas
+  e <- union(ext(combine), ext(dem.acq[[i]]))
+  
+  # extend extent of OG raster
+  combine.ext <- extend(combine, e)
+  # extent extent of adding raster
+  next.ext <- extend(dem.acq[[i]], e)
+  
+  # ensure extents are now the same
+  print(compareGeom(combine.ext, next.ext, stopOnError = FALSE))
+  
+  # merge rasters
+  combine <- cover(combine.ext, next.ext)
+}
+
+# check
+plot(combine)
+
+epsg <- crs(combine, describe = T)$code
+
+# save
+out.file <- file.path(out.dir, paste0(fire, '_dtm_5m.tif'))
+writeRaster(combine, out.file, overwrite = TRUE)
+
+
 
 
 # ===========================================================================================
@@ -677,3 +824,83 @@ plot(combine)
 
 out.file <- paste0(dir.1m, fire, '_dtm_1m_32610.tif')
 writeRaster(combine, out.file, overwrite = TRUE)
+
+# ---------- troubleshoot ----------------------
+
+# reproject last acquisiton of dixie to 5m and mosaic
+dem.dir <- 'data/raw/DEM/dixie/CA_SierraNevada_6_2022'
+dem.files <- list.files(dem.dir, full.names = T)
+tile.out.dir <- 'data/processed/processed/tif/5m/dixie/dixie_dtm_5m_32610_acq6'
+dir.create(tile.out.dir, showWarnings = FALSE, recursive = TRUE)
+
+plan(multisession, workers = 10)
+
+process_tile <- function(f) {
+  
+  library(terra)
+  
+  message('Processing ', basename(f))
+  
+  r <- rast(f)
+  
+  # aggregate native 1 m tile to 5 m first
+  r.5 <- aggregate(r, fact = 5, fun = mean, na.rm = TRUE)
+  
+  # get projected extent in EPSG:32610
+  e.32610 <- project(ext(r.5), from = crs(r.5), to = 'epsg:32610')
+  
+  # create aligned 5 m template
+  template <- rast(
+    ext = e.32610,
+    res = 5,
+    crs = 'epsg:32610'
+  )
+  
+  origin(template) <- c(0, 0)
+  
+  # project onto template
+  r.32610 <- project(
+    r.5,
+    template,
+    method = 'bilinear'
+  )
+  
+  out.file <- file.path(
+    tile.out.dir,
+    paste0(tools::file_path_sans_ext(basename(f)), '_5m_32610.tif')
+  )
+  
+  writeRaster(r.32610, out.file, overwrite = TRUE)
+  
+  out.file
+}
+
+out.files <- future_lapply(dem.files, process_tile)
+
+tile.files <- list.files(
+  tile.out.dir,
+  pattern = '\\.tif$',
+  full.names = TRUE
+)
+
+length(tile.files)
+
+r.col <- sprc(tile.files)
+
+dixie.dtm.5m.acq6 <- mosaic(r.col, fun = 'mean')
+
+out.mosaic <- 'data/processed/processed/tif/5m/dixie/dixie_dtm_5m_32610_acq6.tif'
+
+writeRaster(
+  dixie.dtm.5m.acq6,
+  out.mosaic,
+  overwrite = TRUE
+)
+
+
+
+
+chm <- project(chm, dtm, method = 'near')
+writeRaster(chm, 'data/processed/processed/tif/5m/dixie/dixie_chm_5m.tif')
+res(dtm)
+origin(dtm)
