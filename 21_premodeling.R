@@ -20,21 +20,56 @@ df.50 <- df.50.0 %>%
   filter(
     wy != 2020, # drop 2020, since it's prefire
     swe_peak > 0 # drop all cells where there was no snow
-    ) %>%  
+  ) %>%  
   mutate(
-    snowline = case_when( # remove pixels that fall below that year's snowline
+    snowline = case_when(
       wy == 2021 ~ 2145,
       wy == 2022 ~ 1956,
       wy == 2023 ~ -Inf, # snow covers whole area for 2023, no need to filter 
       wy == 2024 ~ 1786,
-      wy == 2025 ~ 2021),
-    wy = as.factor(wy), # make wy a factor
-    cell = as.factor(cell), # make cell a factor
-    burned = factor(if_else(cbibc > 0, 'burned', 'unburned'), 
-                    levels = c("unburned", "burned"))
-    ) %>% 
-  filter(topo_elev >= snowline,
-    complete.cases(.)) %>% # drop rows with any missing values
+      wy == 2025 ~ 2021
+    ),
+    
+    wy = as.factor(wy),
+    cell = as.factor(cell),
+    
+    burned = factor(
+      if_else(cbibc > 0, 'burned', 'unburned'),
+      levels = c('unburned', 'burned')
+    ),
+    
+    # aspect classes
+    aspect_class = case_when(
+      topo_aspect_cos > 0.5  ~ 'North-facing',
+      topo_aspect_cos < -0.5 ~ 'South-facing',
+      TRUE                   ~ NA_character_
+    ),
+    
+    aspect_class = factor(
+      aspect_class,
+      levels = c('North-facing', 'South-facing')
+    ),
+    
+    # elevation bands
+    elev_band = case_when(
+      topo_elev < 2000 ~ 'Low (<2000 m)',
+      topo_elev < 2600 ~ 'Mid (2000-2600 m)',
+      TRUE             ~ 'High (>2600 m)'
+    ),
+    
+    elev_band = factor(
+      elev_band,
+      levels = c(
+        'Low (<2000 m)',
+        'Mid (2000-2600 m)',
+        'High (>2600 m)'
+      )
+    )
+  ) %>% 
+  filter(
+    topo_elev >= snowline,
+    complete.cases(.)
+  ) %>% 
   select(-snowline)
 
 # scale numeric predictors
@@ -90,28 +125,71 @@ saveRDS(df.50.thin, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/c
   
 # ----- df.500 SDD -----
 
-df.500.0 <- readRDS(file.path(dir, 'creek_long_df_500m.rds'))
+df.500.0 <- readRDS(file.path(dir, 'old/creek_long_df_500m.rds'))
 df.500 <- df.500.0 %>% 
   select(-fd_fractal_dim) %>% # super correlated with gap_pct but with way more NAs
   select(-tmmn) %>% # just using tmmx to model sdd
-  select(-topo_aspect_cos) %>% # redundant with dtm_accum
   select(-topo_tpi150, -topo_tpi510) %>% # redundant with tpi1200
   filter(
-    wy != 2020, # drop 2020, since it's prefire
-    swe_peak > 0 # drop all cells where there was no snow
+    wy != 2020,
+    swe_peak > 0,
+    sdd > 0
   ) %>%  
   mutate(
-    snowline = case_when( # remove pixels that fall below that year's snowline
+    snowline = case_when(
       wy == 2021 ~ 2145,
       wy == 2022 ~ 1956,
-      wy == 2023 ~ -Inf, # snow covers whole area for 2023, no need to filter 
+      wy == 2023 ~ -Inf,
       wy == 2024 ~ 1786,
-      wy == 2025 ~ 2021),
-    wy = as.factor(wy), # make wy a factor
-    cell = as.factor(cell) # make cell a factor
+      wy == 2025 ~ 2021
+    ),
+    
+    wy = as.factor(wy),
+    cell = as.factor(cell),
+    
+    gap_gap_pct = gap_gap_pct * 100,
+    
+    burned = factor(
+      if_else(cbibc > 0, 'burned', 'unburned'),
+      levels = c('unburned', 'burned')
+    ),
+    
+    # aspect classes
+    aspect_class = case_when(
+      topo_aspect_cos > 0.5  ~ 'North-facing',
+      topo_aspect_cos < -0.5 ~ 'South-facing',
+      TRUE                   ~ 'East/West'
+    ),
+    
+    aspect_class = factor(
+      aspect_class,
+      levels = c(
+        'North-facing',
+        'East/West',
+        'South-facing'
+      )
+    ),
+    
+    # elevation bands
+    elev_band = case_when(
+      topo_elev < 2000 ~ 'Low (<2000 m)',
+      topo_elev < 2600 ~ 'Mid (2000-2600 m)',
+      TRUE             ~ 'High (>2600 m)'
+    ),
+    
+    elev_band = factor(
+      elev_band,
+      levels = c(
+        'Low (<2000 m)',
+        'Mid (2000-2600 m)',
+        'High (>2600 m)'
+      )
+    )
   ) %>% 
-  filter(topo_elev >= snowline,
-         complete.cases(.)) %>% # drop rows with any missing values
+  filter(
+    topo_elev >= snowline,
+    complete.cases(.)
+  ) %>% 
   select(-snowline)
 
 # scale numeric predictors
