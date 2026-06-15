@@ -51,9 +51,10 @@ def main():
             print(f'\nRunning r.sun for day {day}')
 
             day_str = str(day).zfill(3)
-            beam_name = f'beam_{day_str}'
-            diff_name = f'diff_{day_str}'
-            glob_name = f'glob_{day_str}'
+            beam_name = f'{p.fire}_{p.surface}_{p.res}m_beam_{day_str}'
+            diff_name = f'{p.fire}_{p.surface}_{p.res}m_diff_{day_str}'
+            glob_name = f'{p.fire}_{p.surface}_{p.res}m_glob_{day_str}'
+
             # run r.sun with specified parameters
             gs.run_command( 
                 'r.sun',
@@ -71,9 +72,15 @@ def main():
                 overwrite=True
             )
             # define output file paths for the radiation maps
-            glob_file = os.path.join(p.out_dir, f'rad_global_{p.surface}_day{day}_{p.res}m.tif') 
-            beam_file = os.path.join(p.out_dir, f'rad_beam_{p.surface}_day_{day}_{p.res}m.tif')
-            diff_file = os.path.join(p.out_dir, f'rad_diffuse_{p.surface}_day{day}_{p.res}m.tif')
+            glob_file = os.path.join(
+                p.out_dir,
+                f'{p.fire}_rad_global_{p.surface}_day{day_str}_{p.res}m.tif') 
+            beam_file = os.path.join(
+                p.out_dir,
+                f'{p.fire}_rad_beam_{p.surface}_day{day_str}_{p.res}m.tif')
+            diff_file = os.path.join(
+                p.out_dir,
+                f'{p.fire}_rad_diffuse_{p.surface}_day{day_str}_{p.res}m.tif')
 
             # export the radiation maps to GeoTIFFs
             gs.run_command(
