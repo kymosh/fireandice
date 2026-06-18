@@ -1,4 +1,4 @@
-packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger', 'tictoc')
+packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger', 'tictoc', 'mgcv', 'plotmyGAM')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -12,6 +12,10 @@ dir <- 'data/processed/processed/rds/creek'
 df.50 <- readRDS(file.path(dir, 'creek_df_50m.rds'))
 
 df.50$wy <- factor(df.50$wy)
+
+fire <- 'creek'
+
+set.seed(14)
 
 # df.raw has unscaled values
 df.raw <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
@@ -79,13 +83,11 @@ burn.cols <- c(
 )
 
 
-# load results DF
-results <- readRDS(file.path(dir, 'modeling/base_model_results.rds'))
-coef.results <- readRDS(file.path(dir, 'modeling/base_modelcoef_results.rds'))
 
-set.seed(12)
-idx <- sample(seq_len(nrow(df.50)), 100000)
-df.50.samp <- df.50[sample(nrow(df.50), 100000), ]
+
+
+#idx <- sample(seq_len(nrow(df.50)), 100000)
+#df.50.samp <- df.50[sample(nrow(df.50), 100000), ]
 
 
 # ==============================================================================
@@ -94,18 +96,18 @@ df.50.samp <- df.50[sample(nrow(df.50), 100000), ]
 
 # create blank dataframes (commenting out so don't accidentally overwrite them)
 results <- data.frame()
-coef.results <- data.frame()
+#coef.results <- data.frame()
 
-clean.term.names <- function(x) {
-  x <- gsub('\\(Intercept\\)', 'Intercept', x)
-  x <- gsub('I\\((.*)\\^2\\)', '\\1_sq', x)
-  x <- gsub('[^[:alnum:]_]', '_', x)
-  x <- gsub('_+', '_', x)
-  x <- gsub('^_|_$', '', x)
-  x
-}
+#clean.term.names <- function(x) {
+#   x <- gsub('\\(Intercept\\)', 'Intercept', x)
+#   x <- gsub('I\\((.*)\\^2\\)', '\\1_sq', x)
+#   x <- gsub('[^[:alnum:]_]', '_', x)
+#   x <- gsub('_+', '_', x)
+#   x <- gsub('^_|_$', '', x)
+#   x
+# }
 
-add.model.results <- function(results.df, coef.df, model, name, type = 'exploratory', notes = NA) {
+#add.model.results <- function(results.df, coef.df, model, name, type = 'exploratory', notes = NA) {
   
   # check model class and extract coefficient matrix
   if (inherits(model, c('merMod', 'lm'))) {
@@ -194,7 +196,7 @@ add.model.results <- function(results.df, coef.df, model, name, type = 'explorat
   return(list(results.df = results.df, coef.df = coef.df))
 }
 
-plot.residuals <- function(model, name = NULL) {
+#plot.residuals <- function(model, name = NULL) {
   
   # get residuals and fitted
   res <- resid(model)
@@ -244,18 +246,16 @@ get.metrics <- function(model, name) {
 # ==============================================================================
 # GAM
 # ==============================================================================
-library(mgcv)
-library(plotmyGAM)
-set.seed(14)
-set.seed(72)
+
+
 
 # if sampling
 #df.test <- df.50[sample(nrow(df.50), 50000), ]
 # whole dataset
-df.test <- df.50
+#df.test <- df.50
 
-df.check <- df.test |>
-  dplyr::slice_sample(n = 100000)
+#df.check <- df.test |>
+  #dplyr::slice_sample(n = 100000)
 
 
 # ----- null model with just spatial term -----
@@ -1011,7 +1011,7 @@ gam.check(gam.test)
 
 
 
-# ------------------ stepwise for canopy metrics --------------------
+# ------------------ find best canopy-metrics-only model --------------------
 # ----- stepwise 1 -----
 # fit base model with the 2 variables we know we want to include
 canopy.gap.ht <- bam(
@@ -1307,8 +1307,8 @@ canopy <- bam(
   data = df.50,
   method = "fREML",
   discrete = TRUE)
-# -------------------- explore interactions ----------------------
-# ----- base canopy model -----
+# --------- explore interactions ---------
+# ----- final canopy-only model -----
 canopy <- bam(
   sqrt(swe_peak) ~
     wy +
@@ -1390,6 +1390,19 @@ results <- rbind(
 )
 
 # -------------------- base models -------------------------------
+# ----- canopy -----
+canopy <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
 # ----- cbi -----
 cbi <- bam(
   sqrt(swe_peak) ~
@@ -1503,6 +1516,201 @@ ggplot(
   )
 
 
+
+# -------------------- find best topo-canopy model ----------------------
+base.model <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE
+)
+
+results <- rbind(
+  results,
+  get.metrics(base.model, "no interactions")
+)
+
+# ----- explore interactions -----
+# gap / elev interaction
+gap.elev <- update(
+  base.model,
+  . ~ . + ti(topo_elev, gap_gap_pct, by = burned)
+)
+
+results <- rbind(
+  results,
+  get.metrics(gap.elev, "gap*elev")
+)
+
+# gap / rad_dtm interaction
+gap.rad <- update(
+  base.model,
+  . ~ . + ti(rad_dtm_accum, gap_gap_pct, by = burned)
+)
+
+results <- rbind(
+  results,
+  get.metrics(gap.rad, "gap*rad_dtm")
+)
+
+# gap / rad_dtm + rad / elev interaction
+gap.rad.gap.elev <- update(
+  base.model,
+  . ~ . + ti(rad_dtm_accum, gap_gap_pct, by = burned) + ti(topo_elev, gap_gap_pct, by = burned)
+)
+
+results <- rbind(
+  results,
+  get.metrics(gap.rad.gap.elev, "gap*rad_dtm and gap*elev")
+)
+
+
+results
+
+# ----- now try with k-fold -----
+model.formulas.swe.interactions <- list(
+  
+  no.interactions = 
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned),
+  
+  gap.elev = 
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(topo_elev, gap_gap_pct, by = burned),
+  
+  gap.rad = 
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(rad_dtm_accum, gap_gap_pct, by = burned),
+  
+  gap.elev.gap.rad = 
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(rad_dtm_accum, gap_gap_pct, by = burned) + 
+    ti(topo_elev, gap_gap_pct, by = burned)
+
+ )
+
+# run each model doing 5-fold cross validation
+results <- list()
+
+# define which set of models
+model.formulas.set <- model.formulas.swe.interactions
+
+for (fold in 1:5) {
+  
+  train <- filter(df.50, fold_id != fold)
+  test  <- filter(df.50, fold_id == fold)
+  
+  for (m in names(model.formulas.set)) {
+    
+    fit <- bam(
+      model.formulas.set[[m]],
+      data = train,
+      method = "fREML",
+      discrete = TRUE
+    )
+    
+    pred <- predict(fit, newdata = test)
+    
+    # sqrt scale
+    obs <- sqrt(test$swe_peak)
+    
+    rmse <- sqrt(mean((pred - obs)^2))
+    mae  <- mean(abs(pred - obs))
+    
+    # original SWE scale
+    pred.orig <- pred^2
+    obs.orig  <- test$swe_peak
+    
+    rmse.orig <- sqrt(mean((pred.orig - obs.orig)^2))
+    mae.orig  <- mean(abs(pred.orig - obs.orig))
+    
+    r2 <- 1 - sum((obs - pred)^2) /
+      sum((obs - mean(obs))^2)
+    
+    results[[length(results)+1]] <- data.frame(
+      fold = fold,
+      model = m,
+      r2 = r2,
+      rmse = rmse,
+      mae = mae,
+      rmse_orig = rmse.orig,
+      mae_orig = mae.orig
+    )
+  }
+}
+
+results <- bind_rows(results)
+
+summary.table <- results %>%
+  group_by(model) %>%
+  summarise(
+    r2_mean        = mean(r2),
+    rmse_mean      = mean(rmse),
+    mae_mean       = mean(mae),
+    rmse_orig_mean = mean(rmse_orig),
+    mae_orig_mean  = mean(mae_orig),
+    .groups = "drop"
+  ) %>%
+  arrange(rmse_orig_mean)
+
+summary.table
+
+# ----- best topo canopy model now: -----
+
+best.model <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(topo_elev, gap_gap_pct, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE
+)
 
 # LMs ===========================================================================
 #  

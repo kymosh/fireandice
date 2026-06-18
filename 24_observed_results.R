@@ -14,7 +14,7 @@ df.raw <- df.raw.0 %>%
   mutate(gap_gap_pct = gap_gap_pct * 100)
 
 # quick check to make sure there are no NAs
-colSums(is.na(df.raw))
+#colSums(is.na(df.raw))
 
 
 # ----- explore -----
@@ -254,4 +254,83 @@ ggplot(
   geom_line(linewidth = 1.2) +
   facet_wrap(~ elev_band) +
   scale_color_manual(values = burn.cols) +
+  theme_bw()
+
+# ----- distribution plots faceted by variable -----
+library(tidyverse)
+
+# plot looking at gap% and maxht density between burned and unburned
+plot.df <- df.raw %>%
+  select(
+    burned,
+    gap_gap_pct,
+    ht_zmax
+  ) %>%
+  pivot_longer(
+    cols = c(gap_gap_pct, ht_zmax),
+    names_to = 'variable',
+    values_to = 'value'
+  ) %>%
+  mutate(
+    variable = recode(
+      variable,
+      gap_gap_pct = 'Gap (%)',
+      ht_zmax = 'Maximum canopy height (m)'
+    ),
+    burned = factor(
+      burned,
+      levels = c('unburned', 'burned')
+    )
+  )
+
+# look at distribution of elevation and radiation
+plot.df <- df.raw %>%
+  select(
+    burned,
+    topo_elev,
+    rad_dtm_accum
+  ) %>%
+  pivot_longer(
+    cols = c(topo_elev, rad_dtm_accum),
+    names_to = 'variable',
+    values_to = 'value'
+  ) %>%
+  mutate(
+    variable = recode(
+      variable,
+      topo_elev = 'Elevation (m)',
+      ht_zmax = 'Radiation Value'
+    ),
+    burned = factor(
+      burned,
+      levels = c('unburned', 'burned')
+    )
+  )
+
+# distribution plot
+ggplot(
+  plot.df,
+  aes(
+    x = value,
+    fill = burned,
+    color = burned
+  )
+) +
+  geom_density(
+    alpha = 0.5,
+    linewidth = 0.5
+  ) +
+  facet_wrap(
+    ~ variable,
+    scales = 'free_x',
+    nrow = 1
+  ) +
+  scale_fill_manual(values = burn.cols) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = NULL,
+    y = 'Density',
+    fill = NULL,
+    color = NULL
+  ) +
   theme_bw()
