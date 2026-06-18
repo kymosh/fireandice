@@ -9,16 +9,16 @@ lapply(packages, library, character.only = T)
 # get dataframe
 # make sure if not on processing computer that the rds is updated!
 dir <- 'data/processed/processed/rds/creek' 
-df.5000 <- readRDS(file.path(dir, 'creek_df_500m.rds'))
+df.500 <- readRDS(file.path(dir, 'creek_df_500m.rds'))
 
 # explore sdd data
-hist(df.5000$sdd, breaks = 50)
-summary(df.5000$sdd)
-qqnorm(df.5000$sdd)
-qqline(df.5000$sdd)
-
-# quick check to make sure there are no NAs
-colSums(is.na(df.5000))
+# hist(df.500$sdd, breaks = 50)
+# summary(df.500$sdd)
+# qqnorm(df.500$sdd)
+# qqline(df.500$sdd)
+# 
+# # quick check to make sure there are no NAs
+# colSums(is.na(df.500))
 
 # function to add results to table
 get.metrics <- function(model, name) {
@@ -33,15 +33,16 @@ get.metrics <- function(model, name) {
     edf = sum(s$edf)
   )
 }
+
 results <- data.frame()
 
 # ==============================================================================
 # GAM
 # ==============================================================================
 # ----- null -----
-null <- gam(
+null <- bam(
   sdd ~ wy,
-  data = df.5000,
+  data = df.500,
   method = 'REML'
 )
 
@@ -52,7 +53,7 @@ results <- rbind(
 )
 
 # ----- topo -----
-topo <- gam(
+topo <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -73,7 +74,7 @@ results <- rbind(
 
 # ----- cbi and burned -----
 name <- 'topo + cbi'
-m3 <- gam(
+m3 <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -92,7 +93,7 @@ results <- rbind(
 )
 
 name <- 'topo + burned'
-m4 <- gam(
+m4 <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -124,7 +125,7 @@ metrics <- c(
   "gap_dist_to_canopy_mean",
   "gap_dist_to_canopy_max",
   "rad_dsm_melt",
-  names(df.5000)[grepl("^ht_", names(df.5000))]
+  names(df.500)[grepl("^ht_", names(df.500))]
 )
 
 results.metrics <- data.frame()
@@ -149,7 +150,7 @@ for (metric in metrics) {
   
   mod <- bam(
     form,
-    data = df.5000,
+    data = df.500,
     method = "fREML",
     discrete = TRUE
   )
@@ -174,12 +175,12 @@ results.metrics <- results.metrics[
 
 results.metrics
 
-cor(df.5000$ht_zmax, df.5000$ht_zpcum9, use = 'complete.obs')
+cor(df.500$ht_zmax, df.500$ht_zpcum9, use = 'complete.obs')
 
 
 # ----- canopy metric models -----
 name <- 'topo + gap(by b)'
-m5 <- gam(
+m5 <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -198,7 +199,7 @@ results <- rbind(
 )
 
 name <- 'topo + zmax'
-m6 <- gam(
+m6 <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -217,7 +218,7 @@ results <- rbind(
 )
 
 name <- 'topo + zpcum9'
-m7 <- gam(
+m7 <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -236,7 +237,7 @@ results <- rbind(
 )
 
 name <- 'topo + gap(by b) + zmax(by b)'
-m8 <- gam(
+m8 <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -256,7 +257,7 @@ results <- rbind(
 )
 
 name <- 'topo + gap(by b) + zpcum9(by b)'
-m9 <- gam(
+m9 <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -276,7 +277,7 @@ results <- rbind(
 )
 
 name <- 'topo + gap(by b) + zpcum9(by b) + zmax(by b)'
-m10 <- gam(
+m10 <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -568,7 +569,7 @@ results <- rbind(
   get.metrics(canopy, "canopy")
 )
 
-# ----- canopy -----
+# ----- rad.dsm -----
 rad.dsm <- bam(
   sdd ~
     wy +
@@ -603,6 +604,7 @@ topo <- bam(
     factor(wy) +
     s(topo_elev) +
     s(rad_dtm_accum) +
+    s(rad_dtm_melt) +
     s(topo_slope) +
     s(topo_tpi1200) +
     s(topo_tpi2010),
@@ -695,7 +697,7 @@ ggplot(
     y = expression('Adjusted '*R^2)
   )
 
-# ----- plot with with SWE and SDD results -----
+# ----- *plot with both SWE and SDD results* -----
 plot.df <- data.frame(
   model = rep(
     c(
@@ -808,6 +810,110 @@ ggplot(
       hjust = 1
     )
   )
+# ------------------- figure out best topo-canopy model -----------------
+# ----- models with interactions -----
+model.formulas.sdd.interactions <- list(
+  
+  no.interactions = 
+    sdd ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(rad_dtm_melt) +
+    s(topo_slope) +
+    s(topo_tpi1200) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned),
+  
+  gap.elev = 
+    sdd ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(rad_dtm_melt) +
+    s(topo_slope) +
+    s(topo_tpi1200) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(topo_elev, gap_gap_pct, by = burned),
+  
+  gap.rad.accum = 
+    sdd ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(rad_dtm_melt) +
+    s(topo_slope) +
+    s(topo_tpi1200) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(rad_dtm_accum, gap_gap_pct, by = burned),
+  
+  gap.rad.melt = 
+    sdd ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(rad_dtm_melt) +
+    s(topo_slope) +
+    s(topo_tpi1200) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(rad_dtm_melt, gap_gap_pct, by = burned),
+  
+  gap.rad.accum.melt = 
+    sdd ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(rad_dtm_melt) +
+    s(topo_slope) +
+    s(topo_tpi1200) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(rad_dtm_accum, gap_gap_pct, by = burned) +
+    ti(rad_dtm_melt, gap_gap_pct, by = burned),
+  
+  gap.elev.gap.rad = 
+    sdd ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(rad_dtm_melt) +
+    s(topo_slope) +
+    s(topo_tpi1200) +
+    s(topo_tpi2010) + 
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(rad_dtm_accum, gap_gap_pct, by = burned) + 
+    ti(topo_elev, gap_gap_pct, by = burned)
+  
+)
+
+
+# ----- best topo-canopy model -----
+
+topo.canopy <- bam(
+  sdd ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) + 
+    s(rad_dtm_melt) +
+    s(topo_slope) +
+    s(topo_tpi1200) +
+    s(topo_tpi2010) +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    ti(topo_elev, gap_gap_pct, by = burned),
+  data = df.500,
+  method = 'REML'
+)
+
 # ==============================================================================
 # Model Comparisons under k-fold validation
 # ==============================================================================
@@ -881,18 +987,24 @@ model.formulas <- list(
       s(ht_zmax, by = burned)
 )
 
-# run each model doing 5-fold cross validation
-k.results <- list()
+# ----- 5-fold cross validation -----
+
+# set what model set you want to test
+sdd.k.results <- list()
+
+k.results <- sdd.k.results
+
+model.formulas.set <- model.formulas.sdd.interactions
 
 for (fold in 1:5) {
   
-  train <- filter(df.5000, fold_id != fold)
-  test  <- filter(df.5000, fold_id == fold)
+  train <- filter(df.500, fold_id != fold)
+  test  <- filter(df.500, fold_id == fold)
   
-  for (m in names(model.formulas)) {
+  for (m in names(model.formulas.set)) {
     
     fit <- bam(
-      model.formulas[[m]],
+      model.formulas.set[[m]],
       data = train,
       method = "fREML",
       discrete = TRUE
