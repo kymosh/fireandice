@@ -45,6 +45,12 @@ df.raw <- df.raw %>%
     )
   )
 
+burn.cols <- c(
+  'unburned' = 'turquoise4',
+  'burned' = 'firebrick2'
+)
+
+
 
 gam.topo.canopy.best <- bam(
   sqrt(swe_peak) ~
@@ -102,13 +108,55 @@ pred.gap <- expand.grid(
   burned = levels(df.50$burned)
 )
 
-# hold everything else constant
+# --- unscale gap so we can match to realistic raw height values ---
+gap.mean <- mean(df.raw$gap_gap_pct, na.rm = TRUE)
+gap.sd <- sd(df.raw$gap_gap_pct, na.rm = TRUE)
+
+pred.gap$gap_raw <- pred.gap$gap_gap_pct * gap.sd + gap.mean
+pred.gap$gap_percent <- pred.gap$gap_raw * 100
+
+# --- predict at realistic heights ---
+# get typical canopy height for each gap bin and burn status
+ht.lookup <- df.raw %>%
+  mutate(gap.bin = ntile(gap_gap_pct, 100)) %>%
+  group_by(gap.bin, burned) %>%
+  summarize(
+    gap_lookup = mean(gap_gap_pct, na.rm = TRUE),
+    ht_lookup = mean(ht_zmax, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# assign each prediction row the typical height for that gap value and burn status
+pred.gap <- pred.gap %>%
+  group_by(burned) %>%
+  group_modify(~ {
+    lookup.b <- ht.lookup %>%
+      filter(burned == .y$burned) %>%
+      arrange(gap_lookup)
+    
+    .x %>%
+      mutate(
+        ht_raw = approx(
+          x = lookup.b$gap_lookup,
+          y = lookup.b$ht_lookup,
+          xout = gap_raw,
+          rule = 2
+        )$y
+      )
+  }) %>%
+  ungroup()
+
+# convert realistic raw height into scaled model units
+ht.mean <- mean(df.raw$ht_zmax, na.rm = TRUE)
+ht.sd <- sd(df.raw$ht_zmax, na.rm = TRUE)
+
+pred.gap$ht_zmax <- (pred.gap$ht_raw - ht.mean) / ht.sd
+
+# --- hold everything else constant --- 
 pred.gap$rad_dtm_accum <- 0
 pred.gap$topo_slope <- 0
 pred.gap$topo_tpi150 <- 0
 pred.gap$topo_tpi2010 <- 0
-pred.gap$ht_zmax <- 0
-
 pred.gap$topo_elev <- median(df.50$topo_elev)
 
 # choose representative year 
@@ -131,30 +179,26 @@ pred.gap$lwr <- (pred$fit - 1.96 * pred$se.fit)^2
 pred.gap$upr <- (pred$fit + 1.96 * pred$se.fit)^2
 
 
-# --- unscale ---
-gap.mean <- mean(df.raw$gap_gap_pct, na.rm = TRUE)
-gap.sd   <- sd(df.raw$gap_gap_pct, na.rm = TRUE)
-
-pred.gap$gap_raw <-
-  pred.gap$gap_gap_pct * gap.sd + gap.mean
-
-pred.gap$gap_percent <- pred.gap$gap_raw * 100
-
 # --- plot! ---
 ggplot(
   pred.gap,
   aes(x = gap_percent, y = fit, color = burned, fill = burned)
 ) +
-  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, color = NA) +
+  geom_ribbon(
+    aes(ymin = lwr, ymax = upr),
+    alpha = 0.2,
+    color = NA
+  ) +
   geom_line(linewidth = 1.2) +
-  scale_color_manual(values = c("unburned" = "lightblue", "burned" = "orange")) +
-  scale_fill_manual(values = c("unburned" = "gray60", "burned" = "orange")) +
+  scale_color_manual(values = burn.cols) +
+  scale_fill_manual(values = burn.cols) +
   theme_bw() +
   labs(
-    x = "Gap percentage",
-    y = "Predicted peak SWE",
+    x = 'Gap percentage',
+    y = 'Predicted peak SWE (m)',
     color = NULL,
-    fill = NULL
+    fill = NULL,
+    title = 'Water Year 2023'
   )
 
 gap.diff <- pred.gap %>%
@@ -973,6 +1017,22 @@ model.formulas <- list(
     s(topo_tpi150) +
     s(topo_tpi2010),
   
+  spatial =
+    sqrt(swe_peak) ~
+    wy +
+    s(x, y, bs = 'tp', k = 200),
+  
+  cbi =
+    sqrt(swe_peak) ~
+    wy +
+    cbibc
+  
+  cbi.smooth =
+    sqrt(swe_peak) ~
+    wy +
+    s(cbibc)
+  
+  
   topo_burned =
     sqrt(swe_peak) ~
     wy +
@@ -1115,4 +1175,126 @@ summary.table <- results %>%
   arrange(rmse_orig_mean)
 
 summary.table
+
+
+library(forcats)
+library(tidyverse)
+
+plot.dat <- results %>%
+  mutate(
+    model_label = recode(
+      model,
+      topo = 'Topo',
+      topo_burned = 'Topo + burn class',
+      topo_cbi = 'Topo + CBI',
+      topo_burned_cbi = 'Topo + burn + CBI',
+      topo_canopy = 'Topo + canopy',
+      topo_canopy_burned = 'Topo + canopy + burn',
+      topo_canopy_cbi = 'Topo + canopy + CBI',
+      topo_canopy_burned_cbi = 'Topo + canopy + burn + CBI'
+    )
+  )
+
+sum.dat <- plot.dat %>%
+  group_by(model_label) %>%
+  summarise(
+    r2_mean = mean(r2),
+    r2_sd = sd(r2),
+    r2_se = sd(r2) / sqrt(n()),
+    rmse_mean = mean(rmse_orig),
+    .groups = 'drop'
+  ) %>%
+  arrange(r2_mean) %>%
+  mutate(model_label = factor(model_label, levels = model_label))
+
+plot.dat <- plot.dat %>%
+  mutate(model_label = factor(model_label, levels = levels(sum.dat$model_label)))
+
+ggplot(sum.dat, aes(x = r2_mean, y = model_label)) +
+  geom_errorbar(
+    aes(xmin = r2_mean - r2_sd, xmax = r2_mean + r2_sd),
+    width = 0.2
+  ) +
+  geom_point(size = 3) +
+  geom_point(
+    data = plot.dat,
+    aes(x = r2, y = model_label),
+    alpha = 0.35,
+    size = 1.8,
+    inherit.aes = FALSE
+  ) +
+  labs(
+    x = 'Cross-validated R²',
+    y = NULL,
+    title = 'Canopy structure improves SWE prediction more than burn severity'
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+    plot.title = element_text(size = 13, face = 'bold')
+  )
+
+
+
+
+# ----- violin plot -----
+ggplot(df.raw,
+       aes(x = burned, y = swe_peak, fill = burned)) +
+  geom_violin(alpha = 0.7, trim = TRUE) +
+  geom_boxplot(width = 0.15, alpha = 0.7, outlier.shape = NA) +
+  facet_wrap(~ elev_band) +
+  scale_fill_manual(values = burn.cols) +
+  coord_cartesian(ylim = c(0, 3)) +
+  theme_bw() +
+  labs(
+    x = NULL,
+    y = 'Observed peak SWE (m)',
+    fill = NULL
+  )
+
+df.raw %>%
+  group_by(elev_band, burned) %>%
+  summarize(
+    mean_swe = mean(swe_peak),
+    se = sd(swe_peak) / sqrt(n()),
+    .groups = 'drop'
+  )
+
+swe.summary <- df.raw %>%
+  group_by(elev_band, burned) %>%
+  summarize(
+    mean_swe = mean(swe_peak),
+    se = sd(swe_peak) / sqrt(n()),
+    .groups = 'drop'
+  )
+
+ggplot(
+  swe.summary,
+  aes(
+    x = elev_band,
+    y = mean_swe,
+    color = burned
+  )
+) +
+  geom_point(
+    position = position_dodge(width = 0.3),
+    size = 3
+  ) +
+  geom_errorbar(
+    aes(
+      ymin = mean_swe - 1.96 * se,
+      ymax = mean_swe + 1.96 * se
+    ),
+    position = position_dodge(width = 0.3),
+    width = 0.15
+  ) +
+  scale_color_manual(values = burn.cols) +
+  theme_bw() +
+  labs(
+    x = NULL,
+    y = 'Observed peak SWE (m)',
+    color = NULL
+  )
 

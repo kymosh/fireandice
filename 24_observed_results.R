@@ -157,3 +157,101 @@ ggplot(df.gap.aspect,
   ) +
   facet_wrap(~aspect_class) +
   theme_bw()
+
+# ----- zmax vs gap pct -----
+ggplot(df.raw, aes(gap_gap_pct, ht_zmax, color = burned)) +
+  geom_point(alpha = 0.02) +
+  scale_color_manual(values = burn.cols) +
+  theme_bw()
+
+# ----- binned gap pct -----
+df.gap <- df.raw %>%
+  mutate(
+    gap.bin = ntile(gap_gap_pct, 20)
+  ) %>%
+  group_by(gap.bin, burned) %>%
+  summarize(
+    gap = mean(gap_gap_pct),
+    sdd = mean(sdd),
+    n = n(),
+    .groups = 'drop'
+  )
+
+ggplot(df.gap,
+       aes(gap, sdd,
+           color = burned)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2) +
+  scale_color_manual(values = burn.cols) +
+  theme_bw()
+
+cor(
+  df.raw$gap_gap_pct,
+  df.raw$ht_zmax,
+  use = 'complete.obs'
+)
+
+ggplot(df.raw,
+       aes(ht_zmax, sdd,
+           color = burned)) +
+  geom_smooth()
+
+# ----- max height -----
+df.ht <- df.raw %>%
+  mutate(
+    ht.bin = ntile(ht_zmax, 20)
+  ) %>%
+  group_by(ht.bin, burned) %>%
+  summarize(
+    ht = mean(ht_zmax),
+    sdd = mean(sdd),
+    n = n(),
+    .groups = 'drop'
+  )
+
+ggplot(
+  df.ht,
+  aes(ht, sdd, color = burned)
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point() +
+  scale_color_manual(values = burn.cols) +
+  theme_bw()
+
+# ----- statistics -----
+df.raw %>%
+  group_by(burned) %>%
+  summarize(
+    min_ht = min(ht_zmax),
+    q05 = quantile(ht_zmax, .05),
+    median_ht = median(ht_zmax),
+    q95 = quantile(ht_zmax, .95),
+    max_ht = max(ht_zmax)
+  )
+
+df.raw %>%
+  group_by(elev_band, burned) %>%
+  summarize(
+    mean_sdd = mean(sdd)
+  )
+
+# ----- x -----
+df.plot <- df.raw %>%
+  mutate(
+    gap.bin = ntile(gap_gap_pct, 20)
+  ) %>%
+  group_by(gap.bin, elev_band, burned) %>%
+  summarize(
+    gap = mean(gap_gap_pct),
+    sdd = mean(sdd),
+    .groups = 'drop'
+  )
+
+ggplot(
+  df.plot,
+  aes(gap, sdd, color = burned)
+) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~ elev_band) +
+  scale_color_manual(values = burn.cols) +
+  theme_bw()

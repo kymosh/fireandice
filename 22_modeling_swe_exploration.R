@@ -9,9 +9,74 @@ lapply(packages, library, character.only = T)
 # make sure if not on processing computer that the rds is updated!
 dir <- 'data/processed/processed/rds/creek' 
 
-df.50 <- readRDS(file.path(dir, 'creek_long_df_50m_clean.rds'))
-#df.500 <- readRDS(file.path(dir, 'creek_long_df_500m.rds')) let's just focus on df.50 for now. 
+df.50 <- readRDS(file.path(dir, 'creek_df_50m.rds'))
 
+df.50$wy <- factor(df.50$wy)
+
+# df.raw has unscaled values
+df.raw <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
+df.raw$wy <- factor(df.raw$wy)
+
+# add aspect class
+df.raw <- df.raw %>%
+  mutate(
+    aspect_class = case_when(
+      topo_aspect_cos > 0.5  ~ "North-facing",
+      topo_aspect_cos < -0.5 ~ "South-facing",
+      TRUE                   ~ NA_character_
+    )
+  )
+
+# add elev bands
+df.raw <- df.raw %>%
+  mutate(
+    elev_band = case_when(
+      topo_elev < 2000 ~ "Low (<2000 m)",
+      topo_elev < 2600 ~ "Mid (2000-2600 m)",
+      TRUE             ~ "High (>2600 m)"
+    ),
+    elev_band = factor(
+      elev_band,
+      levels = c(
+        "Low (<2000 m)",
+        "Mid (2000-2600 m)",
+        "High (>2600 m)"
+      )
+    )
+  )
+
+# add aspect class
+df.50 <- df.50 %>%
+  mutate(
+    aspect_class = case_when(
+      topo_aspect_cos > 0.5  ~ "North-facing",
+      topo_aspect_cos < -0.5 ~ "South-facing",
+      TRUE                   ~ NA_character_
+    )
+  )
+
+# add elev bands
+df.50 <- df.50 %>%
+  mutate(
+    elev_band = case_when(
+      topo_elev < 2000 ~ "Low (<2000 m)",
+      topo_elev < 2600 ~ "Mid (2000-2600 m)",
+      TRUE             ~ "High (>2600 m)"
+    ),
+    elev_band = factor(
+      elev_band,
+      levels = c(
+        "Low (<2000 m)",
+        "Mid (2000-2600 m)",
+        "High (>2600 m)"
+      )
+    )
+  )
+
+burn.cols <- c(
+  'unburned' = 'turquoise4',
+  'burned' = 'firebrick2'
+)
 
 
 # load results DF
@@ -858,7 +923,7 @@ qqline(residuals(gam.gamma))
 
 
 
-# ----- reduce canopy metrics -----
+# ----- reduced canopy metrics -----
 gam.test <- bam(
   sqrt(swe_peak) ~ 
     topo_elev + I(topo_elev^2) +
@@ -941,6 +1006,501 @@ gam.check(gam.test)
 
 
 
+
+
+
+
+
+# ------------------ stepwise for canopy metrics --------------------
+# ----- stepwise 1 -----
+# fit base model with the 2 variables we know we want to include
+canopy.gap.ht <- bam(
+  sqrt(swe_peak) ~
+  wy +
+  s(gap_gap_pct, by = burned) +
+  s(ht_zmax, by = burned),
+data = df.50,
+method = "fREML",
+discrete = TRUE)
+
+model.formulas <- list(
+  
+  canopy.gap.ht =
+    sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned),
+  
+  canopy.gap.ht.zpcum1 =
+    sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum1, by = burned)
+   ,
+  
+  canopy.gap.ht.zpcum2 =
+    sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned)
+  ,
+  
+  canopy.gap.ht.zsd =
+    sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zsd, by = burned)
+  ,
+  
+  canopy.gap.ht.zq95 =
+    sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zq95, by = burned)
+  ,
+ 
+  canopy.gap.ht.groundfrac =
+    sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(cover_ground_frac, by = burned)
+  ,
+  
+  canopy.gap.ht.disttocanopymean =
+    sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned)
+  ,
+  
+  canopy.gap.ht.zskew =
+    sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zskew, by = burned)
+)
+
+# run each model 
+results.canopy.stepwise <- list()
+
+for (m in names(model.formulas)) {
+    
+  fit <- bam(
+      model.formulas[[m]],
+      data = df.50,
+      method = "fREML",
+      discrete = TRUE
+    )
+    
+    pred <- predict(fit, newdata = df.50)
+    obs  <- sqrt(df.50$swe_peak) 
+    
+    r2 <- 1 - sum((obs - pred)^2, na.rm = TRUE) /
+      sum((obs - mean(obs, na.rm = TRUE))^2, na.rm = TRUE)
+
+    results.canopy.stepwise[[length(results.canopy.stepwise) + 1]] <- data.frame(
+      model = m,
+      aic = AIC(fit),
+      r2 = r2
+    )
+}
+
+
+
+results.canopy.stepwise <- bind_rows(results.canopy.stepwise) %>%
+  mutate(
+    delta_aic = aic - AIC(canopy.gap.ht)
+  ) %>%
+  arrange(delta_aic)
+
+results.canopy.stepwise
+
+# ----- stepwise 2 -----
+# fit base model with the 2 variables we know we want to include
+base.fit <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+candidates <- c(
+  'ht_zskew',
+  'cover_ground_frac',
+  'gap_dist_to_canopy_mean',
+  'ht_zq95',
+  'ht_zsd',
+  'ht_zpcum1'
+)
+
+results.canopy.stepwise.2 <- list()
+
+for (v in candidates) {
+  
+  f <- as.formula(
+    paste0('. ~ . + s(', v, ', by = burned)')
+  )
+  
+  fit <- update(base.fit, f)
+  
+  results.canopy.stepwise.2[[v]] <- data.frame(
+    variable = v,
+    aic = AIC(fit)
+  )
+}
+
+bind_rows(results.canopy.stepwise.2) %>%
+  mutate(
+    delta_aic = aic - AIC(base.fit)
+  ) %>%
+  arrange(delta_aic)
+
+canopy.gap.ht.zpcum2.groundfrac <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+summary(canopy.gap.ht.zpcum2.groundfrac)
+concurvity(canopy.gap.ht.zpcum2.groundfrac)
+
+plot(canopy.gap.ht.zpcum2.groundfrac,
+     pages = 1)
+
+par(mfrow = c(4, 2))
+
+plot(
+  canopy.gap.ht.zpcum2.groundfrac,
+  pages = 1,
+  shade = TRUE,
+  scale = 0
+)
+
+# ----- stepwise 3 -----
+base.fit <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+candidates <- c(
+  'ht_zskew',
+  'ht_zq95',
+  'ht_zsd',
+  'ht_zpcum1'
+)
+
+results.canopy.stepwise.3 <- list()
+
+for (v in candidates) {
+  
+  f <- as.formula(
+    paste0('. ~ . + s(', v, ', by = burned)')
+  )
+  
+  fit <- update(base.fit, f)
+  
+  results.canopy.stepwise.3[[v]] <- data.frame(
+    variable = v,
+    aic = AIC(fit)
+  )
+}
+
+bind_rows(results.canopy.stepwise.3) %>%
+  mutate(
+    delta_aic = aic - AIC(base.fit)
+  ) %>%
+  arrange(delta_aic)
+
+canopy.gap.ht.zpcum2.groundfrac.disttocanopy.zskew <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+
+summary(canopy.gap.ht.zpcum2.groundfrac.disttocanopy.zskew)
+
+# ----- stepwise 4 -----
+base.fit <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+candidates <- c(
+  'ht_zq95',
+  'ht_zsd',
+  'ht_zpcum1'
+)
+
+results.canopy.stepwise.4 <- list()
+
+for (v in candidates) {
+  
+  f <- as.formula(
+    paste0('. ~ . + s(', v, ', by = burned)')
+  )
+  
+  fit <- update(base.fit, f)
+  
+  results.canopy.stepwise.4[[v]] <- data.frame(
+    variable = v,
+    aic = AIC(fit)
+  )
+}
+
+bind_rows(results.canopy.stepwise.4) %>%
+  mutate(
+    delta_aic = aic - AIC(base.fit)
+  ) %>%
+  arrange(delta_aic)
+
+
+
+
+# ----- final canopy-only model after stepwise -----
+canopy <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+# -------------------- explore interactions ----------------------
+# ----- base canopy model -----
+canopy <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+
+results <- rbind(
+  results,
+  get.metrics(canopy, "Canopy")
+)
+
+
+# gap / height interaction
+canopy.int.gap.ht <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned) +
+    ti(gap_gap_pct, ht_zmax, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(canopy.int.gap.ht, "Canopy interactions: gap / ht")
+)
+
+# gap / groundfrac interaction
+canopy.int.gap.groundfrac <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned) +
+    ti(gap_gap_pct, cover_ground_frac, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(canopy.int.gap.groundfrac, "Canopy interactions: gap / groundfrac")
+)
+
+# gap / distgap interaction
+canopy.int.gap.distgap <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned) +
+    ti(gap_gap_pct, gap_dist_to_canopy_mean, by = burned),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(canopy.int.gap.distgap, "Canopy interactions: gap / groundfrac")
+)
+
+# -------------------- base models -------------------------------
+# ----- cbi -----
+cbi <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(cbibc),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(cbi, "cbi")
+)
+
+# ----- topo -----
+topo <- bam(
+  sqrt(swe_peak) ~
+    factor(wy) +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE
+)
+
+results <- rbind(
+  results,
+  get.metrics(topo, "topo")
+)
+
+# ----- spatial smooth -----
+spatial <- bam(
+  sqrt(swe_peak) ~ factor(wy) +
+    s(x, y, bs = 'tp', k = 200),
+  data = df.50,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+results <- rbind(
+  results,
+  get.metrics(spatial, "spatial")
+)
+
+# ----- wy only -----
+
+wy <- bam(
+  sqrt(swe_peak) ~ wy,
+  data = df.50,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+results <- rbind(
+  results,
+  get.metrics(wy, "wy")
+)
+
+results 
+
+singe.type.model.results <- results
+
+# ----- plot comparing model results -----
+plot.df <- data.frame(
+  model = c(
+    'WY only',
+    'WY + CBI',
+    'WY + Canopy',
+    'WY + Topography',
+    'WY + Spatial'
+  ),
+  r2 = c(
+    0.475,
+    0.591,
+    0.634,
+    0.806,
+    0.845
+  )
+)
+
+plot.df$model <- factor(
+  plot.df$model,
+  levels = rev(plot.df$model)
+)
+
+ggplot(
+  plot.df,
+  aes(x = model, y = r2, fill = model)
+) +
+  geom_col(width = 0.8) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c(
+      'WY only' = 'cyan4',
+      'WY + CBI' = 'darkkhaki',
+      'WY + Canopy' = 'darkseagreen4',
+      'WY + Topography' = 'darkslategrey',
+      'WY + Spatial' = 'goldenrod2'
+    )
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = 'none'
+  ) +
+  labs(
+    x = NULL,
+    y = expression('Adjusted '*R^2)
+  )
 
 
 

@@ -610,10 +610,10 @@ global(diff.pct, quantile, probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE)
 # ===========================================================================================
 
 # ----- compute accumulation/melt metric -----
-
+files <- list.files(dir, pattern = paste0('^', fire, '_rad_global_', surface, '_day\\d+_5m\\.tif$'), full.names = TRUE)
 season_rad <- function(dir, surface) {
   
-  files <- list.files(dir, pattern = paste0('^rad_global_', surface, '_day\\d+_5m\\.tif$'), full.names = TRUE)
+  files <- list.files(dir, pattern = paste0('^', fire, '_rad_global_', surface, '_day\\d+_5m\\.tif$'), full.names = TRUE)
 
   # order files sequentially by day
   days <- as.numeric(gsub('.*day|_5m\\.tif', '', basename(files)))
@@ -652,7 +652,8 @@ season_rad <- function(dir, surface) {
 
 # run function
 
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/5m/creek_rad' # from my comp
+fire <- 'caldor'
+dir <- paste0('J:/Fire_Snow/fireandice/data/processed/processed/tif/5m/', fire, '/rad') # from my comp
 #dir <- 'data/processed/processed/tif/5m/creek_rad'   # from processing comp
 
 dtm.rad <- season_rad(dir, 'dtm')
