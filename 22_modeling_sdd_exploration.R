@@ -556,10 +556,11 @@ results <- data.frame()
 canopy <- bam(
   sdd ~
     wy +
-    s(gap_gap_pct, by = burned) +
-    s(ht_zmax, by = burned) +
-    s(ht_zpcum2, by = burned) +
-    s(ht_zpcum1, by = burned),
+    s(topo_elev) +
+    s(gap_gap_pct) +
+    s(ht_zmax) +
+    s(ht_zpcum2) +
+    s(ht_zpcum1),
   data = df.500,
   method = "fREML",
   discrete = TRUE)
@@ -573,8 +574,9 @@ results <- rbind(
 rad.dsm <- bam(
   sdd ~
     wy +
-    s(rad_dsm_accum, by = burned) +
-    s(rad_dsm_melt, by = burned),
+    s(topo_elev) +
+    s(rad_dsm_accum) +
+    s(rad_dsm_melt),
   data = df.500,
   method = "fREML",
   discrete = TRUE)
@@ -588,6 +590,7 @@ results <- rbind(
 cbi <- bam(
   sdd ~
     wy +
+    s(topo_elev) +
     s(cbibc),
   data = df.500,
   method = "fREML",
@@ -596,6 +599,21 @@ cbi <- bam(
 results <- rbind(
   results,
   get.metrics(cbi, "cbi")
+)
+
+# ----- burn status -----
+burned <- bam(
+  sdd ~
+    wy +
+    s(topo_elev) +
+    burned,
+  data = df.500,
+  method = "fREML",
+  discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(burned, "burn status")
 )
 
 # ----- topo -----
@@ -612,11 +630,30 @@ topo <- bam(
   method = "fREML",
   discrete = TRUE
 )
-
 results <- rbind(
   results,
   get.metrics(topo, "topo")
 )
+
+# ----- canopy + severity -----
+canopy.cbi <- bam(
+  sdd ~
+    wy +
+    s(topo_elev) +
+    s(gap_gap_pct) +
+    s(ht_zmax) +
+    s(ht_zpcum2) +
+    s(cbibc) +
+    s(ht_zpcum1),
+  data = df.500,
+  method = "fREML",
+  discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(canopy.cbi, "canopy + severity")
+)
+
 
 # ----- spatial smooth -----
 spatial <- bam(
@@ -635,7 +672,8 @@ results <- rbind(
 # ----- wy only -----
 
 wy <- bam(
-  sdd ~ wy,
+  sdd ~ wy +
+  s(topo_elev),
   data = df.500,
   method = 'fREML',
   discrete = TRUE
@@ -651,6 +689,167 @@ results
 singe.type.model.results.sdd <- results
 
 # ----- plot comparing model results -----
+# ----- AFTER adding elev to base models -----
+plot.df <- data.frame(
+  model = c(
+    'WY + Elevation only',
+    'WY + Elevation + CBI',
+    'WY + Elevation + Canopy',
+    'WY + Elevation + Topography',
+    'WY + Spatial'
+  ),
+  r2 = c(
+    0.79,
+    0.80,
+    0.83,
+    0.82,
+    0.88
+  )
+)
+
+plot.df$model <- factor(
+  plot.df$model,
+  levels = rev(plot.df$model)
+)
+
+ggplot(
+  plot.df,
+  aes(x = model, y = r2, fill = model)
+) +
+  geom_col(width = 0.8) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c(
+      'WY + Elevation only' = 'cyan4',
+      'WY + Elevation + CBI' = 'darkkhaki',
+      'WY + Elevation + Canopy' = 'darkseagreen4',
+      'WY + Elevation + Topography' = 'darkslategrey',
+      'WY + Spatial' = 'goldenrod2'
+    )
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = 'none'
+  ) +
+  labs(
+    x = NULL,
+    y = expression('Adjusted '*R^2)
+  )
+
+# ----- AFTER adding elev - plot with both SWE and SDD results-----
+plot.df <- data.frame(
+  model = rep(
+    c(
+      'WY + Elevation only',
+      'WY + Elevation + CBI',
+      'WY + Elevation + Canopy',
+      'WY + Elevation + Topography',
+      'WY + Spatial'
+    ),
+    2
+  ),
+  response = rep(
+    c('SWE', 'SDD'),
+    each = 5
+  ),
+  r2 = c(
+    # SWE
+    0.76,
+    0.76,
+    0.77,
+    0.81,
+    0.84,
+    
+    # SDD
+    0.79,
+    0.80,
+    0.83,
+    0.82,
+    0.88
+  )
+)
+
+plot.df$model <- factor(
+  plot.df$model,
+  levels = c(
+    'WY + Elevation only',
+    'WY + Elevation + CBI',
+    'WY + Elevation + Canopy',
+    'WY + Elevation + Topography',
+    'WY + Spatial'
+  )
+)
+
+plot.df$fill.grp <- paste(plot.df$model, plot.df$response)
+
+ggplot(
+  plot.df,
+  aes(
+    x = model,
+    y = r2,
+    fill = fill.grp
+  )
+) +
+  geom_col(
+    position = position_dodge(width = 0.8),
+    width = 0.7
+  ) +
+  scale_fill_manual(
+    values = c(
+      
+      # WY
+      'WY + Elevation only SWE' = 'cyan4',
+      'WY + Elevation only SDD' = 'cyan2',
+      
+      # CBI
+      'WY + Elevation + CBI SWE' = 'darkkhaki',
+      'WY + Elevation + CBI SDD' = 'khaki2',
+      
+      # Canopy
+      'WY + Elevation + Canopy SWE' = 'darkseagreen4',
+      'WY + Elevation + Canopy SDD' = 'darkseagreen2',
+      
+      # Topography
+      'WY + Elevation + Topography SWE' = 'darkslategrey',
+      'WY + Elevation + Topography SDD' = 'darkslategray3',
+      
+      # Spatial
+      'WY + Spatial SWE' = 'goldenrod4',
+      'WY + Spatial SDD' = 'goldenrod2'
+    ),
+    labels = c(
+      'WY + Elevation only (SWE)',
+      'WY + Elevation only (SDD)',
+      'CBI + Elevation (SWE)',
+      'CBI + Elevation (SDD)',
+      'Canopy + Elevation (SWE)',
+      'Canopy + Elevation (SDD)',
+      'Topography + Elevation (SWE)',
+      'Topography + Elevation (SDD)',
+      'Spatial (SWE)',
+      'Spatial (SDD)'
+    )
+  ) +
+  geom_text(
+    aes(label = round(r2, 3)),
+    position = position_dodge(width = 0.8),
+    vjust = -0.3,
+    size = 3
+  ) +
+  expand_limits(y = 0.95) +
+  theme_bw() +
+  labs(
+    x = NULL,
+    y = expression('Adjusted '*R^2),
+    fill = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(
+      angle = 30,
+      hjust = 1
+    )
+  )
+# ----- BEFORE adding elev to base models-----
 plot.df <- data.frame(
   model = c(
     'WY only',
@@ -697,7 +896,7 @@ ggplot(
     y = expression('Adjusted '*R^2)
   )
 
-# ----- *plot with both SWE and SDD results* -----
+# ----- BEFORE adding elev - plot with both SWE and SDD results-----
 plot.df <- data.frame(
   model = rep(
     c(
@@ -1044,3 +1243,7 @@ summary.table <- k.results %>%
   arrange(rmse_mean)
 
 summary.table
+
+
+# ----- cbi and elev -----
+

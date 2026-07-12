@@ -2,13 +2,14 @@
 #  SDD
 # ==============================================================================
 
-# ----- initialize dataframe -----
+# ----- SDD - initialize dataframe -----
 fire <- 'creek'
 
 dir <- paste0('data/processed/processed/rds/', fire)
+
+# pick one
 df.500 <- readRDS(file.path(paste0(dir, '/', fire, '_df_500m.rds')))
 df.raw.0 <- readRDS(file.path(paste0(dir, '/', fire, '_long_df_500m_raw.rds')))
-
    
 df.raw <- df.raw.0 %>% 
   mutate(gap_gap_pct = gap_gap_pct * 100)
@@ -16,6 +17,52 @@ df.raw <- df.raw.0 %>%
 # quick check to make sure there are no NAs
 #colSums(is.na(df.raw))
 
+
+# ----- SWE - initialize df -----
+
+dir <- 'data/processed/processed/rds/creek' 
+df.50 <- readRDS(file.path(dir, 'creek_df_50m.rds'))
+df.50$wy <- factor(df.50$wy)
+fire <- 'creek'
+set.seed(14)
+
+# df.raw has unscaled values
+df.raw <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
+df.raw$wy <- factor(df.raw$wy)
+
+# add aspect class
+df.raw <- df.raw %>%
+  mutate(
+    aspect_class = case_when(
+      topo_aspect_cos > 0.5  ~ "North-facing",
+      topo_aspect_cos < -0.5 ~ "South-facing",
+      TRUE                   ~ NA_character_
+    )
+  )
+
+# add elev bands
+df.raw <- df.raw %>%
+  mutate(
+    elev_band = case_when(
+      topo_elev < 2000 ~ "Low (<2000 m)",
+      topo_elev < 2600 ~ "Mid (2000-2600 m)",
+      TRUE             ~ "High (>2600 m)"
+    ),
+    elev_band = factor(
+      elev_band,
+      levels = c(
+        "Low (<2000 m)",
+        "Mid (2000-2600 m)",
+        "High (>2600 m)"
+      )
+    )
+  )
+
+# add aspect class
+df.50$aspect_class <- df.raw$aspect_class
+
+# add elevation band
+df.50$elev_band <- df.raw$elev_band
 
 # ----- explore -----
 
@@ -67,6 +114,31 @@ ggplot(df.raw,
   geom_violin(alpha = 0.7) +
   geom_boxplot(width = 0.15,
                alpha = 0.7) +
+  scale_fill_manual(values = burn.cols) +
+  labs(
+    x = NULL,
+    y = 'Snow disappearance date (DOY)'
+  ) +
+  theme_bw()
+
+# faceted by elevation
+ggplot(
+  df.raw,
+  aes(
+    burned,
+    sdd,
+    fill = burned
+  )
+) +
+  geom_violin(alpha = 0.7) +
+  geom_boxplot(
+    width = 0.15,
+    alpha = 0.7
+  ) +
+  facet_wrap(
+    ~ elev_band,
+    nrow = 1
+  ) +
   scale_fill_manual(values = burn.cols) +
   labs(
     x = NULL,
@@ -259,7 +331,7 @@ ggplot(
 # ----- distribution plots faceted by variable -----
 library(tidyverse)
 
-# plot looking at gap% and maxht density between burned and unburned
+# distribution plot of gap% and maxht between burned and unburned
 plot.df <- df.raw %>%
   select(
     burned,
@@ -283,7 +355,7 @@ plot.df <- df.raw %>%
     )
   )
 
-# look at distribution of elevation and radiation
+# distribution of elevation and radiation
 plot.df <- df.raw %>%
   select(
     burned,
@@ -307,6 +379,7 @@ plot.df <- df.raw %>%
     )
   )
 
+# plug in either of above
 # distribution plot
 ggplot(
   plot.df,
@@ -334,3 +407,200 @@ ggplot(
     color = NULL
   ) +
   theme_bw()
+
+# ----- gap and ht distributions across CBI -----
+# --- gap ---
+
+df.plot <- df.raw %>%
+  mutate(
+    cbi.class = cut(
+      cbibc,
+      breaks = c(-Inf, 0.1, 1.25, 2.25, Inf),
+      labels = c(
+        'Unburned',
+        'Low',
+        'Moderate',
+        'High'
+      )
+    )
+  )
+
+ggplot(
+  df.plot,
+  aes(
+    x = gap_gap_pct,
+    fill = cbi.class
+  )
+) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(
+    values = c(
+      'Unburned' = 'grey60',
+      'Low' = '#7CAE00',
+      'Moderate' = '#00BFC4',
+      'High' = '#C77CFF'
+    )
+  ) +
+  theme_bw() +
+  labs(
+    x = 'Gap (%)',
+    y = 'Density',
+    fill = 'Fire Severity'
+  )
+
+# --- ht ---
+ggplot(
+  df.plot,
+  aes(
+    x = ht_zmax,
+    fill = cbi.class
+  )
+) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(
+    values = c(
+      'Unburned' = 'grey60',
+      'Low' = '#7CAE00',
+      'Moderate' = '#00BFC4',
+      'High' = '#C77CFF'
+    )
+  ) +
+  theme_bw() +
+  labs(
+    x = 'Maximum Height',
+    y = 'Density',
+    fill = 'Fire Severity'
+  )
+
+
+
+# ----- observed response plot (similar to pdp) -----
+plot.df <- df.500 %>%
+  filter(wy == 2023) %>%
+  mutate(
+    gap_percent = gap_gap_pct * 100
+  )
+
+ggplot(
+  plot.df,
+  aes(
+    x = gap_percent,
+    y = sdd,
+    color = burned,
+    fill = burned
+  )
+) +
+  geom_smooth(
+    method = 'gam',
+    formula = y ~ s(x, k = 6),
+    linewidth = 1.2,
+    alpha = 0.2
+  ) +
+  facet_wrap(
+    ~ elev_band,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  scale_fill_manual(values = burn.cols) +
+  theme_bw() +
+  labs(
+    x = 'Gap (%)',
+    y = 'SDD',
+    color = NULL,
+    fill = NULL
+  )
+
+# SWE
+df.50 %>%
+  count(elev_band)
+
+plot.df <- df.50 %>%
+  filter(wy == 2023) %>%
+  mutate(
+    gap_percent = gap_gap_pct * 100
+  ) %>%
+  filter(
+    !is.na(swe_peak),
+    !is.na(gap_percent),
+    !is.na(elev_band),
+    !is.na(burned)
+  )
+
+ggplot(
+  plot.df,
+  aes(
+    x = gap_percent,
+    y = swe_peak,
+    color = burned,
+    fill = burned
+  )
+) +
+  geom_smooth(
+    method = 'gam',
+    formula = y ~ s(x, k = 6),
+    linewidth = 1.2,
+    alpha = 0.2
+  ) +
+  facet_wrap(
+    ~ elev_band,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  scale_fill_manual(values = burn.cols) +
+  theme_bw() +
+  labs(
+    x = 'Gap (%)',
+    y = 'Peak SWE',
+    color = NULL,
+    fill = NULL
+  )
+
+
+# troubleshooting
+df.plot %>%
+  group_by(cbi.class) %>%
+  summarize(
+    zmean = median(ht_zmean, na.rm = TRUE),
+    zsd = median(ht_zsd, na.rm = TRUE),
+    zq95 = median(ht_zq95, na.rm = TRUE),
+    zpcum9 = median(ht_zpcum9, na.rm = TRUE),
+    zmax = median(ht_zmax, na.rm = TRUE)
+  )
+
+
+df.plot %>%
+  group_by(cbi.class) %>%
+  summarize(
+    elev = mean(topo_elev, na.rm = TRUE)
+  )
+
+ggplot(
+  df.plot,
+  aes(topo_elev, ht_zmax)
+) +
+  geom_point(alpha = 0.01)
+
+ggplot(
+  df.plot,
+  aes(ht_zmax, fill = cbi.class)
+) +
+  geom_density(alpha = 0.4) +
+  facet_wrap(~elev_band)
+
+summary(df.raw$ht_zmax)
+
+quantile(
+  df.raw$ht_zmax,
+  probs = c(0.95, 0.99, 0.999, 0.9999, 1),
+  na.rm = TRUE
+)
+
+df.raw %>%
+  filter(ht_zmax > 75) %>%
+  select(ht_zmax, x, y)
+
+ggplot(df.plot) +
+  geom_point(
+    aes(x, y, color = ht_zmax),
+    size = 0.1
+  )

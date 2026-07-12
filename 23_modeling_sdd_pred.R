@@ -1,11 +1,22 @@
 fire <- 'creek'
 
 dir <- paste0('data/processed/processed/rds/', fire)
-df.500 <- readRDS(file.path(paste0(dir, '/', fire, '_df_500m.rds')))
-df.raw <- readRDS(file.path(paste0(dir, '/', fire, '_long_df_500m_raw.rds')))
+df.500.0 <- readRDS(file.path(paste0(dir, '/', fire, '_df_500m.rds')))
+df.raw.0 <- readRDS(file.path(paste0(dir, '/', fire, '_long_df_500m_raw.rds')))
+
+# trim to years 2023 and up
+df.raw <- df.raw.0 %>%
+  filter(wy %in% c(2023, 2024, 2025))
+
+
+df.500 <- df.500.0 %>%
+  semi_join(
+    df.raw %>% select(cell, wy),
+    by = c('cell', 'wy')
+  )
 
 # best model
-sdd.best <- gam(
+best.model.sdd <- bam(
   sdd ~
     wy +
     s(topo_elev) +
@@ -15,7 +26,8 @@ sdd.best <- gam(
     s(topo_tpi1200) +
     s(topo_tpi2010) +
     s(gap_gap_pct, by = burned) +
-    s(ht_zmax, by = burned),
+    s(ht_zmax, by = burned) +
+    ti(topo_elev, gap_gap_pct, by = burned),
   data = df.500,
   method = 'REML'
 )
@@ -114,7 +126,7 @@ predict.df$burned <- factor(predict.df$burned, levels = levels(df.500$burned))
 
 # --- predict SDD from the GAM ---
 pred <- predict(
-  sdd.best,
+  best.model.sdd,
   newdata = predict.df,
   se.fit = TRUE)
 
@@ -236,6 +248,118 @@ ggplot(
     title = 'Water Year 2023'
   )
 
+# ==============================================================================
+#  Scenario : how does increasing gap size affect swe between burned and unburned?
+# ==============================================================================
+# --- gap bins from observed raw data ---
+height.by.gap <- df.raw %>%
+  filter(
+    !is.na(gap_gap_pct),
+    !is.na(ht_zmax),
+    !is.na(burned)
+  ) %>%
+  mutate(
+    gap_percent = gap_gap_pct * 100,
+    gap_bin = cut(
+      gap_percent,
+      breaks = seq(0, 100, by = 5),
+      include.lowest = TRUE
+    )
+  ) %>%
+  group_by(burned, gap_bin) %>%
+  summarize(
+    gap_gap_pct_raw = mean(gap_gap_pct, na.rm = TRUE),
+    gap_percent = mean(gap_percent, na.rm = TRUE),
+    ht_zmax_raw = mean(ht_zmax, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  filter(n >= 20)
 
+# --- scaling values from raw data ---
+gap.mean <- mean(df.raw$gap_gap_pct, na.rm = TRUE)
+gap.sd <- sd(df.raw$gap_gap_pct, na.rm = TRUE)
 
+ht.mean <- mean(df.raw$ht_zmax, na.rm = TRUE)
+ht.sd <- sd(df.raw$ht_zmax, na.rm = TRUE)
+
+# --- prediction dataframe ---
+pred.scenario.sdd <- height.by.gap %>%
+  mutate(
+    gap_gap_pct = (gap_gap_pct_raw - gap.mean) / gap.sd,
+    ht_zmax = (ht_zmax_raw - ht.mean) / ht.sd,
+    
+    wy = factor('2023', levels = levels(df.500$wy)),
+    
+    topo_elev = 0,
+    rad_dtm_accum = 0,
+    rad_dtm_melt = 0,
+    topo_slope = 0,
+    topo_tpi2010 = 0,
+    topo_tpi1200 = 0,
+    
+    burned = factor(burned, levels = levels(df.500$burned))
+  )
+
+# --- predict SDD ---
+pred.scenario.sdd$pred_sdd <- predict(
+  best.model.sdd,
+  newdata = pred.scenario.sdd,
+  type = 'response'
+)
+
+# --- plot ---
+ggplot(
+  pred.scenario.sdd,
+  aes(x = gap_percent, y = pred_sdd, color = burned)
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(aes(size = n), alpha = 0.7) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Gap (%)',
+    y = 'Predicted snow disappearance date (DOY)',
+    color = NULL,
+    size = 'n'
+  ) +
+  theme_bw()
+
+# ==============================================================================
+#  Scenario : Across the observed range of topography and forest structure, how much later would snow disappear if every location were unburned versus burned
+# ==============================================================================
+# create 2 copies of data
+dat.unburned <- df.500
+dat.burned <- df.500
+
+dat.unburned$burned <- 'unburned'
+dat.burned$burned <- 'burned'
+
+dat.unburned$burned <- factor(
+  dat.unburned$burned,
+  levels = levels(df.500$burned)
+)
+
+dat.burned$burned <- factor(
+  dat.burned$burned,
+  levels = levels(df.500$burned)
+)
+
+# predict both
+pred.unburned <- predict(
+  best.model.sdd,
+  newdata = dat.unburned,
+  type = 'response'
+)
+
+pred.burned <- predict(
+  best.model.sdd,
+  newdata = dat.burned,
+  type = 'response'
+)
+
+mean(pred.unburned - pred.burned)
+quantile(
+  pred.unburned - pred.burned,
+  probs = c(.05, .25, .5, .75, .95)
+)
 

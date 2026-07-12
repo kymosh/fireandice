@@ -83,50 +83,14 @@ file.rename(aso.files, new.paths)
 # ----------------------------------------------------------------------------------
 # SWE
 # ----------------------------------------------------------------------------------
-# reclip to match new elevation
-
-# open one file just to test
-swe <- rast(here('data', 'processed', 'processed', 'tif', 'ASO_SanJoaquin_2025_0509_swe_50m_clipped_5000.tif'))
-plot(swe)
-res(swe) #confirm resolution is exactly 50x50
-# this is the dem that has already been clipped to the correct elevations
-dem.elev <- rast(here('data', 'processed', 'processed', 'tif', 'nasadem_Creek_elev.tif'))
-
-
-swe.clipped <- mask(swe, elev.mask.50m)
-plot(swe.clipped)
 
 
 
-# create elevation mask
-elev.mask <- dem.elev
-elev.mask[!is.na(elev.mask)] <- 1
-# resample mask to 50m
-elev.mask.50m <- resample(elev.mask, swe, method = 'average')
-
-# list ASO_SanJoaquin files to be changed
-aso <- list.files(out.dir, pattern = '^ASO_SanJoaquin', full.names = T)
-
-for (f in aso) {
-  r <- rast(f)
-  r.50m <- resample(r, swe, method = 'near') # necessary because some files have res of 50.0001x50.0001
-  r.elev <- mask(r.50m, elev.mask.50m)
-  
-  new.name <- sub('clipped_5000', '1524_2674', basename(f))
-  out.name <- file.path(out.dir, new.name)
-  writeRaster(r.elev, out.name, overwrite = T)
-}
-
-test <- rast(here(out.dir, 'ASO_SanJoaquin_2023_0121_swe_50m_1524_2674.tif'))
-plot(test)
-
-# some SWE data have mismatched extents
-# crop all to the ref file
 
 
 # ----- check all origins/res/crs -----
 
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/snow_metrics'
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/snow_metrics'
 aso.files <- list.files(out.dir, pattern = '^ASO_', full.names = TRUE)
 
 # check CRS
@@ -217,11 +181,16 @@ plot(rast(aso.files[55]))
 
 
 
+# ----------------------------------------------------------------------------------
+# ------- combine into single SWE rasterstack * if only one watershed * -------
+# ----------------------------------------------------------------------------------
+# --- creek ---
+out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/snow_metrics'
+aso.files <- list.files(out.dir, pattern = '^ASO_', full.names = TRUE)
 
-# ------- combine into single SWE rasterstack -------
 swe.stack <- rast(aso.files)
 
-# --- fix names
+# - fix names -
 
 fn <- basename(aso.files) # list all file names
 dates <- sub('ASO_SanJoaquin_(\\d{4}_\\d{4}).*', '\\1', fn) # extract dates
@@ -238,11 +207,37 @@ names(swe.stack)
 
 writeRaster(swe.stack, file.path(out.dir, 'creek_swe_50m.tif'))
 
-# --------------------------------------------------------------------------------
-# find peak swe for each year
-# --------------------------------------------------------------------------------
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
-swe <- rast(file.path(out.dir, 'creek_swe_50m.tif'))
+# --- dixie ---
+out.dir <- 'data/processed/processed/tif/50m/snow_metrics'
+aso.files <- list.files(out.dir, pattern = '^ASO_Feather', full.names = TRUE)
+
+swe.stack <- rast(aso.files)
+
+# - fix names -
+
+fn <- basename(aso.files) # list all file names
+dates <- sub(
+  paste0('ASO_', watershed, '_(\\d{8}).*'),
+  '\\1',
+  fn
+)
+date.vec <- as.Date(dates, format = '%Y%m%d') # format as date
+
+# set layer names with swe prefix
+names(swe.stack) <- paste0('swe_', format(date.vec, '%Y%m%d'))
+
+#store true time dimension
+time(swe.stack) <- date.vec
+
+names(swe.stack)
+
+writeRaster(swe.stack, 'data/processed/processed/tif/50m/dixie/snow_metrics/dixie_swe_50m.tif')
+
+# ----- find peak swe for each year -----
+
+fire <- 'dixie'
+out.dir <- paste0('data/processed/processed/tif/50m/', fire, '/snow_metrics/')
+swe <- rast(paste0(out.dir, fire, '_swe_50m.tif'))
 
 # extract WY from dates
 wy <- format(time(swe), '%Y')
@@ -257,12 +252,152 @@ names(swe.peak) <- paste0('swe_peak_wy', years)
 
 names(swe.peak)
 
-writeRaster(swe.peak, file.path(out.dir, 'creek_swe_peak_50m_1524.tif'))
+writeRaster(swe.peak, paste0(out.dir, fire, '_swe_peak_50m.tif'))
 
-# ---- aggregate PEAK swe to 500m for sdd -------
 
-target <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek/snow_metrics/creek_sdd_wy2021_32611_1524.tif')
-out.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
+# ----------------------------------------------------------------------------------
+# ------- combine into single SWE rasterstack * if more than one watershed * -------
+# ----------------------------------------------------------------------------------
+fire <- 'caldor'
+watersheds <- 'American|Truckee'
+
+in.dir <- 'data/processed/processed/tif/50m/snow_metrics'
+
+out.dir <- file.path(
+  'data/processed/processed/tif/50m',
+  fire,
+  'snow_metrics'
+)
+
+dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
+
+# identify SWE files for both watersheds
+aso.files <- list.files(
+  in.dir,
+  pattern = paste0('^ASO_(', watersheds, ')_\\d{8}_swe_50m_clipped\\.tif$'),
+  full.names = TRUE
+)
+
+# extract file information
+file.info <- data.frame(
+  file = aso.files,
+  filename = basename(aso.files)
+) %>%
+  mutate(
+    watershed = sub(
+      '^ASO_([^_]+)_.*',
+      '\\1',
+      filename
+    ),
+    date = as.Date(
+      sub(
+        '^ASO_[^_]+_(\\d{8}).*',
+        '\\1',
+        filename
+      ),
+      format = '%Y%m%d'
+    ),
+    wy = format(date, '%Y')
+  )
+
+file.info
+
+
+# split files by watershed and year
+peak.groups <- file.info %>%
+  group_by(watershed, wy) %>%
+  group_split()
+
+# calculate peak SWE for each watershed-year
+watershed.peaks <- lapply(peak.groups, function(x) {
+  
+  swe <- rast(x$file)
+  
+  peak <- app(
+    swe,
+    max,
+    na.rm = TRUE
+  )
+  
+  names(peak) <- paste0(
+    unique(x$watershed),
+    '_swe_peak_wy',
+    unique(x$wy)
+  )
+  
+  list(
+    watershed = unique(x$watershed),
+    wy = unique(x$wy),
+    raster = peak
+  )
+})
+
+# inspect
+sapply(watershed.peaks, function(x) {
+  paste(x$watershed, x$wy)
+})
+
+# now combine watersheds by year:
+years <- sort(unique(file.info$wy))
+
+swe.peak.list <- lapply(years, function(y) {
+  
+  # select all watershed peak rasters for this year
+  year.rasters <- lapply(
+    watershed.peaks[
+      sapply(watershed.peaks, function(x) x$wy == y)
+    ],
+    function(x) x$raster
+  )
+  
+  if (length(year.rasters) == 0) {
+    stop(paste('No peak SWE rasters found for', y))
+  }
+  
+  if (length(year.rasters) == 1) {
+    
+    year.peak <- year.rasters[[1]]
+    
+  } else {
+    
+    # merge rasters with different, non-overlapping extents
+    year.peak <- year.rasters[[1]]
+    
+    for (i in 2:length(year.rasters)) {
+      year.peak <- merge(
+        year.peak,
+        year.rasters[[i]]
+      )
+    }
+  }
+  
+  names(year.peak) <- paste0('swe_peak_wy', y)
+  
+  year.peak
+})
+
+swe.peak <- rast(swe.peak.list)
+
+names(swe.peak)
+plot(swe.peak)
+
+writeRaster(
+  swe.peak,
+  file.path(
+    out.dir,
+    paste0(fire, '_swe_peak_50m.tif')
+  ),
+  overwrite = TRUE
+)
+
+# ----------------------------------------------------------------------------------
+# aggregate PEAK swe to 500m for sdd 
+# ----------------------------------------------------------------------------------
+fire <- 'castle'
+target <- rast(paste0('data/processed/processed/tif/500m/', fire, '/snow_metrics/', fire, '_sdd_wy2023_500m.tif'))
+out.dir <- paste0('data/processed/processed/tif/500m/', fire, '/snow_metrics/')
+
+swe.peak <- rast(paste0('data/processed/processed/tif/50m/', fire, '/snow_metrics/', fire, '_swe_peak_50m.tif'))
 
 out.list <- vector('list', length = nlyr(swe.peak))
 
@@ -280,7 +415,7 @@ for (i in seq_len(nlyr(swe.peak))) {
   names(y) <- paste0(nm, '_500m')
   
   # write immediately (safer)
-  f <- file.path(out.dir, paste0(nm, '_500m.tif'))
+  f <- file.path(out.dir, paste0(fire, '_', nm, '_500m.tif'))
   writeRaster(y, f, overwrite = TRUE)
   
   out.list[[i]] <- y
@@ -298,8 +433,9 @@ res(target) == res(swe.500m)
 crs(target) == crs(swe.500m)
 
 plot(swe.500m)
+
 # save output
-writeRaster(swe.500m, file.path(out.dir, 'creek_swe_peak_500m.tif'), overwrite = TRUE)
+writeRaster(swe.500m, paste0(out.dir, fire, '_swe_peak_500m.tif'), overwrite = TRUE)
 
 
 

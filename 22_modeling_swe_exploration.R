@@ -9,85 +9,31 @@ lapply(packages, library, character.only = T)
 # make sure if not on processing computer that the rds is updated!
 dir <- 'data/processed/processed/rds/creek' 
 
-df.50 <- readRDS(file.path(dir, 'creek_df_50m.rds'))
-
-df.50$wy <- factor(df.50$wy)
+df.50.0 <- readRDS(file.path(dir, 'creek_df_50m.rds'))
 
 fire <- 'creek'
 
 set.seed(14)
 
 # df.raw has unscaled values
-df.raw <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
-df.raw$wy <- factor(df.raw$wy)
-
-# add aspect class
-df.raw <- df.raw %>%
-  mutate(
-    aspect_class = case_when(
-      topo_aspect_cos > 0.5  ~ "North-facing",
-      topo_aspect_cos < -0.5 ~ "South-facing",
-      TRUE                   ~ NA_character_
-    )
-  )
-
-# add elev bands
-df.raw <- df.raw %>%
-  mutate(
-    elev_band = case_when(
-      topo_elev < 2000 ~ "Low (<2000 m)",
-      topo_elev < 2600 ~ "Mid (2000-2600 m)",
-      TRUE             ~ "High (>2600 m)"
-    ),
-    elev_band = factor(
-      elev_band,
-      levels = c(
-        "Low (<2000 m)",
-        "Mid (2000-2600 m)",
-        "High (>2600 m)"
-      )
-    )
-  )
-
-# add aspect class
-df.50 <- df.50 %>%
-  mutate(
-    aspect_class = case_when(
-      topo_aspect_cos > 0.5  ~ "North-facing",
-      topo_aspect_cos < -0.5 ~ "South-facing",
-      TRUE                   ~ NA_character_
-    )
-  )
-
-# add elev bands
-df.50 <- df.50 %>%
-  mutate(
-    elev_band = case_when(
-      topo_elev < 2000 ~ "Low (<2000 m)",
-      topo_elev < 2600 ~ "Mid (2000-2600 m)",
-      TRUE             ~ "High (>2600 m)"
-    ),
-    elev_band = factor(
-      elev_band,
-      levels = c(
-        "Low (<2000 m)",
-        "Mid (2000-2600 m)",
-        "High (>2600 m)"
-      )
-    )
-  )
+df.raw.0 <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
 
 burn.cols <- c(
   'unburned' = 'turquoise4',
   'burned' = 'firebrick2'
 )
 
+# trim to years 2023 and up
+df.raw <- df.raw.0 %>%
+  filter(wy %in% c(2023, 2024, 2025))
 
 
+df.50 <- df.50.0 %>%
+  semi_join(
+    df.raw %>% select(cell, wy),
+    by = c('cell', 'wy')
+  )
 
-
-#idx <- sample(seq_len(nrow(df.50)), 100000)
-#df.50.samp <- df.50[sample(nrow(df.50), 100000), ]
 
 
 # ==============================================================================
@@ -98,135 +44,7 @@ burn.cols <- c(
 results <- data.frame()
 #coef.results <- data.frame()
 
-#clean.term.names <- function(x) {
-#   x <- gsub('\\(Intercept\\)', 'Intercept', x)
-#   x <- gsub('I\\((.*)\\^2\\)', '\\1_sq', x)
-#   x <- gsub('[^[:alnum:]_]', '_', x)
-#   x <- gsub('_+', '_', x)
-#   x <- gsub('^_|_$', '', x)
-#   x
-# }
 
-#add.model.results <- function(results.df, coef.df, model, name, type = 'exploratory', notes = NA) {
-  
-  # check model class and extract coefficient matrix
-  if (inherits(model, c('merMod', 'lm'))) {
-    coef.mat <- summary(model)$coefficients
-    n.params <- attr(logLik(model), 'df')
-  } else {
-    stop('Model class not supported. Use lm or lmer/glmer objects.')
-  }
-  
-  # --------------------------
-  # model-level results
-  # --------------------------
-  new.row <- data.frame(
-    model = name,
-    AIC = AIC(model),
-    BIC = BIC(model),
-    logLik = as.numeric(logLik(model)),
-    n_params = n.params,
-    type = type,
-    notes = notes,
-    stringsAsFactors = FALSE
-  )
-  
-  results.df <- bind_rows(results.df, new.row)
-  
-  # --------------------------
-  # coefficient-level results (wide format)
-  # one row per model
-  # --------------------------
-  
-  term.names <- clean.term.names(rownames(coef.mat))
-  
-  # estimates
-  est.vec <- coef.mat[, 'Estimate']
-  names(est.vec) <- term.names
-  est.row <- as.data.frame(as.list(est.vec), stringsAsFactors = FALSE)
-  names(est.row) <- paste0('est_', names(est.row))
-  
-  # standard errors
-  se.vec <- coef.mat[, 'Std. Error']
-  names(se.vec) <- term.names
-  se.row <- as.data.frame(as.list(se.vec), stringsAsFactors = FALSE)
-  names(se.row) <- paste0('se_', names(se.row))
-  
-  # test statistics
-  if ('t value' %in% colnames(coef.mat)) {
-    stat.vec <- coef.mat[, 't value']
-  } else if ('z value' %in% colnames(coef.mat)) {
-    stat.vec <- coef.mat[, 'z value']
-  } else {
-    stat.vec <- rep(NA_real_, nrow(coef.mat))
-  }
-  names(stat.vec) <- term.names
-  stat.row <- as.data.frame(as.list(stat.vec), stringsAsFactors = FALSE)
-  names(stat.row) <- paste0('stat_', names(stat.row))
-  
-  # p-values
-  if ('Pr(>|t|)' %in% colnames(coef.mat)) {
-    p.vec <- coef.mat[, 'Pr(>|t|)']
-  } else if ('Pr(>|z|)' %in% colnames(coef.mat)) {
-    p.vec <- coef.mat[, 'Pr(>|z|)']
-  } else {
-    p.vec <- rep(NA_real_, nrow(coef.mat))
-  }
-  names(p.vec) <- term.names
-  p.row <- as.data.frame(as.list(p.vec), stringsAsFactors = FALSE)
-  names(p.row) <- paste0('p_', names(p.row))
-  
-  # combine metadata + coefficient info into one row
-  coef.out <- bind_cols(
-    data.frame(
-      model = name,
-      type = type,
-      notes = notes,
-      stringsAsFactors = FALSE
-    ),
-    est.row,
-    se.row,
-    stat.row,
-    p.row
-  )
-  
-  # add to running wide coefficient table
-  coef.df <- bind_rows(coef.df, coef.out)
-  
-  return(list(results.df = results.df, coef.df = coef.df))
-}
-
-#plot.residuals <- function(model, name = NULL) {
-  
-  # get residuals and fitted
-  res <- resid(model)
-  fit <- fitted(model)
-
-  # sample indices
-  set.seed(123)
-  idx <- sample(seq_along(res), min(100000, length(res)))
-
-  res.sub <- res[idx]
-  fit.sub <- fit[idx]
-  
-  # title
-  if (is.null(name)) {
-    main.title <- 'Residuals vs Fitted'
-  } else {
-    main.title <- paste(name, '- Residuals vs Fitted')
-  }
-
-  plot(
-    fit.sub, res.sub,
-    pch = 16, cex = 0.3,
-    col = rgb(0, 0, 0, 0.3),  
-    xlab = 'Fitted values',
-    ylab = 'Residuals',
-    main = main.title
-  )
-
-  abline(h = 0, col = 'red')
-}
 
 get.metrics <- function(model, name) {
   
@@ -246,8 +64,6 @@ get.metrics <- function(model, name) {
 # ==============================================================================
 # GAM
 # ==============================================================================
-
-
 
 # if sampling
 #df.test <- df.50[sample(nrow(df.50), 50000), ]
@@ -1394,19 +1210,27 @@ results <- rbind(
 canopy <- bam(
   sqrt(swe_peak) ~
     wy +
-    s(gap_gap_pct, by = burned) +
-    s(ht_zmax, by = burned) +
-    s(ht_zpcum2, by = burned) +
-    s(cover_ground_frac, by = burned) +
-    s(gap_dist_to_canopy_mean, by = burned) +
-    s(ht_zskew, by = burned),
+    s(topo_elev) +
+    s(gap_gap_pct) +
+    s(ht_zmax) +
+    s(ht_zpcum2) +
+    s(cover_ground_frac) +
+    s(gap_dist_to_canopy_mean) +
+    s(ht_zskew),
   data = df.50,
   method = "fREML",
   discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(canopy, "Canopy")
+)
+
 # ----- cbi -----
 cbi <- bam(
   sqrt(swe_peak) ~
     wy +
+    s(topo_elev) +
     s(cbibc),
   data = df.50,
   method = "fREML",
@@ -1416,6 +1240,22 @@ results <- rbind(
   results,
   get.metrics(cbi, "cbi")
 )
+
+# ----- burn status -----
+burned <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    burned,
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(burned, "burn status")
+)
+
 
 # ----- topo -----
 topo <- bam(
@@ -1453,7 +1293,8 @@ results <- rbind(
 # ----- wy only -----
 
 wy <- bam(
-  sqrt(swe_peak) ~ wy,
+  sqrt(swe_peak) ~ wy +
+    s(topo_elev),
   data = df.50,
   method = 'fREML',
   discrete = TRUE
@@ -1468,21 +1309,42 @@ results
 
 singe.type.model.results <- results
 
+# ----- canopy + severity-----
+canopy.cbi <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(gap_gap_pct) +
+    s(ht_zmax) +
+    s(ht_zpcum2) +
+    s(cover_ground_frac) +
+    s(gap_dist_to_canopy_mean) +
+    s(cbibc) +
+    s(ht_zskew),
+  data = df.50,
+  method = "fREML",
+  discrete = TRUE)
+
+results <- rbind(
+  results,
+  get.metrics(canopy.cbi, "Canopy and Severity")
+)
+
 # ----- plot comparing model results -----
 plot.df <- data.frame(
   model = c(
-    'WY only',
-    'WY + CBI',
-    'WY + Canopy',
-    'WY + Topography',
+    'WY + Elevation only',
+    'WY + Elevation + CBI',
+    'WY + Elevation + Canopy',
+    'WY + Elevation + Topography',
     'WY + Spatial'
   ),
   r2 = c(
-    0.475,
-    0.591,
-    0.634,
-    0.806,
-    0.845
+    0.76,
+    0.76,
+    0.77,
+    0.81,
+    0.84
   )
 )
 
@@ -1499,10 +1361,10 @@ ggplot(
   coord_flip() +
   scale_fill_manual(
     values = c(
-      'WY only' = 'cyan4',
-      'WY + CBI' = 'darkkhaki',
-      'WY + Canopy' = 'darkseagreen4',
-      'WY + Topography' = 'darkslategrey',
+      'WY + Elevation only' = 'cyan4',
+      'WY + Elevation + CBI' = 'darkkhaki',
+      'WY + Elevation + Canopy' = 'darkseagreen4',
+      'WY + Elevation + Topography' = 'darkslategrey',
       'WY + Spatial' = 'goldenrod2'
     )
   ) +

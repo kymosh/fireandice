@@ -1,0 +1,292 @@
+---
+title: 'NAFEW 2026 R Workshop: GRTS with TEON/AIM'
+output: html_document
+date: "2026-04-28"
+---
+
+```{r setup}
+library(tidyverse) # general use
+library(readxl)    # read in excel files
+library(sf)        # spatial objects and analysis
+library(spsurvey)  # spatial sampling design (GRTS)
+# library(leaflet)   # interactive mapping/visualization
+```
+
+# TEON Use Case
+
+## Load Data 
+
+```{r}
+# set filepath for all data
+path = "C:/Users/ShaleHunter/OneDrive - USDA/Documents/TEON-misc/Conferences/NAFEW2026/GRTS_Workshop_Files"
+```
+
+```{r TEONdata}
+
+# pre-cleaned historical data selection
+TEON_info = read_csv(paste0(path, "TEON_project_info_NAFEW2026.csv"))
+
+# examine data to see what we're working with
+view(TEON_info)
+```
+
+## Data Preformatting
+
+```{r TEONformatting}
+# filter to useful subset
+TEON_input_sites = TEON_info |> 
+      # filter to sites with historical PCs - excludes some LTUB sites  
+      # V10 is missing historical PC but needs to be included because it was already sampled in our first year
+  filter(!is.na(hist_pc_data) | site == "V10") |>
+  # grts() needs non-legacy sites to be NA
+  mutate(selected_in_30_pairs = if_else(selected_in_30_pairs == "YES",
+                                        "YES",
+                                        NA))
+
+# take a look at changes
+view(TEON_input_sites)
+
+# make sure all our already sampled sites are included
+summarise(TEON_input_sites,
+          .by = selected_in_30_pairs,
+          n = n())
+
+# note elevation disparity - will be important later
+summarise(TEON_input_sites,
+          .by = elevation_7500ft,
+          n = n())
+
+# format spatial
+sf_input_sites = st_as_sf(TEON_input_sites,
+                          coords = c("utm_e_z10", "utm_n_z10"),
+                          # NAD27
+                          crs = 26710,
+                          remove = FALSE)
+
+# visual check
+plot(sf_input_sites)
+```
+
+## Running GRTS
+
+```{r GRTSinfo}
+# inspect GRTS function
+?grts()
+```
+
+#### Documentation notes:
+
+*stratum* vs *caty*:
+
+stratification is for equal inclusion probability across groups
+      ex: want to say something about each habitat type in a watershed, so same number of sites in forest/shrub/grass
+      
+category selection allows unequal sampling based on auxiliary variable
+      ex: much more forest in watershed than shrub/grass, so want more forest sites
+      
+*legacy_var*:
+
+the variable that describes which sites are "legacy" (already part of an existing sample design/already have data collected)
+
+*n_over* and *n_near*:
+
+In case some of your base sites must be rejected (terrain, access, etc) how do you want to fill in the gaps they leave in your design?
+
+*n_over* selects sites in reverse hierarchical order
+*n_near* uses nearest neighbor replacement sites
+
+```{r GRTSdesign}
+### generate GRTS sample
+
+# ensure even elevation split
+caty_n = c(H = 50, L = 50)
+
+# set seed for reproducibility 
+set.seed(330) 
+
+# GRTS function
+TEON_GRTS = grts(sframe = sf_input_sites,
+                   n_base = 100,
+                   legacy_var = "selected_in_30_pairs",
+                   caty_n = caty_n,
+                   caty_var = "elevation_7500ft")
+
+plot(TEON_GRTS$sites_base)
+
+```
+
+
+```{r GRTSoutput}
+# examine pieces of GRTS output
+# legacy sites
+view(TEON_GRTS$sites_legacy)
+# base (new) sites
+view(TEON_GRTS$sites_base)
+```
+
+#### GRTS output highlights:
+
+*siteID* provides the **order** of sites - (remember this is important for maintaining the statistical validity of the design if sites are missed)
+
+*wgt* and *ip*:
+design weight and inclusion probability (ip is inverse of wgt). ip is high for high elevation sites (94% - we wanted 50 H sites, and only 53 were available from our historical site pool) and lower for low elevation sites (37% - we wanted 50 L sites, 135 available).
+
+
+
+```{r GRTSinspection}
+### check spatial balance using sp_balance()
+
+# already sampled sites
+sp_balance(object = TEON_GRTS$sites_legacy, 
+           sframe = sf_input_sites)
+# new sampling sites
+sp_balance(object = TEON_GRTS$sites_base, 
+           sframe = sf_input_sites)
+
+# combine base and legacy 
+fulldesign_TEON = rbind(TEON_GRTS$sites_legacy, TEON_GRTS$sites_base)
+
+sp_balance(object = fulldesign_TEON, 
+           sframe = sf_input_sites)
+
+
+### summarize by other variables of interest to inspect how well GRTS sampled the available sites by non-spatial metrics
+
+# use sp_summary() to quickly summarize GRTS output by variable
+sp_summary(TEON_GRTS, ~ elevation_7500ft)
+
+# can inspect individual variables independently
+sp_summary(TEON_GRTS, ~ elevation_7500ft + dev_gradient + side + project)
+
+# as well as the intersection of multiple variables
+sp_summary(TEON_GRTS, ~ elevation_7500ft * side)
+
+# need to refer back to distribution of full site list to compare representation
+summarize(TEON_input_sites,
+          .by = side,
+          n = n())
+
+summarize(TEON_input_sites,
+          .by = c(side, elevation_7500ft),
+          n = n()) |>
+  arrange(side) # arrange by side to more easily compare to output of sp_summary()
+  
+```
+
+
+```{r TEONDataExport}
+#| eval = FALSE
+
+# Export to csv and shp
+write_csv(fulldesignTEON, paste0(path, "/NAFEW2026_GRTSdesign_TEON.csv"))
+st_write(fulldesignTEON, paste0(path, "/NAFEW2026_GRTSdesign_TEON.shp"), append = FALSE)
+```
+
+
+# AIM Use Case
+
+## Load Data
+
+```{r AIMdata}
+
+# shapefile of study area (BLM field office)
+BFO = st_read(paste0(path, "/BFO_BLM_SMA/BFO_BLM_SMA.shp"))
+
+# take a look at the AOI
+plot(BFO)
+
+```
+
+## Data Preformatting
+
+```{r}
+# Nothing to see here!
+```
+
+## Running GRTS
+
+```{r GRTSdesignAIM}
+### generate GRTS sample
+
+# set seed for reproducibility 
+set.seed(330) 
+
+# GRTS function
+AIM_GRTS = grts(sframe = BFO,
+                   n_base = 100,
+                   n_over = 40
+                 )
+
+plot(AIM_GRTS$sites_base)
+
+```
+
+```{r GRTSoutputAIM}
+# examine pieces of GRTS output
+view(AIM_GRTS)
+
+# base sites
+view(AIM_GRTS$sites_base)
+
+# oversample sites
+view(AIM_GRTS$sites_over)
+```
+
+#### GRTS output highlights:
+
+*sites_legacy* still exists in the structure of the GRTS output - its just empty because we aren't using any legacy sites for this sample frame.
+
+*siteuse* distinguishes between base ("Base") and oversample ("Over") sites.
+
+*ip*: inclusion probability is much smaller when you have an entire polygon to pull from instead of a set number of historical site locations.
+
+
+```{r GRTSinspectionAIM}
+### check spatial balance using sp_balance()
+
+# check balance for base sites
+sp_balance(object = AIM_GRTS$sites_base, 
+           sframe = BFO)
+
+# combine base and oversample sites
+fulldesign_AIM = rbind(AIM_GRTS$sites_base, AIM_GRTS$sites_over)
+
+# check balance for base and oversample sites together
+sp_balance(object = fulldesign_AIM, 
+           sframe = BFO)
+
+```
+
+```{r SpatialCheck}
+# Because points can be selected from anywhere within BFO, there is more room for sites that may need to be rejected (for example, because of overlap with non-BLM managed lands):
+
+# create buffer
+BFO_edge_buffer = st_boundary(BFO) |>
+  st_buffer(dist = 50) 
+
+# find sites too close to allotment boundaries
+grts_edge_plots = st_intersection(fulldesign_AIM,
+                                  BFO_edge_buffer)
+
+# remove marginal sites from GRTS sample frame
+verified_design_AIM = filter(fulldesign_AIM,
+                             !siteID %in% grts_edge_plots$siteID)
+
+view(verified_design_AIM)
+
+```
+
+```{r AIMDataExport}
+#| eval = FALSE
+
+# Export to csv and shp
+write_csv(verified_design_AIM, paste0(path, "/NAFEW2026_GRTSdesign_AIM.csv"))
+st_write(verified_design_AIM, paste0(path, "/NAFEW2026_GRTSdesign_AIM.shp"), append = FALSE)
+```
+
+
+### Wrap-Up Notes
+
+Vignettes from the **spsurvey** package: https://usepa.github.io/spsurvey/articles/start-here.html
+
+

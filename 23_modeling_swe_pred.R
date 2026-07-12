@@ -10,40 +10,22 @@ fire <- 'creek'
 dir <- paste0('data/processed/processed/rds/', fire) 
 
 # df.50 as scaled values
-df.50 <- readRDS(file.path(dir, paste0(fire, '_df_50m.rds')))
-df.50$wy <- factor(df.50$wy)
+df.50.0 <- readRDS(file.path(dir, paste0(fire, '_df_50m.rds')))
 
 # df.raw has unscaled values
-df.raw <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
-df.raw$wy <- factor(df.raw$wy)
+df.raw.0 <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
 
-# add aspect class
-df.raw <- df.raw %>%
-  mutate(
-    aspect_class = case_when(
-      topo_aspect_cos > 0.5  ~ "North-facing",
-      topo_aspect_cos < -0.5 ~ "South-facing",
-      TRUE                   ~ NA_character_
-    )
+# trim to years 2023 and up
+df.raw <- df.raw.0 %>%
+  filter(wy %in% c(2023, 2024, 2025))
+
+
+df.50 <- df.50.0 %>%
+  semi_join(
+    df.raw %>% select(cell, wy),
+    by = c('cell', 'wy')
   )
 
-# add elev bands
-df.raw <- df.raw %>%
-  mutate(
-    elev_band = case_when(
-      topo_elev < 2000 ~ "Low (<2000 m)",
-      topo_elev < 2600 ~ "Mid (2000-2600 m)",
-      TRUE             ~ "High (>2600 m)"
-    ),
-    elev_band = factor(
-      elev_band,
-      levels = c(
-        "Low (<2000 m)",
-        "Mid (2000-2600 m)",
-        "High (>2600 m)"
-      )
-    )
-  )
 
 burn.cols <- c(
   'unburned' = 'turquoise4',
@@ -52,7 +34,7 @@ burn.cols <- c(
 
 
 
-gam.topo.canopy.best <- bam(
+best.model.swe <- bam(
   sqrt(swe_peak) ~
     wy +
     s(topo_elev) +
@@ -61,11 +43,13 @@ gam.topo.canopy.best <- bam(
     s(topo_tpi150) +
     s(topo_tpi2010) + 
     s(gap_gap_pct, by = burned) +
-    s(ht_zmax, by = burned),
+    s(ht_zmax, by = burned) +
+    ti(topo_elev, gap_gap_pct, by = burned),
   data = df.50,
   method = "fREML",
   discrete = TRUE
 )
+
 
 # whole dataset
 df.test <- df.50
@@ -167,7 +151,7 @@ pred.gap$burned <- factor(pred.gap$burned, levels = levels(df.50$burned))
 
 # --- predict ---
 pred <- predict(
-  gam.topo.canopy.best,
+  best.model.swe,
   newdata = pred.gap,
   se.fit = TRUE
 )
@@ -1078,7 +1062,6 @@ model.formulas <- list(
   topo_canopy_burned =
     sqrt(swe_peak) ~
     wy +
-    burned +
     s(topo_elev) +
     s(rad_dtm_accum) +
     s(topo_slope) +
@@ -1102,7 +1085,6 @@ model.formulas <- list(
   topo_canopy_burned_cbi =
     sqrt(swe_peak) ~
     wy +
-    burned +
     s(topo_elev) +
     s(rad_dtm_accum) +
     s(topo_slope) +
@@ -1113,18 +1095,92 @@ model.formulas <- list(
     s(ht_zmax, by = burned)
 )
 
+# ----- model set looking at if adding more canopy variables is worth it -----
+model.formulas.2 <- list(
+  
+  topo_canopy =
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned),
+  
+  topo_canopy.zpcum2 =
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned),
+  
+  topo_canopy.zpcum2.groundfrac =
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned),
+  
+  topo_canopy.zpcum2.groundfrac.distcanopy =
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned),
+  
+  topo_canopy.zpcum2.groundfrac.distcanopy.zskew =
+    sqrt(swe_peak) ~
+    wy +
+    s(topo_elev) +
+    s(rad_dtm_accum) +
+    s(topo_slope) +
+    s(topo_tpi150) +
+    s(topo_tpi2010) +
+    s(gap_gap_pct, by = burned) +
+    s(ht_zmax, by = burned) +
+    s(ht_zpcum2, by = burned) +
+    s(cover_ground_frac, by = burned) +
+    s(gap_dist_to_canopy_mean, by = burned) +
+    s(ht_zskew, by = burned)
+  
+)
+
+# ----- 5-fold cross validation -----
 # run each model doing 5-fold cross validation
 results <- list()
+
+# define which set of models
+model.formulas.set <- model.formula.2
 
 for (fold in 1:5) {
   
   train <- filter(df.50, fold_id != fold)
   test  <- filter(df.50, fold_id == fold)
   
-  for (m in names(model.formulas)) {
+  for (m in names(model.formulas.set)) {
     
     fit <- bam(
-      model.formulas[[m]],
+      model.formulas.set[[m]],
       data = train,
       method = "fREML",
       discrete = TRUE
@@ -1298,3 +1354,88 @@ ggplot(
     color = NULL
   )
 
+
+
+# ==============================================================================
+#  Scenario : how does increasing gap size affect swe between burned and unburned?
+# ==============================================================================
+# ----- gap bins from observed raw data -----
+height.by.gap <- df.raw %>%
+  filter(
+    !is.na(gap_gap_pct),
+    !is.na(ht_zmax),
+    !is.na(burned)
+  ) %>%
+  mutate(
+    gap_percent = gap_gap_pct * 100,
+    gap_bin = cut(
+      gap_percent,
+      breaks = seq(0, 100, by = 5),
+      include.lowest = TRUE
+    )
+  ) %>%
+  group_by(burned, gap_bin) %>%
+  summarize(
+    gap_gap_pct_raw = mean(gap_gap_pct, na.rm = TRUE),
+    gap_percent = mean(gap_percent, na.rm = TRUE),
+    ht_zmax_raw = mean(ht_zmax, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  filter(n >= 20)
+
+range(df.raw$gap_gap_pct, na.rm = TRUE)
+
+# ----- scaling values from raw data -----
+gap.mean <- mean(df.raw$gap_gap_pct, na.rm = TRUE)
+gap.sd <- sd(df.raw$gap_gap_pct, na.rm = TRUE)
+
+ht.mean <- mean(df.raw$ht_zmax, na.rm = TRUE)
+ht.sd <- sd(df.raw$ht_zmax, na.rm = TRUE)
+
+# ----- prediction dataframe -----
+pred.scenario <- height.by.gap %>%
+  mutate(
+    gap_gap_pct = (gap_gap_pct_raw - gap.mean) / gap.sd,
+    ht_zmax = (ht_zmax_raw - ht.mean) / ht.sd,
+    
+    wy = factor('2023', levels = levels(df.50$wy)),
+    
+    topo_elev = 0,
+    rad_dtm_accum = 0,
+    topo_slope = 0,
+    topo_tpi150 = 0,
+    topo_tpi2010 = 0,
+    
+    burned = factor(burned, levels = levels(df.50$burned))
+  )
+
+pred.scenario$pred_sqrt_swe <- predict(
+  best.model.swe,
+  newdata = pred.scenario,
+  type = 'response'
+)
+
+pred.scenario <- pred.scenario %>%
+  mutate(
+    pred_swe = pred_sqrt_swe^2
+  )
+
+ggplot(
+  pred.scenario,
+  aes(x = gap_percent, y = pred_swe, color = burned, group = burned)
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(aes(size = n), alpha = 0.7) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Gap (%)',
+    y = 'SWE (m)',
+    color = NULL,
+    size = 'n'
+  ) +
+  theme_bw()
+
+
+
+cor(df.raw$cbibc, df.raw$ht_zmax)

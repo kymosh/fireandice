@@ -1,4 +1,4 @@
-packages <- c('dplyr', 'tidyr', 'corrplot', 'ggplot2', 'terra')
+packages <- c('dplyr', 'tidyr', 'corrplot', 'ggplot2', 'blockCV', 'sf', 'terra')
 lapply(packages, library, character.only = T)
 
 # make sure if not on processing computer that the rds is updated!
@@ -11,7 +11,7 @@ dir <- 'data/processed/processed/rds/creek'
 # ----- df.50 SWE -----
 
 # get dataframe
-df.50.0 <- readRDS(file.path(dir, 'creek_long_df_50m.rds'))
+df.50.0 <- readRDS(file.path(dir, 'old/creek_long_df_50m.rds'))
 
 df.50 <- df.50.0 %>% 
   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
@@ -64,26 +64,144 @@ df.50 <- df.50.0 %>%
         'Mid (2000-2600 m)',
         'High (>2600 m)'
       )
-    )
+    ),
+    gap_percent = gap_gap_pct * 100
   ) %>% 
   filter(
     topo_elev >= snowline,
+    ht_zmax <= 96, # remove anything taller than what is proved to be the tallest tree in the Sierra
     complete.cases(.)
   ) %>% 
   select(-snowline)
+
+# save raw before scaling
+df.50.raw <- df.50
 
 # scale numeric predictors
 num.cols <- sapply(df.50, is.numeric)
 num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
 df.50[num.cols] <- scale(df.50[num.cols])
 
-saveRDS(df.50, file.path(dir, 'creek_long_df_50m_clean.rds'))
-saveRDS(df.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_clean.rds') # save to J: drive
-saveRDS(df.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m_clean.rds') # save to G: drive backup
 
-saveRDS(df.50, file.path(dir, 'creek_long_df_50m_raw.rds'))
-saveRDS(df.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_raw.rds') # save to J: drive
-saveRDS(df.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m_raw.rds') # save to G: drive backup
+# =======================================================================================
+# Spatial Blocking
+# =======================================================================================
+fire <- 'creek'
+epsg <- 32611
+block.m <- 8000
+test.prop <- 0.20
+set.seed(15)
+res <- 50
+df <- df.50 # or df.500
+
+# study area polygon
+study <- st_read(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')) %>%
+  st_transform(epsg)
+
+# dataframe
+dir <- paste0('data/processed/processed/rds/', fire) 
+# df <- readRDS(file.path(dir, 'old/creek_long_df_50m_clean_beforeblocked.rds')) # this is just checking the 50m again
+
+# your model data as points
+dat.sf <- st_as_sf(df, coords = c('x', 'y'), crs = epsg, remove = FALSE)
+
+sb <- cv_spatial(
+  x = dat.sf,
+  column = NULL,
+  r = NULL,
+  size = block.m,
+  k = 5,
+  selection = 'systematic',
+  iteration = 100,
+  biomod2 = FALSE,
+  progress = TRUE,
+  report = TRUE
+)
+
+cv_plot(sb)
+
+# create test/train categories
+sb$blocks$split <- if_else(sb$blocks$folds == 1, 'test', 'train')
+
+# apply blocks to data
+dat.blocked <- dat.sf %>%
+  mutate(
+    fold_id = sb$folds_ids,
+    split = if_else(fold_id == 1, 'test', 'train')
+  )
+
+# plot test/train
+ggplot(sb$blocks) +
+  geom_sf(aes(fill = split)) +
+  theme_bw()
+
+# ----- check these numbers for new study areas -----
+# proportion numbers per fold
+# sb$blocks %>%
+#   st_drop_geometry() %>%
+#   count(folds) %>%
+#   mutate(prop = n / sum(n))
+# 
+# # proportion of pixels per fold
+# dat.blocked %>%
+#   st_drop_geometry() %>%
+#   count(split) %>%
+#   mutate(prop = n / sum(n))
+# 
+# dat.blocked %>%
+#   st_drop_geometry() %>%
+#   count(fold_id) %>%
+#   mutate(prop = n / sum(n))
+# 
+# # check SDD years are balanced across train/test test
+# dat.blocked %>%
+#   st_drop_geometry() %>%
+#   count(wy, split) %>%
+#   group_by(wy) %>%
+#   mutate(prop = n / sum(n))
+# 
+# dat.blocked %>%
+#   st_drop_geometry() %>%
+#   distinct(x, y, wy, fold_id, split) %>%
+#   count(x, y) %>%
+#   filter(n > 1)
+# 
+# dat.blocked %>%
+#   st_drop_geometry() %>%
+#   group_by(x, y) %>%
+#   summarize(
+#     n_folds = n_distinct(fold_id),
+#     n_splits = n_distinct(split),
+#     .groups = 'drop'
+#   ) %>%
+#   filter(n_folds > 1 | n_splits > 1)
+
+
+# ----- save -----
+dat.blocked <- st_drop_geometry(dat.blocked)
+saveRDS(dat.blocked, file.path(dir, paste0(fire, '_df_', res, 'm.rds')))
+saveRDS(dat.blocked, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
+saveRDS(dat.blocked, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
+
+# add same folds to raw
+
+stopifnot(nrow(df.50.raw) == nrow(dat.blocked))
+stopifnot(all(df.50.raw$x == dat.blocked$x))
+stopifnot(all(df.50.raw$y == dat.blocked$y))
+stopifnot(all(df.50.raw$wy == dat.blocked$wy))
+
+df.50.raw <- df.50.raw %>%
+  mutate(
+    fold_id = dat.blocked$fold_id,
+    split = dat.blocked$split
+  )
+
+
+saveRDS(df.50.raw, file.path(dir, 'creek_long_df_50m_raw.rds'))
+saveRDS(df.50.raw, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_raw.rds') # save to J: drive
+saveRDS(df.50.raw, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m_raw.rds') # save to G: drive backup
+
+
 
 # ----- df.50 SWE *THINNED* -----
 

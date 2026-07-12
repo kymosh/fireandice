@@ -5,17 +5,37 @@ lapply(packages, library, character.only = T)
 
 # resample all data to SWE resolution
 
-in.dir <- 'data/processed/processed/tif'
-out.dir.50 <- file.path(in.dir, '50m/creek/other_metrics')
-out.dir.500 <- file.path(in.dir, '500m/creek/other_metrics')
+# inputs
+fire <- 'dixie'
+res <- '500m' # 50 or 500
 
-files <- list.files(file.path(in.dir, '30m/creek'), pattern = paste0('topo|cbi|nasadem', '_1524\\.tif$'), full.names = T)
+# settings (don't touch)
+in.dir <- 'data/processed/processed/tif/'
+out.dir <- paste0(in.dir, res, '/', fire)
 
 # target resolution
-swe <- rast(file.path(in.dir, '50m/creek/snow_metrics/ASO_SanJoaquin_2020_0414_swe_50m_1524.tif'))
-sdd <- rast(file.path(in.dir, '500m/creek/snow_metrics/creek_sdd_wy2020_32611_1524.tif'))
+swe <- rast(paste0(in.dir, '50m/', fire, '/canopy_metrics/', fire, '_cover_metrics_50m.tif'))
+swe <- swe[[1]]
+sdd <- rast(paste0(in.dir, '500m/', fire, '/snow_metrics/', fire, '_sdd_wy2023_500m.tif'))
 
-# check to make sure all are in crs 32611 and res is 30m
+template <- if (res == '50m') {
+  swe
+} else {
+  sdd
+}
+
+
+files <- list.files(paste0(in.dir, '30m/', fire), pattern = '\\.tif$', full.names = TRUE)
+files <- files[!grepl('nalcms', basename(files))] # remove landcover because it's categorical and will need to be resampled differently!
+
+
+# check to make sure all have same crs, res, and origin
+
+for (f in files) {
+  r <- rast(f)
+  plot(r)
+}
+
 for (f in files) {
   r <- rast(f)
   print(crs(r, describe = T)$code)
@@ -29,41 +49,79 @@ for (f in files) {
 # resample to 50m to match swe
 for (f in files) {
   r <- rast(f)
-  r.50m <- exact_resample(r, swe, fun = 'mean') 
   
-  new.name <- sub('30m', '50m', basename(f))
-  new.path <- file.path(out.dir.50, new.name)
+  # resample each layer separately
+  r.resamp <- lapply(1:nlyr(r), function(i) {
+    exactextractr::exact_resample(
+      r[[i]],
+      template[[1]],
+      fun = 'mean'
+    )
+  })
   
-  writeRaster(r.50m, new.path, overwrite = T)
+  # combine layers back into one SpatRaster
+  r.resamp <- rast(r.resamp)
+  
+  # preserve original layer names
+  names(r.resamp) <- names(r)
+  
+  # mask to the spatial footprint of the template
+  r.resamp <- mask(r.resamp, template)
+  
+  new.name <- sub('30m', res, basename(f))
+  new.path <- file.path(out.dir, new.name)
+  
+  writeRaster(
+    r.resamp,
+    new.path,
+    overwrite = TRUE
+  )
 }
 
-test <- rast( file.path(out.dir.50, 'creek_topo_aspect_50m_1524.tif'))
-plot(test)
-res(test)
-origin(test)
+# ----- resample just landcover -----
+f <- paste0('data/processed/processed/tif/30m/', fire, '/', fire, '_nalcms_30m.tif')
 
+r <- rast(f)
 
-# resample to 500m to match sdd
-for (f in files) {
-  r <- rast(f)
-  r.500m <- exact_resample(r, sdd, fun = 'mean')
-  
-  new.name <- sub('30m', '500m', basename(f))
-  new.path <- file.path(out.dir.500, new.name)
-  
-  writeRaster(r.500m, new.path, overwrite = T)
+# resample each layer separately
+r.resamp <- lapply(1:nlyr(r), function(i) {
+  exactextractr::exact_resample(
+    r[[i]],
+    template[[1]],
+    fun = 'mode'
+  )
+})
+
+# combine layers back into one SpatRaster
+r.resamp <- rast(r.resamp)
+
+# preserve original layer names
+names(r.resamp) <- names(r)
+
+# mask to the spatial footprint of the template
+r.resamp <- mask(r.resamp, template)
+
+new.name <- sub('30m', res, basename(f))
+new.path <- file.path(out.dir, new.name)
+
+writeRaster(
+  r.resamp,
+  new.path,
+  overwrite = TRUE)
+
+plot(rast(paste0('data/processed/processed/tif/', res, '/', fire, '/', fire, '_nalcms_', res, '.tif')))
+
+# ----- fix CBI so it is 0 outside study area -----
+
+cbi <- rast(paste0(out.dir, '/', fire, '_cbibc_', res, '.tif'))
+cbi[is.na(cbi) & !is.na(template[[1]])] <- 0
+cbi <- mask(cbi, template[[1]])
+plot(cbi)
+writeRaster(cbi, paste0(out.dir, '/', fire, '_cbibc_', res, '.tif'), overwrite = T)
+
+test <- list.files(out.dir, full.names = T, pattern = '\\.tif$')
+test <- test[3]
+for (x in test) {
+  r <- rast(x)
+  plot(r)
 }
-
-test <- rast(file.path(out.dir.500, 'creek_topo_hli_500m_1524.tif'))
-plot(test)
-res(test)
-origin(test)
-
-
-
-# rename files and move
-old.files <- list.files(file.path(out.dir.500, 'other_metrics'), pattern = '^creek_topo', full.names = T)
-dest.dir <- file.path(out.dir.500, 'old_versions')
-new.names <- paste0(sub('\\.tif$', '', basename(old.files)), '_unbufferedDEM.tif')
-new.paths <- file.path(dest.dir, new.names)
-file.rename(old.files, new.paths)
