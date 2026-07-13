@@ -79,14 +79,34 @@ new.paths <- file.path(out.dir, new.names)
 # Rename the files
 file.rename(aso.files, new.paths)
 
+# ----------------------------------------------------------------------------------
+# Stack SDD into single raster stack
+# ---------------------------------------------------------------------------------- 
+fire <- 'dixie'
+
+files.path <- paste0('data/processed/processed/tif/500m/', fire, '/snow_metrics/')
+files <- list.files(files.path, pattern = paste0(fire, '_sdd_wy20'), full.names = T)
+
+sdd <- rast(files)
+
+names(sdd) <- sub(
+  '_500m$',
+  '',
+  sub(
+    paste0('^', fire, '_'),
+    '',
+    tools::file_path_sans_ext(basename(files))
+  )
+)
+
+plot(sdd)
+
+out.path <- paste0('data/processed/processed/tif/500m/', fire, '/', fire, '_sdd_500m.tif')
+writeRaster(sdd, out.path)
 
 # ----------------------------------------------------------------------------------
 # SWE
 # ----------------------------------------------------------------------------------
-
-
-
-
 
 # ----- check all origins/res/crs -----
 
@@ -481,6 +501,8 @@ crs(target) == crs(swe.500m)
 plot(swe.500m)
 # save output
 writeRaster(swe.500m, file.path(out.dir, 'creek_swe_500m.tif'), overwrite = TRUE)
+
+
 
 
 
