@@ -1,19 +1,8 @@
 packages <- c('dplyr', 'tidyr', 'corrplot', 'ggplot2', 'blockCV', 'sf', 'terra')
 lapply(packages, library, character.only = T)
 
-
-
-# =======================================================================================
-# Inialize DFs
-# =======================================================================================
-
-fire <- 'creek'
+fire <- 'caldor'
 dir <- paste0('data/processed/processed/rds/', fire, '/')
-
-# ----- df.50 SWE -----
-
-# get dataframe
-df.50.0 <- readRDS(paste0(dir, fire, '_long_df_50m_unfiltered.rds'))
 
 # ----- Snowline lookup -----
 if (fire == 'caldor') {
@@ -34,6 +23,13 @@ if (fire == 'caldor') {
 } else {
   stop('Snowline values have not been defined for this fire.')
 }
+
+# =======================================================================================
+# 50m
+# =======================================================================================
+
+# get dataframe
+df.50.0 <- readRDS(paste0(dir, fire, '_long_df_50m_unfiltered.rds'))
 
 # ----- Filter DF (for castle, caldor, & dixie) ----- 
 
@@ -89,75 +85,75 @@ num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable o
 df.50[num.cols] <- scale(df.50[num.cols])
 
 # ----- CREEK ----- 
-# creek fire filtering is a little different because of changes made for the following 3 fires
-df.50 <- df.50.0 %>%
-  select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
-  select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevant to snow accumulation phase
-  rename(cbibc = CBI_bc) %>%
-  filter(
-    wy != 2020, # drop 2020, since it's prefire
-    wy != 2021, # drop 2021, since it's before lidar 
-    wy != 2022, # drop 2021, since it's before lidar 
-    swe_peak > 0 # drop all cells where there was no snow
-  ) %>%
-  mutate(
-    snowline = case_when(
-      wy == 2022 ~ 1956,
-      wy == 2023 ~ -Inf, # snow covers whole area for 2023, no need to filter
-      wy == 2024 ~ 1786,
-      wy == 2025 ~ 2021
-    ),
-
-    wy = as.factor(wy),
-    cell = as.factor(cell),
-
-    burned = factor(
-      if_else(cbibc > 0, 'burned', 'unburned'),
-      levels = c('unburned', 'burned')
-    ),
-
-    # aspect classes
-    aspect_class = case_when(
-      aspect_cos > 0.5  ~ 'North-facing',
-      aspect_cos < -0.5 ~ 'South-facing',
-      TRUE                   ~ NA_character_
-    ),
-
-    aspect_class = factor(
-      aspect_class,
-      levels = c('North-facing', 'South-facing')
-    ),
-
-    # elevation bands
-    elev_band = case_when(
-      elevation < 2000 ~ 'Low (<2000 m)',
-      elevation < 2600 ~ 'Mid (2000-2600 m)',
-      TRUE             ~ 'High (>2600 m)'
-    ),
-
-    elev_band = factor(
-      elev_band,
-      levels = c(
-        'Low (<2000 m)',
-        'Mid (2000-2600 m)',
-        'High (>2600 m)'
-      )
-    ),
-    gap_percent = gap_gap_pct * 100
-  ) %>%
-  filter(
-    elevation >= snowline,
-    ht_zmax <= 96 # remove anything taller than what is proved to be the tallest tree in the Sierra
-  ) %>%
-  select(-snowline)
-
-# save raw before scaling
-df.50.raw <- df.50
-
-# scale numeric predictors
-num.cols <- sapply(df.50, is.numeric)
-num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
-df.50[num.cols] <- scale(df.50[num.cols])
+# # creek fire filtering is a little different because of changes made for the following 3 fires
+# df.50 <- df.50.0 %>%
+#   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
+#   select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevant to snow accumulation phase
+#   rename(cbibc = CBI_bc) %>%
+#   filter(
+#     wy != 2020, # drop 2020, since it's prefire
+#     wy != 2021, # drop 2021, since it's before lidar 
+#     wy != 2022, # drop 2021, since it's before lidar 
+#     swe_peak > 0 # drop all cells where there was no snow
+#   ) %>%
+#   mutate(
+#     snowline = case_when(
+#       wy == 2022 ~ 1956,
+#       wy == 2023 ~ -Inf, # snow covers whole area for 2023, no need to filter
+#       wy == 2024 ~ 1786,
+#       wy == 2025 ~ 2021
+#     ),
+# 
+#     wy = as.factor(wy),
+#     cell = as.factor(cell),
+# 
+#     burned = factor(
+#       if_else(cbibc > 0, 'burned', 'unburned'),
+#       levels = c('unburned', 'burned')
+#     ),
+# 
+#     # aspect classes
+#     aspect_class = case_when(
+#       aspect_cos > 0.5  ~ 'North-facing',
+#       aspect_cos < -0.5 ~ 'South-facing',
+#       TRUE                   ~ NA_character_
+#     ),
+# 
+#     aspect_class = factor(
+#       aspect_class,
+#       levels = c('North-facing', 'South-facing')
+#     ),
+# 
+#     # elevation bands
+#     elev_band = case_when(
+#       elevation < 2000 ~ 'Low (<2000 m)',
+#       elevation < 2600 ~ 'Mid (2000-2600 m)',
+#       TRUE             ~ 'High (>2600 m)'
+#     ),
+# 
+#     elev_band = factor(
+#       elev_band,
+#       levels = c(
+#         'Low (<2000 m)',
+#         'Mid (2000-2600 m)',
+#         'High (>2600 m)'
+#       )
+#     ),
+#     gap_percent = gap_gap_pct * 100
+#   ) %>%
+#   filter(
+#     elevation >= snowline,
+#     ht_zmax <= 96 # remove anything taller than what is proved to be the tallest tree in the Sierra
+#   ) %>%
+#   select(-snowline)
+# 
+# # save raw before scaling
+# df.50.raw <- df.50
+# 
+# # scale numeric predictors
+# num.cols <- sapply(df.50, is.numeric)
+# num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
+# df.50[num.cols] <- scale(df.50[num.cols])
 
 
 # =======================================================================================
@@ -282,26 +278,25 @@ saveRDS(df.50.raw, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/
 saveRDS(df.50.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '/', fire, '_df_50m_raw.rds')) # save to G: drive backup
 
   
-# ----- df.500 SDD -----
+
+# =======================================================================================
+# 500m
+# =======================================================================================
 
 # ----- castle, caldor, & dixie -----
-df.500.0 <- readRDS(file.path(dir, 'old/creek_long_df_500m_unfiltered.rds'))
+df.500.0 <- readRDS(paste0(dir, fire, '_long_df_500m_unfiltered.rds'))
 df.500 <- df.500.0 %>% 
-  select(-fd_fractal_dim) %>% # super correlated with gap_pct but with way more NAs
-  select(-tmmn) %>% # just using tmmx to model sdd
-  select(-topo_tpi150, -topo_tpi510) %>% # redundant with tpi1200
   filter(
-    wy != 2020,
     swe_peak > 0,
     sdd > 0
   ) %>%  
   mutate(
     snowline = case_when(
-      wy == 2021 ~ 2145,
-      wy == 2022 ~ 1956,
-      wy == 2023 ~ -Inf,
-      wy == 2024 ~ 1786,
-      wy == 2025 ~ 2021
+      wy == 2023 ~ snowline.2023,
+      wy == 2024 ~ snowline.2024,
+      wy == 2025 ~ snowline.2025,
+      wy == 2026 ~ snowline.2026,
+      TRUE ~ NA_real_
     ),
     
     wy = as.factor(wy),
@@ -316,8 +311,8 @@ df.500 <- df.500.0 %>%
     
     # aspect classes
     aspect_class = case_when(
-      topo_aspect_cos > 0.5  ~ 'North-facing',
-      topo_aspect_cos < -0.5 ~ 'South-facing',
+      aspect_cos > 0.5  ~ 'North-facing',
+      aspect_cos < -0.5 ~ 'South-facing',
       TRUE                   ~ 'East/West'
     ),
     
@@ -328,36 +323,29 @@ df.500 <- df.500.0 %>%
         'East/West',
         'South-facing'
       )
-    ),
-    
-    # elevation bands
-    elev_band = case_when(
-      topo_elev < 2000 ~ 'Low (<2000 m)',
-      topo_elev < 2600 ~ 'Mid (2000-2600 m)',
-      TRUE             ~ 'High (>2600 m)'
-    ),
-    
-    elev_band = factor(
-      elev_band,
-      levels = c(
-        'Low (<2000 m)',
-        'Mid (2000-2600 m)',
-        'High (>2600 m)'
-      )
     )
+
   ) %>% 
   filter(
-    topo_elev >= snowline,
+    elevation >= snowline,
   ) %>% 
   select(-snowline)
+
+df.500.raw <- df.500
+
+saveRDS(df.500.raw, paste0(dir, fire, '_df_500m_raw.rds'))
+# save to J/G drives
+# DO THIS
 
 # scale numeric predictors
 num.cols <- sapply(df.500, is.numeric)
 num.cols[c('sdd', 'x', 'y')] <- FALSE # don't scale the response variable'
 df.500[num.cols] <- scale(df.500[num.cols])
 
-# save to mosher comp
-saveRDS(df.500, file.path(dir, 'creek_long_df_500m_clean.rds'))
+# then do the spatial autoblock - before saving!
+
+# save
+saveRDS(df.500, paste0(dir, fire, '_df_500m.rds'))
 # save to J/G drives
 saveRDS(df.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_500m_clean.rds')
 saveRDS(df.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_500m_clean.rds') # save to G: drive backup
