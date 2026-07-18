@@ -2,13 +2,18 @@ packages <- c( 'here', 'exactextractr', 'terra', 'tidyverse', 'ggplot2', 'RColor
 # install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = TRUE)
 
+# none of this first part matters?? 
+fire <- 'creek'
+
 # create directory 
 tif.dir <- 'data/processed/processed/tif'
 
 # read in necessary data
-lc <- rast('J:/Fire_Snow/fireandice/data/raw/background_variables/tif/creek_NALCMS_2020.tif')
+lc.file <- paste0('data/raw/background_variables/tif/nalcms_30m_', fire, '.tif')
+lc <- rast(lc.file)
 
-dem.30 <- rast(file.path(tif.dir, '30m/creek/nasadem_creek_30m_1524.tif'))
+dem.file <- paste0('data/processed/processed/tif/30m/', fire, '/', fire, '_nasadem_30m.tif')
+dem.30 <- rast(dem.file)
 
 # mask to correct elevations and mask out surrounding pixels
 
@@ -16,6 +21,34 @@ ext(lc)
 ext(dem.30)
 lc.crop <- crop(lc, dem.30)
 landcover <- mask(lc.crop, dem.30)
+
+# ----- if that doesn't work (like for creek), do this first: -----
+# extract extents
+rasters <- list(lc = lc, dem = dem.30)
+
+exts <- lapply(rasters, ext)
+
+# common extent
+common.ext <- ext(
+  max(sapply(exts, xmin)),
+  min(sapply(exts, xmax)),
+  max(sapply(exts, ymin)),
+  min(sapply(exts, ymax))
+)
+
+# crop to common extent
+rasters.crop <- lapply(
+  rasters,
+  crop,
+  y = common.ext
+)
+
+landcover <- mask(
+  rasters.crop$lc,
+  rasters.crop$dem
+)
+
+# ----- continue ----- 
 # convert NALCMS class 0 (background) to NA
 landcover[landcover == 0] <- NA
 
@@ -27,6 +60,7 @@ landcover_labels <- c(
   '8' = 'Temperate/sub-polar shrubland',
   '10' = 'Temperate/sub-polar grassland',
   '14' = 'Wetland',
+  '15' = 'Cropland',
   '16' = 'Barren land',
   '17' = 'Urban/built-up',
   '18' = 'Water',
@@ -100,11 +134,42 @@ creek.scar <- st_read(here('data', 'raw', 'fire_info', 'shp', 'creek_simple.shp'
 
 
 #------------------  resample / aggregation  ------------------
-tif.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
+# inputs
+fire <- 'creek'
+
+# read in necessary data
+lc.file <- paste0('data/raw/background_variables/tif/nalcms_30m_', fire, '.tif')
+landcover <- rast(lc.file)
+
+# convert NALCMS class 0 (background) to NA
+landcover[landcover == 0] <- NA
+
+sort(unique(values(landcover)))
+
+res <- '500m' # 50 or 500
+
+# settings 
+in.dir <- 'data/processed/processed/tif/'
+out.dir <- paste0(in.dir, res, '/', fire, '/')
+
+# target resolution
+swe <- rast(paste0(in.dir, '50m/', fire, '/canopy_metrics/', fire, '_cover_metrics_50m.tif'))
+swe <- swe[[1]]
+sdd <- rast(paste0(in.dir, '500m/', fire, '/snow_metrics/', fire, '_sdd_wy2023_500m.tif'))
+# creek
+sdd <- rast(paste0(in.dir, '500m/', fire, '/snow_metrics/', 'swe_peak_wy2021_500m.tif'))
+
+if (res == '50m') {
+  target <- swe
+} else if (res == '500m') {
+  target <- sdd
+} else {
+  stop('res must be either \'50m\' or \'500m\'')
+}
 
 # Define landcover groupings
 lc.groups <- list(
-  Undesirable = c(16, 17, 18, 19),
+  Undesirable = c(15, 16, 17, 18, 19),
   Temperate_subpolar_needleleaf_forest = c(1),
   Temperate_subpolar_broadleaf_deciduous_forest = c(5),
   Mixed_forest = c(6),
@@ -112,12 +177,6 @@ lc.groups <- list(
   Temperate_subpolar_grassland = c(10),
   Wetland = c(14)
 )
-
-# target resolution
-swe <- rast(file.path(tif.dir, '50m/creek/snow_metrics/ASO_SanJoaquin_2024_0127_swe_50m_1524.tif'))
-sdd <- rast(file.path(tif.dir, '500m/creek/snow_metrics/creek_sdd_wy2020_32611_1524.tif'))
-
-#### SWE ####
 
 # Initialize list for fractional layers
 frac.list <- list()
@@ -128,12 +187,13 @@ for (grp in names(lc.groups)) {
   
   # Binary mask for this group (1 if pixel belongs to any of these classes)
   lc.bin <- landcover %in% classes
+  lc.bin <- mask(lc.bin, landcover)
   
   # Fractional cover at sdd resolution (mean of 1's = proportion)
-  lc.frac <- resample(lc.bin, swe, method = 'average')
+  lc.frac <- resample(lc.bin, target, method = 'average')
   
   # Mask to study area
-  lc.frac <- mask(lc.frac, swe)
+  lc.frac <- mask(lc.frac, target)
   
   # Rename layer
   names(lc.frac) <- grp
@@ -142,42 +202,13 @@ for (grp in names(lc.groups)) {
 }
 
 # Combine all fractional cover layers
-landcover.frac.50m <- rast(frac.list)
+landcover.frac <- rast(frac.list)
 
 # Check result
-plot(landcover.frac.50m)
-plot(landcover.frac.50m$Temperate_subpolar_needleleaf_forest)
+plot(landcover.frac)
+plot(landcover.frac$Temperate_subpolar_needleleaf_forest)
 
 
 # Save raster stack 
-writeRaster(landcover.frac.50m, file.path(tif.dir, '50m/creek/creek_landcover_fractional_groups_50m.tif'), overwrite = TRUE)
+writeRaster(landcover.frac, paste0(out.dir, fire, '_landcover_', res, '.tif'), overwrite = TRUE)
 
-
-#### SDD ####
-# resample from the 50m raster we just made
-
-lc.names <- names(landcover.frac.50m)
-
-lc.500.list <- lapply(lc.names, function(nm) {
-  r <- landcover.frac.50m[[nm]]
-  out <- exact_resample(r, sdd, fun = 'mean')
-  names(out) <- nm
-  out
-})
-
-landcover.frac.500 <- rast(lc.500.list)
-landcover.frac.500 <- mask(landcover.frac.500, sdd)
-
-# check to makes sure for most cells, the sum of the %s = 1
-global(sum(landcover.frac.500), fun = c('min','mean','max'), na.rm = TRUE)
-lc.sum <- sum(landcover.frac.500)
-# how many sum == 0
-global(lc.sum == 0, 'sum', na.rm = TRUE)
-global(lc.sum < 0.3, 'sum', na.rm = TRUE)
-
-
-# Save raster stack 
-writeRaster(landcover.frac.500, file.path(tif.dir, '500m/creek/creek_landcover_fractional_groups_500m.tif'), overwrite = TRUE)
-
-
-# troubleshooting

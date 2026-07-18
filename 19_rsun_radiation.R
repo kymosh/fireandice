@@ -782,14 +782,22 @@ for (fire in fires) {
 resolutions <- c('50m', '500m')
 fires <- c('caldor', 'castle', 'dixie')
 
+# this code needs to be fixed slightly but not worth it 
 # copy to backup
-#for (res in resolutions) {
-  in.dir <- paste0('data/processed/processed/tif/', fire, '/')
+for (res in resolutions) {
+  for (fire in fires) {
+  in.dir <- paste0('data/processed/processed/tif/', res, '/', fire, '/')
   out.dir1 <- paste0('J:/Fire_Snow/fireandice/data/processed/processed/tif/', res, '/', fire, '/') 
   out.dir2 <- paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/', res, '/', fire, '/' )
-  rad.file <- paste0('creek_rad_', each, '.tif')
-  file.copy(file.path(in.dir, file), out.dir, overwrite = TRUE)
+  rad.file <- paste0(in.dir, fire, '_rad_', res, '.tif')
+  rad.all.files <- list.files(paste0(in.dir, 'rad_metrics'), full.names = T)
+  file.copy(rad.file, out.dir1, overwrite = TRUE)
+  file.copy(rad.all.files, out.dir1, overwrite = TRUE)
+  file.copy(rad.file, out.dir2, overwrite = TRUE)
+  file.copy(rad.all.files, out.dir2, overwrite = TRUE)
+  }
 }
+
 
 # troubleshoot
 e <- union(ext(dem.acq[[1]]), ext(dem.acq[[2]]))

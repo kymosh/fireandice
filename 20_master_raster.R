@@ -5,135 +5,144 @@ lapply(packages, library, character.only = T)
 # Create master raster
 # ===========================================================================================
 
-
 # read in all raster stacks and combine into single one for modeling
 
-# ----- 500m (452m) master-raster -----
-dir <- 'data/processed/processed/tif/500m/creek'
-j <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/500m/creek'
-g <- 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/500m/creek'
+# ----- master-raster 500m -----
+fires <- c('dixie', 'castle', 'caldor')
+fire <- 'creek'
 
+for (fire in fires) {
+  res <- '500m'
+  dir <- paste0('data/processed/processed/tif/', res, '/', fire, '/')
+  
+  j <- paste0('J:/Fire_Snow/fireandice/', dir)
+  g <- paste0('G:/Fire_Snow_Dynamics_backup/', dir)
+  
+  
+  files <- list.files(dir, full.names = TRUE, pattern = '\\.tif$')
+  files <- files[!grepl('master', files)]
+  files
+  
+  # combine
+  stack.0 <- rast(files)
+  
+  names(stack.0) <- sub(
+    '_500m$',
+    '',
+    names(stack.0)
+  )
+  
+  # mask all areas by canopy raster
+  mask.template <- stack.0$gap_gap_pct
+  
+  # mask every layer in the stack
+  stack <- mask(stack.0, mask.template)
+  
+  writeRaster(stack, paste0(dir, fire, '_master_', res, '.tif'), overwrite = T)
+  writeRaster(stack, paste0(j, fire, '_master_', res, '.tif'), overwrite = T)
+  writeRaster(stack, paste0(g, fire, '_master_', res, '.tif'), overwrite = T)
 
-files <- list.files(dir, 'creek', full.names = TRUE)
-files <- files[!grepl('master', files)]
-files
-sdd.stack <- rast(files)
-names(sdd.stack)
-
-# mask t exclude Kings study area
-template <- sdd.stack[['swe_20200414_500m']]
-mask <- !is.na(template) 
-
-sdd.stack.masked <- trim(mask(sdd.stack, mask, maskvalues = FALSE))
-
-writeRaster(sdd.stack.masked, file.path(dir, 'creek_master_500m.tif'), overwrite = T)
-writeRaster(sdd.stack.masked, file.path(j, 'creek_master_500m.tif'), overwrite = T)
-writeRaster(sdd.stack.masked, file.path(g, 'creek_master_500m.tif'), overwrite = T)
-
-# ----- 50m master-raster -----
-
-dir <- 'data/processed/processed/tif/50m/creek'
-j <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
-g <- 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/tif/50m/creek'
-
-# dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
-files <- list.files(dir, 'creek', full.names = TRUE)
-files <- files[!grepl('master', files)]
-files
-swe.stack <- rast(files)
-names(swe.stack)
-
-# mask t exclude Kings study area
-names(swe.stack)
-plot(swe.stack[['swe_20200523']])
-
-template <- swe.stack[['swe_20200523']]
-mask <- !is.na(template) 
-
-swe.stack.masked <- trim(mask(swe.stack, mask, maskvalues = FALSE))
-
-# save
-writeRaster(swe.stack.masked, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
-writeRaster(swe.stack.masked, file.path(j, 'creek_master_50m.tif'), overwrite = T)
-writeRaster(swe.stack.masked, file.path(g, 'creek_master_50m.tif'), overwrite = T)
-
-
-
-
-# ----- if extents don't match... -----
-
-# check extents
-for (f in files) {
-  r <- rast(f)
-  print(ext(r))
 }
 
-# crop to limiting extent 
-#  for multiple files 
-rasters <- lapply(files, rast)
-ref <- rast(files[1]) # chose the raster that has the smallest extent
+# mask t exclude Kings study area
+# template <- sdd.stack[['swe_20200414_500m']]
+# mask <- !is.na(template) 
+# 
+# sdd.stack.masked <- trim(mask(sdd.stack, mask, maskvalues = FALSE))
 
-# new output directory (temporary, but necessary because we can't just overwrite the same files)
-dir <- 'data/processed/processed/tif/50m/creek/cropped'
-dir.create(dir, recursive = T, showWarnings = F)
 
-# crop each raster to the new extent and write out 
-out.files <- vapply(files, function(f) {
-  r <- rast(f)
-  r.crop <- crop(r, ref)
+# ----- master-raster 50m -----
+
+fires <- c('dixie', 'castle', 'caldor')
+fire <- 'creek'
+
+for (fire in fires) {
+  res <- '50m'
+  dir <- paste0('data/processed/processed/tif/', res, '/', fire, '/')
   
-  out <- file.path(dir, basename(f))
-  writeRaster(r.crop, out, overwrite = TRUE)
-  out
-}, character(1))
-
-# if just needing to crop 1 file 
-ref <- rast(files[1]) # chose the raster that has the smallest extent
-old <- rast(files[8]) # chose the raster that needs to be cropped
-new <- crop(old, ref) # crop
-
-# rename old file and move to old_versions folder so new file can be written
-old.file <- file.path(dir, 'creek_topo_50m.tif')
-new.file <- file.path(dir, 'old_versions/creek_topo_50m_before_crop_again.tif')
-file.rename(old.file, new.file)
-
-# write new raster
-writeRaster(new, file.path(dir, 'creek_topo_50m.tif'))
-
-# move old master file to old_version
-old.file <- file.path(dir, 'creek_master_50m.tif')
-new.file <- file.path(dir, 'old_versions/creek_master_50m_before_fixinglandcover_before_fixingsnowice_andNAs.tif')
-file.rename(old.file, new.file)
-
-# try stacking again
-files <- list.files(dir, pattern = '\\.tif$', full.names = T)
-files
-swe.stack <- rast(files) # now it works!
-
-# save swe.stack again
-writeRaster(swe.stack, file.path(dir, 'creek_master_50m.tif'), overwrite = T)
-
-
-
-# clean up 
-# some of this may not be necessary since doing the file.rename thing. 
-# go back to OG files
-dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek'
-files <- list.files(dir, 'creek', full.names = TRUE)
-
-old.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/50m/creek/old_versions'
-
-moved.files <- vapply(files, function(f) {
-  base <- file_path_sans_ext(basename(f))
-  new.name <- paste0(base, '_before_crop.tif')
-  new.path <- file.path(old.dir, new.name)
+  j <- paste0('J:/Fire_Snow/fireandice/', dir)
+  g <- paste0('G:/Fire_Snow_Dynamics_backup/', dir)
   
-  file.rename(f, new.path)
-  new.path
-}, character(1))
+  
+  files <- list.files(dir, full.names = TRUE, pattern = '\\.tif$')
+  files <- files[!grepl('master', files)]
+  files
+  
+  # read rasters
+  rasters <- lapply(files, rast)
+  
+  # 50m for some reason have slightly different extents, so we need to crop them all to the common extent
+  # extract extents
+  exts <- lapply(rasters, ext)
+  
+  # common extent
+  common.ext <- ext(
+    max(sapply(exts, xmin)),
+    min(sapply(exts, xmax)),
+    max(sapply(exts, ymin)),
+    min(sapply(exts, ymax))
+  )
+  
+  # crop to common extent
+  rasters.crop <- lapply(
+    rasters,
+    crop,
+    y = common.ext
+  )
+  
+  # combine
+  stack.0 <- rast(rasters.crop)
+  
+  # mask all areas by canopy raster
+  mask.template <- stack.0$gap_gap_pct
+  
+  # mask every layer in the stack
+  stack <- mask(stack.0, mask.template)
+  
+  writeRaster(stack, paste0(dir, fire, '_master_', res, '.tif'), overwrite = T)
+  writeRaster(stack, paste0(j, fire, '_master_', res, '.tif'), overwrite = T)
+  writeRaster(stack, paste0(g, fire, '_master_', res, '.tif'), overwrite = T)
+  
+}
+
+
+# ----- inspect ----- 
+
+# check rasters
+fire <- 'dixie'
+res <- '500m'
+
+dir <- paste0('data/processed/processed/tif/', res, '/', fire, '/')
+master.file <- paste0(dir, fire, '_master_', res, '.tif')
+master <- rast(master.file)
+
+names(master)
+
+par(mfrow = c(2, 2), mar = c(2, 2, 2, 2))
+
+n <- nlyr(master)
+
+for (i in seq(1, n, by = 4)) {
+  
+  # layers to plot in this batch
+  idx <- i:min(i + 3, n)
+  
+  plot(master[[idx]])
+  
+  # pause unless this is the last batch
+  if (max(idx) < n) {
+    readline('Press <Enter> to see the next 4 layers...')
+  }
+}
+
+
+par(mfrow = c(1, 1))
+
+
 # ===========================================================================================
 # convert to df, filter, and pivot long
 # ===========================================================================================
+
 
 # ===========================================================================================
 # setup
@@ -161,22 +170,6 @@ remove.cols <- c(
   'forest_dom_frac'
 )
 
-# keep.canopy <- c(
-#   'fd_fractal_dim',
-#   'gap_gap_pct',
-#   'cover_ground_frac',
-#   'gap_dist_to_canopy_mean',
-#   'ht_zskew', # this one has basically no correlation with SWE, so can probably drop
-#   'ht_zkurt', # this one has basically no correlation with SWE, so can probably drop
-#   'ht_zentropy',
-#   'ht_zpcum1',
-#   'ht_zpcum2',
-#   'ht_zpcum6',
-#   'ht_zpcum9',
-#   'ht_zsd'
-# )
-
-
 
 # ===========================================================================================
 # helper functions
@@ -185,6 +178,7 @@ remove.cols <- c(
 filter_landcover <- function(df, forest.cols, lc.sum.min = 0.25, undesirable.max = 0.30) {
   
   df %>%
+    #rename(cbibc = CBI_bc) %>% # only for castle/caldor/dixie
     mutate(
       lc.all.na = rowSums(is.na(across(all_of(forest.cols)))) == length(forest.cols),
       lc.sum = rowSums(across(all_of(forest.cols)), na.rm = TRUE)
@@ -202,23 +196,6 @@ filter_landcover <- function(df, forest.cols, lc.sum.min = 0.25, undesirable.max
     dplyr::select(-lc.all.na, -lc.sum)
 }
 
-pivot_climate_long <- function(df) {
-  
-  clim.long <- df %>%
-    select(cell, starts_with('clim_')) %>%
-    pivot_longer(
-      cols = -cell,
-      names_to = c('.value', 'wy'),
-      names_pattern = 'clim_(.*)_wy(\\d+)'
-    )
-  
-  clim.long$wy <- as.numeric(clim.long$wy)
-  clim.long <- clim.long[clim.long$wy >= 2020, ]
-  names(clim.long)[names(clim.long) == 'swe'] <- 'clim_swe'
-  
-  clim.long
-}
-
 build_long_50m <- function(df, forest.cols, remove.cols, keep.canopy = NULL) {
   
   canopy.cols <- names(df)[grepl('^(cover_|gap_|ht_|fd_)', names(df))]
@@ -229,20 +206,16 @@ build_long_50m <- function(df, forest.cols, remove.cols, keep.canopy = NULL) {
     drop.canopy <- setdiff(canopy.cols, keep.canopy)
   }
   
-  swe.long <- df %>%
+  df.long <- df %>%
     pivot_longer(
       cols = starts_with('swe_peak_wy'),
       names_to = 'wy',
       values_to = 'swe_peak'
-    )
-  
-  swe.long$wy <- as.numeric(gsub('swe_peak_wy', '', swe.long$wy))
-  
-  clim.long <- pivot_climate_long(df)
-  
-  df.long <- left_join(swe.long, clim.long, by = c('cell', 'wy')) %>%
+    ) %>%
+    mutate(
+      wy = as.numeric(gsub('swe_peak_wy', '', wy))
+    ) %>%
     dplyr::select(
-      -starts_with('clim_'),
       -matches('^swe_\\d{8}$'),
       -all_of(remove.cols),
       -all_of(drop.canopy)
@@ -267,28 +240,26 @@ build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy = NULL) {
       cols = starts_with('swe_peak_wy'),
       names_to = 'wy',
       values_to = 'swe_peak'
+    ) %>%
+    mutate(
+      wy = as.numeric(gsub('swe_peak_wy|_500m', '', wy))
     )
   
-  swe.long$wy <- as.numeric(gsub('swe_peak_wy|_500m', '', swe.long$wy))
-  
-  clim.long <- pivot_climate_long(df)
-  
   sdd.long <- df %>%
-    select(cell, matches('^sdd_wy\\d{4}$')) %>%
+    dplyr::select(cell, matches('^sdd_wy\\d{4}$')) %>%
     pivot_longer(
       cols = -cell,
       names_to = 'wy',
       values_to = 'sdd'
+    ) %>%
+    mutate(
+      wy = as.numeric(gsub('sdd_wy', '', wy))
     )
-  
-  sdd.long$wy <- as.numeric(gsub('sdd_wy', '', sdd.long$wy))
   
   df.long <- swe.long %>%
     left_join(sdd.long, by = c('cell', 'wy')) %>%
-    left_join(clim.long, by = c('cell', 'wy')) %>%
     rename_with(~ gsub('_500m$', '', .x)) %>%
     dplyr::select(
-      -starts_with('clim_'),
       -matches('^swe_\\d{8}$'),
       -starts_with('sdd_'),
       -all_of(remove.cols),
@@ -307,61 +278,21 @@ build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy = NULL) {
 # read rasters and convert to dfs
 # ===========================================================================================
 
-#dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif'
-dir <- 'data/processed/processed/tif'
+fire <- 'creek'
 
-r.50 <- rast(file.path(dir, '50m/creek/creek_master_50m.tif'))
-r.500 <- rast(file.path(dir, '500m/creek/creek_master_500m.tif'))
+dir <- 'data/processed/processed/tif/'
 
-# sanity check
-n <- nlyr(r.50)
-for (i in seq(1, n, by = 16)) {
-  idx <- i:min(i + 15, n)
-  plot(r.50[[idx]])
-  title(paste('Layers', idx[1], 'to', idx[length(idx)]))
-  readline('Press [enter] to continue...')
-}
-
-n <- nlyr(r.500)
-for (i in seq(1, n, by = 16)) {
-  idx <- i:min(i + 15, n)
-  plot(r.500[[idx]])
-  title(paste('Layers', idx[1], 'to', idx[length(idx)]))
-  readline('Press [enter] to continue...')
-}
-
+r.50 <- rast(paste0(dir, '50m/', fire, '/', fire, '_master_50m.tif'))
+r.500 <- rast(paste0(dir, '500m/', fire, '/', fire, '_master_500m.tif'))
 
 df.50 <- as.data.frame(r.50, cells = TRUE, xy = TRUE)
 df.500 <- as.data.frame(r.500, cells = TRUE, xy = TRUE)
-
-# ===========================================================================================
-# Trim 50m data
-# ===========================================================================================
-
-# make points from df.500 coordinates
-pts.500 <- vect(df.500, geom = c('x', 'y'), crs = crs(r.500))
-
-# extract all 50m layers at those points
-r.50.pts <- terra::extract(r.50, pts.500)
-
-# combine to keep 50m cell/x/y
-df.50.thinned <- cbind(
-  df.500[, c('cell', 'x', 'y')],
-  r.50.pts[, -1, drop = FALSE]
-)
-
-# remove edge points that are NA
-data.cols <- setdiff(names(df.50.thinned), c('cell', 'x', 'y'))
-df.50.thinned <- df.50.thinned[
-  rowSums(!is.na(df.50.thinned[, data.cols])) > 0,
-]
 
 # ===========================================================================================
 # filter landcover
 # ===========================================================================================
 
 df.50.f <- filter_landcover(df.50, forest.cols)
-df.50thin.f <- filter_landcover(df.50.thinned, forest.cols)
 
 df.500.f <- filter_landcover(df.500, forest.cols)
 
@@ -372,7 +303,6 @@ df.500.f <- filter_landcover(df.500, forest.cols)
 # if you want to only keep the canopy defined in the setup, add in ", keep.canopy" to the function calls below
 
 df.long.50 <- build_long_50m(df.50.f, forest.cols, remove.cols)
-df.long.50thin <- build_long_50m(df.50thin.f, forest.cols, remove.cols)
 
 df.long.500 <- build_long_500m(df.500.f, forest.cols, remove.cols)
 
@@ -383,21 +313,18 @@ names(df.long.500)
 # ===========================================================================================
 # save
 # ===========================================================================================
-dir <- 'data/processed/processed/rds/creek'
+out.dir <- paste0('data/processed/processed/rds/', fire, '/')
+dir.create(out.dir, showWarnings = FALSE, recursive = TRUE)
 
-saveRDS(df.long.50, file.path(dir, 'creek_long_df_50m.rds'))
-saveRDS(df.long.500, file.path(dir, 'creek_long_df_500m.rds'))
+saveRDS(df.long.50, paste0(out.dir, fire, '_long_df_50m_unfiltered.rds'))
+saveRDS(df.long.500, paste0(out.dir, fire, '_long_df_500m_unfiltered.rds'))
 
 # save to backup
-saveRDS(df.long.50, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_50m.rds')
-saveRDS(df.long.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek/creek_long_df_500m.rds')
-saveRDS(df.long.50, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek_long_df_50m.rds')
-saveRDS(df.long.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_500m.rds')
+saveRDS(df.long.50, paste0('G:/Fire_Snow_Dynamics_backup/', out.dir, fire, '_long_df_50m_unfiltered.rds'))
+saveRDS(df.long.500, paste0('G:/Fire_Snow_Dynamics_backup/', out.dir, fire, '_long_df_500m_unfiltered.rds'))
+saveRDS(df.long.50, paste0('J:/Fire_Snow/fireandice/', out.dir, fire, '_long_df_50m_unfiltered.rds'))
+saveRDS(df.long.500, paste0('J:/Fire_Snow/fireandice/', out.dir, fire, '_long_df_500m_unfiltered.rds'))
 
-# save all thinned
-saveRDS(df.long.50thin, file.path(dir, 'creek_long_df_50m_thinned.rds'))
-saveRDS(df.long.50thin, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek/creek_long_df_50m_thinned.rds')
-saveRDS(df.long.50thin, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_50m_thinned.rds')
 
 
 # -------- check NAs ------------
@@ -414,38 +341,32 @@ cat('Percent lost:', round(100 * (n.total - n.complete) / n.total, 2), '%\n')
 # ----- exploration -----
 
 # -- visualize peak swe by year ----
-all_swe <- c(df.50$swe_peak_wy2021,
-             df.50$swe_peak_wy2022,
-             df.50$swe_peak_wy2023,
-             df.50$swe_peak_wy2024)
+all_swe <- c(df.50$swe_peak_wy2023,
+             df.50$swe_peak_wy2024,
+             df.50$swe_peak_wy2025)
 
 xlim <- range(all_swe, na.rm = TRUE)
 breaks <- seq(xlim[1], xlim[2], length.out = 51)  # 50 bins
 par(mfrow = c(2, 2))  # 2x2 layout
 
-hist(df.50$swe_peak_wy2021,
-     breaks = breaks,
-     xlim = c(0, 4),
-     main = 'WY2021',
-     col = 'lightblue')
-
-hist(df.50$swe_peak_wy2022,
-     breaks = breaks,
-     xlim = c(0, 4),
-     main = 'WY2022',
-     col = 'lightblue')
-
 hist(df.50$swe_peak_wy2023,
      breaks = breaks,
      xlim = c(0, 4),
-     main = 'WY2023',
+     main = '2023',
      col = 'lightblue')
 
 hist(df.50$swe_peak_wy2024,
      breaks = breaks,
      xlim = c(0, 4),
-     main = 'WY2024',
+     main = '2024',
      col = 'lightblue')
+
+hist(df.50$swe_peak_wy2025,
+     breaks = breaks,
+     xlim = c(0, 4),
+     main = '2025',
+     col = 'lightblue')
+
 
 hist(log1p(df.50$swe_peak_wy2023))
 
@@ -453,11 +374,52 @@ hist(log1p(df.50$swe_peak_wy2023))
 
 
 # ==============================================================================
-# explore
+# Find Snowline and Explore Data
 # ==============================================================================
 
+fire <- 'castle'
+
+swe <- rast(paste0('data/processed/processed/tif/50m/', fire, '/', fire, '_swe_peak_50m.tif'))
+elev <- rast(paste0('data/processed/processed/tif/50m/', fire, '/', fire, '_nasadem_50m.tif'))
+
+# get same extents
+rasters <- list(
+  swe = swe,
+  elev = elev
+)
+
+# 50m for some reason have slightly different extents, so we need to crop them all to the common extent
+# extract extents
+exts <- lapply(rasters, ext)
+
+# common extent
+common.ext <- ext(
+  max(sapply(exts, xmin)),
+  min(sapply(exts, xmax)),
+  max(sapply(exts, ymin)),
+  min(sapply(exts, ymax))
+)
+
+# crop to common extent
+rasters.crop <- lapply(
+  rasters,
+  crop,
+  y = common.ext
+)
+
+# combine
+swe.stack <- rast(rasters.crop)
+
+years <- as.numeric(sub('swe_peak_wy', '', names(swe)))
+
+names(swe.stack) <- c(
+  paste0('swe_peak_wy', years),
+  'topo_elev'
+)
+
+
 # ----- visualize where swe = 0 for each year -----
-year <- c('2021', '2022', '2023', '2024', '2025')
+year <- sub('swe_peak_wy', '', names(swe))
 
 dev.off()
 par(mfrow = c(2, 3))
@@ -484,9 +446,8 @@ for (yr in year) {
 
 }
 
-# find snowline
+# ----- find snowline -----
 
-years <- c(2021, 2022, 2023, 2024, 2025)
 r.elev <- swe.stack$topo_elev
 
 snowline <- data.frame(
@@ -497,7 +458,7 @@ snowline <- data.frame(
   n.edge = NA_integer_
 )
 
-w <- matrix(1, 3, 3)
+w <- matrix(1, 3, 3, 4)
 
 for (i in seq_along(years)) {
   
@@ -507,7 +468,12 @@ for (i in seq_along(years)) {
   r.swe <- swe.stack[[paste0('swe_peak_wy', yr)]]
   
   # binary: 0 = no snow, 1 = snow
-  r.bin <- ifel(r.swe > 0, 1, 0)
+  # Preserve NA outside valid SWE coverage
+  r.bin <- ifel(
+    is.na(r.swe),
+    NA,
+    ifel(r.swe > 0, 1, 0)
+  )
   
   # find cells whose 3x3 neighborhood contains both 0 and 1
   r.min <- focal(r.bin, w = w, fun = min, na.rm = TRUE)
@@ -533,6 +499,47 @@ for (i in seq_along(years)) {
 
 snowline
 
+# plot snowline for each year
+dev.off()
+par(mfrow = c(2, 2))
+
+for (i in seq_along(years)) {
+  
+  yr <- years[i]
+  
+  r.swe <- swe.stack[[paste0('swe_peak_wy', yr)]]
+  
+  r.bin <- ifel(
+    is.na(r.swe),
+    NA,
+    ifel(r.swe > 0, 1, 0)
+  )
+  
+  r.min <- focal(r.bin, w = w, fun = min, na.rm = TRUE)
+  r.max <- focal(r.bin, w = w, fun = max, na.rm = TRUE)
+  r.edge <- r.min != r.max
+  
+  r.edge.snow <- ifel(
+    r.edge & r.bin == 1,
+    1,
+    NA
+  )
+  
+  # plot elevation
+  plot(
+    r.elev,
+    main = paste('WY', yr)
+  )
+  
+  # overlay detected snowline
+  plot(
+    r.edge.snow,
+    add = TRUE,
+    col = 'red',
+    legend = FALSE
+  )
+}
+
 par(mfrow = c(1, 2))
 plot(snowline$wy, snowline$q50, ylim = range(snowline$q25, snowline$q75))
 arrows(snowline$wy, snowline$q25,
@@ -541,38 +548,98 @@ arrows(snowline$wy, snowline$q25,
 
 # ----- now visualize snowline -----
 # ----- visualize where swe = 0 for each year -----
-year <- c('2021', '2022', '2023', '2024', '2025')
+
+# snowline elevations by fire and water year
+snowline.lookup <- data.frame(
+  fire = c(
+    rep('caldor', 4),
+    rep('castle', 3),
+    rep('dixie', 3)
+  ),
+  wy = c(
+    2023, 2024, 2025, 2026,
+    2023, 2024, 2025,
+    2023, 2024, 2025
+  ),
+  snowline = c(
+    1344, 1441, 1453, 2267,
+    1722, 1574, 1937,
+    1390, 1454, 1708
+  )
+)
+
+
+year <- sub('swe_peak_wy', '', names(swe))
 
 dev.off()
 par(mfrow = c(2, 3))
+
 for (yr in year) {
+  
   r <- swe.stack[[paste0('swe_peak_wy', yr)]]
   r.elev <- swe.stack$topo_elev
-  r <- clamp(r, lower = 0, upper = 5, values = TRUE)
   
-  # set snowline by year
-  snowline <- 
-    if (yr == '2021') 1843 else
-    if (yr == '2022') 1748 else
-    if (yr == '2023') -Inf else
-    if (yr == '2024') 1723 else
-    if (yr == '2025') 1883
+  r <- clamp(
+    r,
+    lower = 0,
+    upper = 5,
+    values = TRUE
+  )
   
-  plot(r,
-       main = paste0('Snowline in WY', yr),
-       zlim = c(0, 5))
+  # get snowline for this fire and water year
+  snowline <- snowline.lookup$snowline[
+    snowline.lookup$fire == fire &
+      snowline.lookup$wy == as.numeric(yr)
+  ]
   
+  # stop if no matching snowline was provided
+  if (length(snowline) != 1) {
+    stop(
+      paste0(
+        'No unique snowline found for ',
+        fire,
+        ' in WY',
+        yr
+      )
+    )
+  }
+  
+  plot(
+    r,
+    main = paste0(
+      tools::toTitleCase(fire),
+      ' snowline in WY',
+      yr,
+      ': ',
+      snowline,
+      ' m'
+    ),
+    zlim = c(0, 5)
+  )
+  
+  # identify elevations below the snowline
   r.sl <- r.elev < snowline
+  
+  # retain only cells within the SWE raster
   r.sl <- mask(r.sl, r)
-  r.sl <- classify(r.sl, rbind(c(0, NA)))
-  plot(r.sl, col = 'red', add = TRUE, legend = FALSE)
+  
+  # remove cells above the snowline
+  r.sl <- classify(
+    r.sl,
+    rbind(c(0, NA))
+  )
+  
+  # plot areas below the snowline in red
+  plot(
+    r.sl,
+    col = 'red',
+    add = TRUE,
+    legend = FALSE
+  )
 }
 
 
-
 # ----- visualize where sdd = 0 for each year -----
-year <- c('2021', '2022', '2023', '2024', '2025')
-
 dev.off()
 par(mfrow = c(2, 3))
 for (yr in year) {
@@ -608,3 +675,73 @@ plot(r)
 
 r1 <- rast('data/processed/processed/tif/50m/creek/creek_canopy_metrics_50m.tif')
 plot(r1)
+
+# ----- explore elevation distributions -----
+fire <- 'caldor'
+dir <- paste0('data/processed/processed/rds/', fire, '/')
+df.50.0 <- readRDS(paste0(dir, fire, '_long_df_50m_unfiltered.rds'))
+caldor.50.raw <- df.50.0
+
+fire <- 'castle'
+dir <- paste0('data/processed/processed/rds/', fire, '/')
+df.50.0 <- readRDS(paste0(dir, fire, '_long_df_50m_unfiltered.rds'))
+castle.50.raw <- df.50.0
+
+fire <- 'dixie'
+dir <- paste0('data/processed/processed/rds/', fire, '/')
+df.50.0 <- readRDS(paste0(dir, fire, '_long_df_50m_unfiltered.rds'))
+dixie.50.raw <- df.50.0
+
+fire <- 'creek'
+dir <- paste0('data/processed/processed/rds/', fire, '/')
+df.50.0 <- readRDS(paste0(dir, fire, '_long_df_50m_raw_unfiltered.rds'))
+creek.50.raw <- df.50.0
+
+plot.df <- bind_rows(
+  caldor.50.raw %>% mutate(fire = 'caldor'),
+  castle.50.raw %>% mutate(fire = 'Castle'),
+  dixie.50.raw %>% mutate(fire = 'dixie'),
+  creek.50.raw %>% mutate(fire = 'creek')
+)
+
+ggplot(
+  plot.df,
+  aes(
+    x = elevation,
+    color = fire,
+    fill = fire
+  )
+) +
+  geom_density(alpha = 0.2) +
+  theme_bw() +
+  labs(
+    x = 'Elevation (m)',
+    y = 'Density'
+  )
+
+plot.df %>%
+  group_by(fire) %>%
+  summarize(
+    min = min(elevation),
+    q25 = quantile(elevation, 0.25),
+    median = median(elevation),
+    q75 = quantile(elevation, 0.75),
+    max = max(elevation)
+  )
+
+
+# troubleshooting
+for (each in files) {
+   r <- rast(each)
+   print(names(r))
+ }
+files
+
+test.files <- list.files('data/processed/processed/tif/500m/creek/snow_metrics', full.names = T, pattern = '\\.tif$')
+
+x <- rast(files[4])
+names(x) <- 'elevation'
+names(x)
+
+writeRaster(x, 'data/processed/processed/tif/500m/creek/creek_nasadem_500m2.tif', overwrite = T)
+
