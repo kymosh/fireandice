@@ -1,37 +1,57 @@
 packages <- c('dplyr', 'tidyr', 'corrplot', 'ggplot2', 'blockCV', 'sf', 'terra')
 lapply(packages, library, character.only = T)
 
-fire <- 'caldor'
+# =======================================================================================
+#  filter DFs 
+# =======================================================================================
+#  ----- setup -----
+fire <- 'creek'
 dir <- paste0('data/processed/processed/rds/', fire, '/')
 
-# ----- Snowline lookup -----
+# --- Snowline lookup ---
 if (fire == 'caldor') {
   snowline.2023 <- 1344
   snowline.2024 <- 1441
   snowline.2025 <- 1453
   snowline.2026 <- 2267
+  epsg <- 32610
+  selection <- 'random'
+} else if (fire == 'creek') {
+  snowline.2023 <- -Inf
+  snowline.2024 <- 1786
+  snowline.2025 <- 2021
+  snowline.2026 <- NA_real_
+  epsg <- 32611
+  selection <- 'systematic'
 } else if (fire == 'castle') {
   snowline.2023 <- 1722
   snowline.2024 <- 1574
   snowline.2025 <- 1937
   snowline.2026 <- NA_real_
+  epsg <- 32611
+  selection <- 'random'
 } else if (fire == 'dixie') {
   snowline.2023 <- 1390
   snowline.2024 <- 1454
   snowline.2025 <- 1708
   snowline.2026 <- NA_real_
+  epsg <- 32610
+  selection <- 'random'
 } else {
   stop('Snowline values have not been defined for this fire.')
 }
 
-# =======================================================================================
-# 50m
-# =======================================================================================
+# ----- 50m -----
+
 
 # get dataframe
 df.50.0 <- readRDS(paste0(dir, fire, '_long_df_50m_unfiltered.rds'))
 
-# ----- Filter DF (for castle, caldor, & dixie) ----- 
+if (fire == 'creek') {
+df.50.0 <- df.50.0 %>%
+  select(-fd_fractal_dim) %>%
+  filter(!wy %in% c(2020, 2021, 2022))
+}
 
 df.50 <- df.50.0 %>% 
   select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevant to snow accumulation phase
@@ -74,7 +94,9 @@ df.50 <- df.50.0 %>%
     elevation >= snowline,
     ht_zmax <= 96 # remove anything taller than what is proved to be the tallest tree in the Sierra
   ) %>% 
-  select(-snowline)
+  select(-snowline) # remove temp column
+
+
 
 # save raw before scaling
 df.50.raw <- df.50
@@ -84,86 +106,12 @@ num.cols <- sapply(df.50, is.numeric)
 num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
 df.50[num.cols] <- scale(df.50[num.cols])
 
-# ----- CREEK ----- 
-# # creek fire filtering is a little different because of changes made for the following 3 fires
-# df.50 <- df.50.0 %>%
-#   select(-fd_fractal_dim) %>% # basically same as gap_pct and gap_pct has way less NAs than fractal_dim
-#   select(-rad_dtm_melt, -rad_dsm_melt) %>% # melt season not relevant to snow accumulation phase
-#   rename(cbibc = CBI_bc) %>%
-#   filter(
-#     wy != 2020, # drop 2020, since it's prefire
-#     wy != 2021, # drop 2021, since it's before lidar 
-#     wy != 2022, # drop 2021, since it's before lidar 
-#     swe_peak > 0 # drop all cells where there was no snow
-#   ) %>%
-#   mutate(
-#     snowline = case_when(
-#       wy == 2022 ~ 1956,
-#       wy == 2023 ~ -Inf, # snow covers whole area for 2023, no need to filter
-#       wy == 2024 ~ 1786,
-#       wy == 2025 ~ 2021
-#     ),
-# 
-#     wy = as.factor(wy),
-#     cell = as.factor(cell),
-# 
-#     burned = factor(
-#       if_else(cbibc > 0, 'burned', 'unburned'),
-#       levels = c('unburned', 'burned')
-#     ),
-# 
-#     # aspect classes
-#     aspect_class = case_when(
-#       aspect_cos > 0.5  ~ 'North-facing',
-#       aspect_cos < -0.5 ~ 'South-facing',
-#       TRUE                   ~ NA_character_
-#     ),
-# 
-#     aspect_class = factor(
-#       aspect_class,
-#       levels = c('North-facing', 'South-facing')
-#     ),
-# 
-#     # elevation bands
-#     elev_band = case_when(
-#       elevation < 2000 ~ 'Low (<2000 m)',
-#       elevation < 2600 ~ 'Mid (2000-2600 m)',
-#       TRUE             ~ 'High (>2600 m)'
-#     ),
-# 
-#     elev_band = factor(
-#       elev_band,
-#       levels = c(
-#         'Low (<2000 m)',
-#         'Mid (2000-2600 m)',
-#         'High (>2600 m)'
-#       )
-#     ),
-#     gap_percent = gap_gap_pct * 100
-#   ) %>%
-#   filter(
-#     elevation >= snowline,
-#     ht_zmax <= 96 # remove anything taller than what is proved to be the tallest tree in the Sierra
-#   ) %>%
-#   select(-snowline)
-# 
-# # save raw before scaling
-# df.50.raw <- df.50
-# 
-# # scale numeric predictors
-# num.cols <- sapply(df.50, is.numeric)
-# num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
-# df.50[num.cols] <- scale(df.50[num.cols])
+# --- Spatial Blocking ---
 
-
-# =======================================================================================
-# Spatial Blocking
-# =======================================================================================
-epsg <- 32611
 block.m <- 8000
 test.prop <- 0.20
 res <- 50
-df <- df.50 # or df.500
+df <- df.50 
 
 # study area polygon
 study <- st_read(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')) %>%
@@ -182,7 +130,7 @@ sb <- cv_spatial(
   r = NULL,
   size = block.m,
   k = 5,
-  selection = 'systematic',
+  selection = selection,
   iteration = 100,
   biomod2 = FALSE,
   progress = TRUE,
@@ -208,9 +156,7 @@ dat.blocked <- dat.sf %>%
   )
 
 
-
-
-# ----- check these numbers for new study areas -----
+# --- check these numbers for new study areas ---
 # proportion numbers per fold
 # sb$blocks %>%
 #   st_drop_geometry() %>%
@@ -252,7 +198,7 @@ dat.blocked <- dat.sf %>%
 #   filter(n_folds > 1 | n_splits > 1)
 
 
-# ----- save -----
+# --- save ---
 dat.blocked <- st_drop_geometry(dat.blocked)
 saveRDS(dat.blocked, file.path(dir, paste0(fire, '_df_', res, 'm.rds')))
 saveRDS(dat.blocked, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
@@ -279,12 +225,20 @@ saveRDS(df.50.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed
 
   
 
-# =======================================================================================
-# 500m
-# =======================================================================================
 
-# ----- castle, caldor, & dixie -----
+# ----- 500m -----
+
 df.500.0 <- readRDS(paste0(dir, fire, '_long_df_500m_unfiltered.rds'))
+
+if (fire == 'creek') {
+  df.500.0 <- df.500.0 %>%
+    rename_with(
+      ~ gsub('^topo_', '', .x)
+    ) %>%
+    select(-fd_fractal_dim, -elev) %>%
+    filter(!wy %in% c(2020, 2021, 2022))
+}
+
 df.500 <- df.500.0 %>% 
   filter(
     swe_peak > 0,
@@ -331,114 +285,373 @@ df.500 <- df.500.0 %>%
   ) %>% 
   select(-snowline)
 
+# save raw values before scaling
 df.500.raw <- df.500
-
-saveRDS(df.500.raw, paste0(dir, fire, '_df_500m_raw.rds'))
-# save to J/G drives
-# DO THIS
 
 # scale numeric predictors
 num.cols <- sapply(df.500, is.numeric)
 num.cols[c('sdd', 'x', 'y')] <- FALSE # don't scale the response variable'
 df.500[num.cols] <- scale(df.500[num.cols])
 
-# then do the spatial autoblock - before saving!
 
-# save
-saveRDS(df.500, paste0(dir, fire, '_df_500m.rds'))
-# save to J/G drives
-saveRDS(df.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_500m_clean.rds')
-saveRDS(df.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_500m_clean.rds') # save to G: drive backup
 
-# # ----- creek -----
-# df.500.0 <- readRDS(file.path(dir, 'old/creek_long_df_500m.rds'))
-# df.500 <- df.500.0 %>% 
-#   select(-fd_fractal_dim) %>% # super correlated with gap_pct but with way more NAs
-#   select(-tmmn) %>% # just using tmmx to model sdd
-#   select(-topo_tpi150, -topo_tpi510) %>% # redundant with tpi1200
-#   filter(
-#     wy != 2020,
-#     swe_peak > 0,
-#     sdd > 0
-#   ) %>%  
-#   mutate(
-#     snowline = case_when(
-#       wy == 2021 ~ 2145,
-#       wy == 2022 ~ 1956,
-#       wy == 2023 ~ -Inf,
-#       wy == 2024 ~ 1786,
-#       wy == 2025 ~ 2021
-#     ),
-#     
-#     wy = as.factor(wy),
-#     cell = as.factor(cell),
-#     
-#     gap_gap_pct = gap_gap_pct * 100,
-#     
-#     burned = factor(
-#       if_else(cbibc > 0, 'burned', 'unburned'),
-#       levels = c('unburned', 'burned')
-#     ),
-#     
-#     # aspect classes
-#     aspect_class = case_when(
-#       topo_aspect_cos > 0.5  ~ 'North-facing',
-#       topo_aspect_cos < -0.5 ~ 'South-facing',
-#       TRUE                   ~ 'East/West'
-#     ),
-#     
-#     aspect_class = factor(
-#       aspect_class,
-#       levels = c(
-#         'North-facing',
-#         'East/West',
-#         'South-facing'
-#       )
-#     ),
-#     
-#     # elevation bands
-#     elev_band = case_when(
-#       topo_elev < 2000 ~ 'Low (<2000 m)',
-#       topo_elev < 2600 ~ 'Mid (2000-2600 m)',
-#       TRUE             ~ 'High (>2600 m)'
-#     ),
-#     
-#     elev_band = factor(
-#       elev_band,
-#       levels = c(
-#         'Low (<2000 m)',
-#         'Mid (2000-2600 m)',
-#         'High (>2600 m)'
-#       )
-#     )
-#   ) %>% 
-#   filter(
-#     topo_elev >= snowline,
-#     complete.cases(.)
-#   ) %>% 
-#   select(-snowline)
-# 
-# # scale numeric predictors
-# num.cols <- sapply(df.500, is.numeric)
-# num.cols[c('sdd', 'x', 'y')] <- FALSE # don't scale the response variable'
-# df.500[num.cols] <- scale(df.500[num.cols])
-# 
-# # save to mosher comp
-# saveRDS(df.500, file.path(dir, 'creek_long_df_500m_clean.rds'))
-# # save to J/G drives
-# saveRDS(df.500, 'J:/Fire_Snow/fireandice/data/processed/processed/rds/creek/creek_long_df_500m_clean.rds')
-# saveRDS(df.500, 'G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/creek_long_df_500m_clean.rds') # save to G: drive backup
+# --- spatial blocking ---
+
+block.m <- 8000
+test.prop <- 0.20
+res <- 500
+df <- df.500 # or df.500
+
+# study area polygon
+study <- st_read(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')) %>%
+  st_transform(epsg)
+
+# your model data as points
+dat.sf <- st_as_sf(df, coords = c('x', 'y'), crs = epsg, remove = FALSE)
+
+# NOTE:
+# creek used selection = 'systematic'
+# castle, caldor, and dixie used selection = 'random', seed = 61 for best distribution of train/test data
+
+sb <- cv_spatial(
+  x = dat.sf,
+  column = NULL,
+  r = NULL,
+  size = block.m,
+  k = 5,
+  selection = selection,
+  iteration = 100,
+  biomod2 = FALSE,
+  progress = TRUE,
+  report = TRUE,
+  seed = 61
+)
+
+cv_plot(sb)
+
+# create test/train categories
+sb$blocks$split <- if_else(sb$blocks$folds == 2, 'test', 'train')
+
+# plot test/train
+ggplot(sb$blocks) +
+  geom_sf(aes(fill = split)) +
+  theme_bw()
+
+# apply blocks to data
+dat.blocked <- dat.sf %>%
+  mutate(
+    fold_id = sb$folds_ids,
+    split = if_else(fold_id == 1, 'test', 'train')
+  )
+
+# --- save ---
+dat.blocked <- st_drop_geometry(dat.blocked)
+saveRDS(dat.blocked, file.path(dir, paste0(fire, '_df_', res, 'm.rds')))
+saveRDS(dat.blocked, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
+saveRDS(dat.blocked, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
+
+
+# add same folds to raw
+stopifnot(nrow(df.500.raw) == nrow(dat.blocked))
+stopifnot(all(df.500.raw$x == dat.blocked$x))
+stopifnot(all(df.500.raw$y == dat.blocked$y))
+stopifnot(all(df.500.raw$wy == dat.blocked$wy))
+
+df.500.raw <- df.500.raw %>%
+  mutate(
+    fold_id = dat.blocked$fold_id,
+    split = dat.blocked$split
+  )
+
+# save raw + fold_ids
+saveRDS(df.500.raw, paste0(dir, fire, '_df_500m_raw.rds'))
+saveRDS(df.500.raw, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '/', fire, '_df_500m_raw.rds')) # save to J: drive
+saveRDS(df.500.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '/', fire, '_df_500m_raw.rds')) # save to G: drive backup
+
+
+
+
+
+
+
+# ----- combine dfs -----
+
+# --- raw ---
+fires <- c('creek', 'castle', 'caldor', 'dixie')
+rds.dir <- 'data/processed/processed/rds/'
+res <- '500m' # 500m or 50m
+
+dfs <- lapply(fires, function(fire) {
+  
+  readRDS(paste0(rds.dir, fire, '/', fire, '_df_', res, '_raw.rds')
+          
+  ) %>%
+    mutate(fire = fire)
+  
+})
+
+df.raw.0 <- bind_rows(dfs)
+
+df.raw <- df.raw.0 %>%
+  filter(complete.cases(select(., -aspect_class)))
+
+saveRDS(df.raw, paste0(rds.dir, 'df_', res, '_raw.rds'))
+
+
+# =======================================================================================
+#  Elevation Matching
+# =======================================================================================
+# ----- balance elevation distributions between burned and unburned -----
+# --- get df ---
+set.seed(61)
+
+rds.dir <- 'data/processed/processed/rds/'
+res <- '500m'
+df.raw.file <- paste0(rds.dir, 'df_', res, '_raw.rds')
+
+df.raw <- readRDS(df.raw.file)
+
+df.balanced <- df.raw %>%
+  mutate(
+    elev_bin = floor(elevation / 50) * 50 # bin every pixel into a 50m elevation bin
+  ) %>%   
+  group_by(fire, wy, elev_bin) %>%        # create groups across fire, wy, and elev_bin
+  filter(n_distinct(burned) == 2) %>%     # only keep elev_bins that have both burned and unburned groups 
+  # run the following code separately for each group
+  group_modify(~ {
+    
+    # .x is the dataframe for the current fire × year × elevation bin
+    
+    # find the size of the smaller burn class
+    n.keep <- min(
+      sum(.x$burned == 'burned'),
+      sum(.x$burned == 'unburned')
+    )
+    
+    # randomly keep n.keep rows from each burn class
+    .x %>%
+      group_by(burned) %>%
+      slice_sample(n = n.keep) %>%
+      ungroup()
+  }) %>%
+  
+  ungroup()
+
+df.balanced %>%
+  count(fire, wy, elev_bin, burned) %>%
+  tidyr::pivot_wider(
+    names_from = burned,
+    values_from = n
+  )
+
+saveRDS(df.balanced, paste0(rds.dir, 'df_', res, '_raw_balanced.rds'))
+
+# scale numeric predictors
+df.balanced.scaled <- df.balanced
+num.cols <- sapply(df.balanced.scaled, is.numeric)
+
+if (res == '50m') {
+num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
+} else if (res == '500m') {
+  num.cols[c('sdd', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
+} else {
+  stop('wrong resolution')
+}
+
+df.balanced.scaled[num.cols] <- scale(df.balanced.scaled[num.cols])
+
+saveRDS(df.balanced.scaled, paste0(rds.dir, 'df_', res, '_scaled_balanced.rds'))
+
+# ----- check -----
+
+vars <- c(
+  'elevation',
+  'rad_dtm_accum',
+  'slope',
+  'tpi150',
+  'gap_gap_pct',
+  'ht_zmax',
+  'cbibc'
+)
+
+ggplot(df.balanced,
+       aes(x = elevation,
+           color = burned,
+           fill = burned)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~fire) +
+  labs(
+    x = 'Elevation (m)',
+    y = 'Density'
+  ) +
+  theme_bw()
+
+
+compare_summary <- function(df, label) {
+  
+  df %>%
+    group_by(fire, burned) %>%
+    summarize(
+      across(
+        all_of(vars),
+        list(
+          mean = ~mean(.x, na.rm = TRUE),
+          sd = ~sd(.x, na.rm = TRUE)
+        )
+      ),
+      .groups = 'drop'
+    ) %>%
+    mutate(dataset = label)
+  
+}
+
+summary.compare <- bind_rows(
+  compare_summary(df.raw, 'Original'),
+  compare_summary(df.balanced, 'Balanced')
+)
+
+summary.compare
+
+# compare radiation density plots
+plot.df <- bind_rows(
+  df.raw %>%
+    mutate(dataset = 'Original'),
+  
+  df.balanced %>%
+    mutate(dataset = 'Balanced')
+)
+
+ggplot(
+  plot.df,
+  aes(
+    x = rad_dtm_accum,
+    color = burned,
+    fill = burned
+  )
+) +
+  geom_density(alpha = 0.3) +
+  facet_grid(fire ~ dataset) +
+  labs(
+    x = 'Radiation',
+    y = 'Density'
+  ) +
+  theme_bw()
+
+# calculate SMDs - Standardized Mean Differences
+calc_smd <- function(df, variable) {
+  
+  burned <- df %>%
+    filter(burned == 'burned') %>%
+    pull({{ variable }})
+  
+  unburned <- df %>%
+    filter(burned == 'unburned') %>%
+    pull({{ variable }})
+  
+  (
+    mean(burned, na.rm = TRUE) -
+      mean(unburned, na.rm = TRUE)
+  ) /
+    sqrt(
+      (
+        var(burned, na.rm = TRUE) +
+          var(unburned, na.rm = TRUE)
+      ) / 2
+    )
+}
+
+# calculate SMDs per fire
+calc_fire_smd <- function(df, label) {
+  
+  bind_rows(
+    lapply(unique(df$fire), function(f) {
+      
+      dat <- filter(df, fire == f)
+      
+      data.frame(
+        fire = f,
+        dataset = label,
+        variable = vars,
+        smd = sapply(
+          vars,
+          function(v) calc_smd(dat, !!rlang::sym(v))
+        )
+      )
+    })
+  )
+  
+}
+
+smd.compare <- bind_rows(
+  calc_fire_smd(df.raw, 'Original'),
+  calc_fire_smd(df.balanced, 'Balanced')
+)
+
+smd.compare
+
+# plot them
+ggplot(
+  smd.compare,
+  aes(
+    variable,
+    abs(smd),
+    fill = dataset
+  )
+) +
+  geom_col(position = 'dodge') +
+  facet_wrap(~fire) +
+  labs(
+    x = '',
+    y = 'Absolute standardized mean difference'
+  ) +
+  theme_bw() +
+  coord_flip()
+
+# compare sample size by fire
+bind_rows(
+  df.raw %>%
+    count(fire) %>%
+    mutate(dataset = 'Original'),
+  
+  df.balanced %>%
+    count(fire) %>%
+    mutate(dataset = 'Balanced')
+) %>%
+  tidyr::pivot_wider(
+    names_from = dataset,
+    values_from = n
+  ) %>%
+  mutate(
+    Percent_retained = round(100 * Balanced / Original, 1)
+  )
+# compare sample size by fire and burned status
+bind_rows(
+  df.raw %>%
+    count(fire, burned) %>%
+    mutate(dataset = 'Original'),
+  
+  df.balanced %>%
+    count(fire, burned) %>%
+    mutate(dataset = 'Balanced')
+) %>%
+  tidyr::pivot_wider(
+    names_from = dataset,
+    values_from = n
+  ) %>%
+  mutate(
+    Percent_retained = round(100 * Balanced / Original, 1)
+  )
 
 # =======================================================================================
 # Spatial Autocorrelation
 # =======================================================================================
 
-# ------------------------- df.50 -------------------------
+# ----- df.50 -----
 library(gstat)
 df <- subset(df.50, wy == 2023)
 df <- df[complete.cases(df[, c('swe_peak', 'x', 'y')]), ]
 
-# ----- semivariogram -----
+# --- semivariogram ---
 set.seed(123)
 df.vario <- df[sample(nrow(df), min(10000, nrow(df))), ]
 vg <- variogram(
@@ -455,7 +668,7 @@ vg[vg$dist <= 3000, ]
 # troubleshooting
 
 
-# ------ Morans I ------
+# --- Morans I ---
 # subset dataset for Moran's I
 set.seed(14)
 n.samp <- 20000
@@ -484,12 +697,12 @@ for (t in thresholds) {
 }
 
 
-# ------------------------- df.50.thin -------------------------
+# ----- df.50.thin ------
 library(gstat)
 df <- subset(df.50.thin, wy == 2023)
 df <- df[complete.cases(df[, c('swe_peak', 'x', 'y')]), ]
 
-# ------ Morans I ------
+# --- Morans I ---
 coords <- as.matrix(df[, c('x', 'y')])
 t = 1000 # distance threshold for neighbors (e.g., 1000 meters)
 nb <- dnearneigh(coords, d1 = 0, d2 = t)
@@ -518,8 +731,31 @@ for (t in thresholds) {
 # =======================================================================================
 # Data Exploration
 # =======================================================================================
+# --- get df ---
+fires <- c('creek', 'castle', 'caldor', 'dixie')
+rds.dir <- 'data/processed/processed/rds/'
+res <- '50m'
+df.raw.file <- paste0(rds.dir, 'df_', res, '_raw.rds')
 
-# ----------------------- SWE --------------------------
+df.raw <- readRDS(df.raw.file)
+
+# density plot for elevation for burned/unburned
+ggplot(df.raw,
+       aes(x = elevation,
+           color = burned,
+           fill = burned)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~fire) +
+  labs(
+    x = 'Elevation (m)',
+    y = 'Density'
+  ) +
+  theme_bw()
+
+
+
+# ---------------------------- CREEK ONLY ------------------------------------
+# -------- SWE ----------
 
 # ----- check how many NAs -----
 na.summary <- data.frame(
@@ -572,7 +808,7 @@ cor.strong
 #  check relationship between predictors and response variable 
 # ==============================================================================
 
-# ----- tmmx or tmmn ----
+# --- tmmx or tmmn --
 # here I am comparing tmmn and tmmx (with SWE only) to help determine which one I want to include in each model
 df.50.sub <- df.50[complete.cases(df.50[, c('tmmx', 'tmmn', 'swe_peak')]), ]
 
@@ -586,7 +822,7 @@ cor(df.50$tmmx, df.50$tmmn, use = 'complete.obs')
 # correlation between tmmn and tmmx is 0.99 so they are effectively the same. Won't make much difference regardless of which one I pick. 
 # choosing tmmx for sdd modeling and tmmn for swe_peak modeling
 
-# ----- compare tpi -----
+# --- compare tpi ---
 # since TPI are highly correlated with eachother, I want to include one in the model. Here I am seeing which one is the most correlated with SWE
 # SWE
 df.50.sub <- df.50[complete.cases(df.50[, c('topo_tpi150', 'topo_tpi510', 'topo_tpi1200', 'swe_peak')]), ]
@@ -603,7 +839,7 @@ cor(abs(df.50.sub$topo_tpi150), df.50.sub$swe_peak) # 0.035
 # TPI showing nonlinear relationship. Relationship strength descreases as you increase TPI window size
 # NOTE: I only did this for SWE not for SDD, and likely could be different for SDD!
 
-# ------ Compare correlations between variable and response -----
+# --- Compare correlations between variable and response ---
 # print cor value for each predictor
 df.50.sub <- df.50[complete.cases(df.50[.])]
 vars <- c(
@@ -681,7 +917,7 @@ for (v in canopy.vars.temp) {
 }
 
 
-# ----- plot predictor vs response -----
+# --- plot predictor vs response ---
 
 # SWE
 vars <- c(
@@ -748,7 +984,7 @@ plot_var_wy(df.50, 'pr')
 plot_var_wy(df.50, 'tmmn')
 
 
-# ----- fit a GAM with multiple predictors -----
+# --- fit a GAM with multiple predictors ---
 gam <- sqrt(swe) ~ topo_elev + tpi150 + rad_dtm_accum + topo_slope 
 
 
@@ -788,7 +1024,7 @@ par(mfrow = c(1, 1))  # reset
 
 
 
-# ------ plot relationships between variables and swe -----
+# --- plot relationships between variables and swe --
 library(ggplot2)
 library(patchwork)
 
@@ -814,7 +1050,7 @@ cor(df.50$swe_peak, df.50$topo_aspect_cos, use = 'complete.obs')
 
 
 
-# ----- plot/explore transformations of predictors -----
+# --- plot/explore transformations of predictors ---
 
 # slope
 hist(
@@ -836,38 +1072,10 @@ smoothScatter(log(df.50$topo_slope + 0.01), df.50$swe_peak)
 
 
 
- # troubleshooting
-# ----- turn back to raster -----
-template <- swe.stack[['swe_peak_wy2021']]
-
-# make an empty raster with same geometry
-r <- rast(template)
-values(r) <- NA
-
-# if cell is a factor, convert back to numeric
-cells <- as.numeric(as.character(df.50$cell))
-
-# write values into those cells
-r[cells] <- df.50$swe_peak
-
-plot(r)
 
 
-df.2021 <- df.50[df.50$wy == '2021', ]
 
-r.2021 <- rast(template)
-values(r.2021) <- NA
-
-cells <- as.numeric(as.character(df.2021$cell))
-r.2021[cells] <- df.2021$swe_peak
-
-plot(r.2021)
-r.zero <- r.2021 == 0
-r.zero <- classify(r.zero, rbind(c(0, NA)))
-plot(r.zero, col = 'red', add = TRUE, legend = FALSE)
-
-
-# ----------------------- SDD --------------------------
+# ----------- SDD ------------
 
 # ----- check how many NAs -----
 # should be 0 since we already filtered them out
@@ -883,7 +1091,7 @@ mean(complete.cases(df.50))
 mean(complete.cases(df.500))
 
 
-# ----- Check correlation among predictors -----
+# --- Check correlation among predictors ---
 num.vars <- df.500 |>
   select(-cell, -wy)
 
@@ -921,7 +1129,7 @@ cor.strong
 #  check relationship between predictors and response variable 
 # ==============================================================================
 
-# ----- compare tpi -----
+# --- compare tpi ---
 # since TPI are highly correlated with eachother, I want to include one in the model. Here I am seeing which one is the most correlated with SDD
 # SDD
 df.500.sub <- df.500[complete.cases(df.500[, c('topo_tpi150', 'topo_tpi510', 'topo_tpi1200', 'sdd')]), ]
@@ -936,7 +1144,7 @@ smoothScatter(df.500.sub$topo_tpi1200, df.500.sub$sdd)
 cor(abs(df.500.sub$topo_tpi150), df.500.sub$sdd) # 0.072
 cor(abs(df.500.sub$topo_tpi1200), df.500.sub$sdd) # 0.064
 
-# ------ Compare correlations between variable and response -----
+# ---- Compare correlations between variable and response ---
 # print cor value for each predictor
 df.500.sub <- df.500[complete.cases(df.500[.])]
 vars <- c(
@@ -998,7 +1206,7 @@ for (v in canopy.vars.temp) {
 #  cat('sqrt swe:', round(cor1, 4), '\n')
 }
 
-# ----- compute correlations with sdd -----
+# --- compute correlations with sdd ---
 cor.df <- df.500 %>%
   select(where(is.numeric)) %>%
   summarise(across(-sdd, ~ cor(.x, sdd, use = 'complete.obs'))) %>%
@@ -1022,7 +1230,7 @@ ggplot(cor.df, aes(x = reorder(variable, correlation), y = correlation)) +
   theme_minimal()
 
 
-# -----  plot predictor vs response -----
+# ---  plot predictor vs response ---
 plot.df <- df.500 %>%
   select(cell, wy, sdd, all_of(vars)) %>%
   pivot_longer(
@@ -1072,7 +1280,7 @@ plot_var_wy(df.50, 'pr')
 plot_var_wy(df.50, 'tmmn')
 
 
-# ----- fit a GAM with multiple predictors -----
+# --- fit a GAM with multiple predictors ---
 gam <- sdd ~ topo_elev + tpi150 + rad_dtm_accum + topo_slope 
 
 
@@ -1112,7 +1320,7 @@ par(mfrow = c(1, 1))  # reset
 
 
 
-# ------ plot relationships between variables and swe -----
+# ---- plot relationships between variables and swe ---
 library(ggplot2)
 library(patchwork)
 
@@ -1138,7 +1346,7 @@ cor(df.50$swe_peak, df.50$topo_aspect_cos, use = 'complete.obs')
 
 
 
-# ----- plot/explore transformations of predictors -----
+# --- plot/explore transformations of predictors ---
 
 # slope
 hist(
@@ -1160,35 +1368,3 @@ smoothScatter(log(df.50$topo_slope + 0.01), df.50$swe_peak)
 
 
 
-# troubleshooting
-# ----- turn back to raster -----
-template <- swe.stack[['swe_peak_wy2021']]
-
-# make an empty raster with same geometry
-r <- rast(template)
-values(r) <- NA
-
-# if cell is a factor, convert back to numeric
-cells <- as.numeric(as.character(df.50$cell))
-
-# write values into those cells
-r[cells] <- df.50$swe_peak
-
-plot(r)
-
-
-df.2021 <- df.50[df.50$wy == '2021', ]
-
-r.2021 <- rast(template)
-values(r.2021) <- NA
-
-cells <- as.numeric(as.character(df.2021$cell))
-r.2021[cells] <- df.2021$swe_peak
-
-plot(r.2021)
-r.zero <- r.2021 == 0
-r.zero <- classify(r.zero, rbind(c(0, NA)))
-plot(r.zero, col = 'red', add = TRUE, legend = FALSE)
-
-topo <- rast('data/processed/processed/tif/50m/creek/creek_topo_50m.tif')
-names(topo)
