@@ -256,7 +256,7 @@ df.500 <- df.500.0 %>%
     wy = as.factor(wy),
     cell = as.factor(cell),
     
-    gap_gap_pct = gap_gap_pct * 100,
+    gap_percent = gap_gap_pct * 100,
     
     burned = factor(
       if_else(cbibc > 0, 'burned', 'unburned'),
@@ -393,9 +393,11 @@ dfs <- lapply(fires, function(fire) {
 df.raw.0 <- bind_rows(dfs)
 
 df.raw <- df.raw.0 %>%
+  rename(gap_percent = gap_gap_pct) %>%
   filter(complete.cases(select(., -aspect_class)))
+  
 
-saveRDS(df.raw, paste0(rds.dir, 'df_', res, '_raw.rds'))
+saveRDS(df.raw, paste0(rds.dir, 'df_', res, '_raw_all_metrics.rds'))
 
 
 # =======================================================================================
@@ -407,7 +409,7 @@ set.seed(61)
 
 rds.dir <- 'data/processed/processed/rds/'
 res <- '500m'
-df.raw.file <- paste0(rds.dir, 'df_', res, '_raw.rds')
+df.raw.file <- paste0(rds.dir, 'df_', res, '_raw_all_metrics.rds')
 
 df.raw <- readRDS(df.raw.file)
 
@@ -444,7 +446,7 @@ df.balanced %>%
     values_from = n
   )
 
-saveRDS(df.balanced, paste0(rds.dir, 'df_', res, '_raw_balanced.rds'))
+saveRDS(df.balanced, paste0(rds.dir, 'df_', res, '_raw_balanced_all_metrics.rds'))
 
 # scale numeric predictors
 df.balanced.scaled <- df.balanced
@@ -460,7 +462,7 @@ num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable o
 
 df.balanced.scaled[num.cols] <- scale(df.balanced.scaled[num.cols])
 
-saveRDS(df.balanced.scaled, paste0(rds.dir, 'df_', res, '_scaled_balanced.rds'))
+saveRDS(df.balanced.scaled, paste0(rds.dir, 'df_', res, '_scaled_balanced_all_metrics.rds'))
 
 # ----- check -----
 
@@ -642,6 +644,54 @@ bind_rows(
     Percent_retained = round(100 * Balanced / Original, 1)
   )
 
+
+# =======================================================================================
+#  Trim Variables
+# =======================================================================================
+# ----- keep only list of paired-down variables -----
+
+old.rds.dir <- 'data/processed/processed/rds/old_versions/'
+new.rds.dir <- 'data/processed/processed/rds/'
+
+files <- list.files(old.rds.dir, pattern = '\\.rds$', full.names = T)
+
+keep.vars <- c('cell', 'x', 'y', 'fire', 'wy', 'swe_peak', 'burned', 'ht_zpcum6', 'ht_zpcum9', 'ht_zpcum1', 'ht_zpcum2', 'ht_zskew', 'ht_zkurt', 'ht_zmax', 'gap_dist_to_canopy_mean', 'gap_percent',  'cbibc', 'elevation', 'rad_dsm_accum', 'rad_dtm_accum', 'slope', 'aspect_sin', 'aspect_cos', 'aspect_class', 'tpi150', 'tpi510', 'tpi1200', 'tpi2010', 'split', 'fold_id')
+
+for (file in files) {
+  
+  rds <- readRDS(file)
+  # variables to keep
+  keep <- keep.vars
+  
+  # add variables specific to 500m data
+  if (grepl('500', basename(file))) {
+    keep <- c(
+      keep,
+      'sdd',
+      grep('melt', names(rds), value = TRUE)
+    )
+  }
+  
+  rds.filt <- rds %>%
+    select(all_of(keep))
+  
+  # remove '_all_metrics' from filename
+  new.name <- sub(
+    '_all_metrics\\.rds$',
+    '.rds',
+    basename(file)
+  )
+  
+  new.file <- file.path(new.rds.dir, new.name)
+  
+  # write filtered dataframe to /rds/
+  saveRDS(rds.filt, new.file)
+  
+}
+
+x <- readRDS(files[1])
+names(x)
+
 # =======================================================================================
 # Spatial Autocorrelation
 # =======================================================================================
@@ -739,7 +789,12 @@ df.raw.file <- paste0(rds.dir, 'df_', res, '_raw.rds')
 
 df.raw <- readRDS(df.raw.file)
 
-# density plot for elevation for burned/unburned
+df.raw <- df.raw %>%
+  select(-x, -y, -cell)
+
+df.by.fire <- split(df.raw, df.raw$fire)
+
+# ----- density plot for elevation for burned/unburned -----
 ggplot(df.raw,
        aes(x = elevation,
            color = burned,
@@ -754,7 +809,6 @@ ggplot(df.raw,
 
 
 
-# ---------------------------- CREEK ONLY ------------------------------------
 # -------- SWE ----------
 
 # ----- check how many NAs -----
@@ -771,75 +825,72 @@ mean(complete.cases(df.500))
 
 
 # ----- Check correlation among predictors -----
-num.vars <- df.50 |>
-  select(-cell, -wy, -swe_peak, -sqrt_swe, -swe_peak_log)
+cor.mats <- lapply(df.by.fire, function(df) {
+  
+  num.vars <- df %>%
+    select(-cell, -fire, -wy, -swe_peak) %>%
+    select(where(is.numeric))
+  
+  cor(
+    num.vars,
+    use = 'pairwise.complete.obs'
+  )
+})
 
-cor.mat <- cor(num.vars, use = 'pairwise.complete.obs')
+for (fire.name in names(cor.mats)) {
+  
+  cor.mat <- cor.mats[[fire.name]]
+  
+  corrplot(
+    cor.mat,
+    method = 'color',
+    type = 'upper',
+    order = 'hclust',
+    tl.cex = 0.7,
+    addCoef.col = 'black',
+    number.cex = 0.5,
+    col = colorRampPalette(c('blue', 'white', 'red'))(200),
+    tl.col = 'black',
+    diag = FALSE,
+    title = fire.name,
+    mar = c(0, 0, 2, 0)
+  )
+}
 
-corrplot(cor.mat, method = 'color')
-corrplot(
-  cor.mat,
-  method = 'color',
-  type = 'upper',
-  order = 'hclust',
-  tl.cex = 0.7,
-  addCoef.col = 'black',
-  number.cex = 0.5,
-  col = colorRampPalette(c('blue', 'white', 'red'))(200),
-  tl.col = 'black',
-  diag = FALSE
+cor.strong <- lapply(cor.mats, function(cor.mat) {
+  
+  as.data.frame(as.table(cor.mat)) %>%
+    filter(Var1 != Var2) %>%
+    filter(abs(Freq) > 0.5) %>%
+    rowwise() %>%
+    mutate(
+      pair = paste(
+        sort(c(as.character(Var1), as.character(Var2))),
+        collapse = '___'
+      )
+    ) %>%
+    ungroup() %>%
+    distinct(pair, .keep_all = TRUE) %>%
+    arrange(desc(abs(Freq))) %>%
+    select(-pair)
+  
+})
+
+cor.strong.all <- bind_rows(
+  cor.strong,
+  .id = 'fire'
 )
 
-cor.df <- as.data.frame(as.table(cor.mat))
+print(cor.strong.all, n = Inf)
 
-cor.strong <- cor.df %>%
-  filter(Var1 != Var2) %>%
-  filter(abs(Freq) > 0.5) %>%
-  rowwise() %>%
-  mutate(pair = paste(sort(c(as.character(Var1), as.character(Var2))), collapse = '___')) %>%
-  ungroup() %>%
-  distinct(pair, .keep_all = TRUE) %>%
-  arrange(desc(abs(Freq))) %>%
-  select(-pair)
 
-cor.strong
 
-# ==============================================================================
-#  check relationship between predictors and response variable 
-# ==============================================================================
 
-# --- tmmx or tmmn --
-# here I am comparing tmmn and tmmx (with SWE only) to help determine which one I want to include in each model
-df.50.sub <- df.50[complete.cases(df.50[, c('tmmx', 'tmmn', 'swe_peak')]), ]
+# ------------- check relationship between predictors and response variable ---------
 
-cor(df.50.sub$tmmx, df.50.sub$swe_peak, use = 'complete.obs')
-cor(df.50.sub$tmmn, df.50.sub$swe_peak, use = 'complete.obs')
+# ----- correlations between variable and response -----
+# not actually that useful because relationships are nonlinear. use gam instead!
 
-smoothScatter(df.50$tmmx, df.50$swe_peak)
-smoothScatter(df.50$tmmn, df.50$swe_peak)
-
-cor(df.50$tmmx, df.50$tmmn, use = 'complete.obs')
-# correlation between tmmn and tmmx is 0.99 so they are effectively the same. Won't make much difference regardless of which one I pick. 
-# choosing tmmx for sdd modeling and tmmn for swe_peak modeling
-
-# --- compare tpi ---
-# since TPI are highly correlated with eachother, I want to include one in the model. Here I am seeing which one is the most correlated with SWE
-# SWE
-df.50.sub <- df.50[complete.cases(df.50[, c('topo_tpi150', 'topo_tpi510', 'topo_tpi1200', 'swe_peak')]), ]
-cor(df.50.sub$topo_tpi150, df.50.sub$swe_peak) # -0.042
-cor(df.50.sub$topo_tpi510, df.50.sub$swe_peak) # -0.027
-cor(df.50.sub$topo_tpi1200, df.50.sub$swe_peak) # 0.017
-
-smoothScatter(df.50.sub$topo_tpi150, df.50.sub$swe_peak)
-smoothScatter(df.50.sub$topo_tpi510, df.50.sub$swe_peak)
-smoothScatter(df.50.sub$topo_tpi1200, df.50.sub$swe_peak)
-
-cor(abs(df.50.sub$topo_tpi150), df.50.sub$swe_peak) # 0.035
-
-# TPI showing nonlinear relationship. Relationship strength descreases as you increase TPI window size
-# NOTE: I only did this for SWE not for SDD, and likely could be different for SDD!
-
-# --- Compare correlations between variable and response ---
 # print cor value for each predictor
 df.50.sub <- df.50[complete.cases(df.50[.])]
 vars <- c(
@@ -917,7 +968,7 @@ for (v in canopy.vars.temp) {
 }
 
 
-# --- plot predictor vs response ---
+# ----- plot predictor vs response -----
 
 # SWE
 vars <- c(
@@ -1075,6 +1126,49 @@ smoothScatter(log(df.50$topo_slope + 0.01), df.50$swe_peak)
 
 
 
+# ----- explore GAMs for certain variables classes -----
+library(mgcv)
+library(dplyr)
+
+tpi.vars <- names(df.raw)[grepl('^tpi', names(df.raw))]
+
+tpi.results <- lapply(df.by.fire, function(df) {
+  
+  lapply(tpi.vars, function(var) {
+    
+    form <- as.formula(
+      paste0('swe_peak ~ wy + s(', var, ', k = 10)')
+    )
+    
+    mod <- bam(
+      form,
+      data = df,
+      method = 'fREML',
+      discrete = TRUE,
+      nthreads = 4
+    )
+    
+    mod.summary <- summary(mod)
+    
+    data.frame(
+      variable = var,
+      r.squared = mod.summary$r.sq,
+      dev.expl = mod.summary$dev.expl,
+      AIC = AIC(mod),
+      edf = mod.summary$s.table[1, 'edf']
+    )
+    
+  }) %>%
+    bind_rows()
+  
+})
+
+tpi.results <- bind_rows(
+  tpi.results,
+  .id = 'fire'
+)
+
+
 # ----------- SDD ------------
 
 # ----- check how many NAs -----
@@ -1125,9 +1219,9 @@ cor.strong <- cor.df %>%
 
 cor.strong
 
-# ==============================================================================
-#  check relationship between predictors and response variable 
-# ==============================================================================
+
+#  ----- check relationship between predictors and response variable -----
+
 
 # --- compare tpi ---
 # since TPI are highly correlated with eachother, I want to include one in the model. Here I am seeing which one is the most correlated with SDD
