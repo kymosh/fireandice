@@ -1,40 +1,364 @@
-packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger', 'tictoc')
+packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger', 'tictoc', 'mgcv', 'ggplot2')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
 # ==============================================================================
-# Initialize
+# Initialize Dataframe
 # ==============================================================================
-
 # get dataframe
-# make sure if not on processing computer that the rds is updated!
-dir <- 'data/processed/processed/rds/creek' 
-df.500 <- readRDS(file.path(dir, 'creek_df_500m.rds'))
+set.seed(61)
+dir <- 'data/processed/processed/rds/' 
 
-# explore sdd data
-# hist(df.500$sdd, breaks = 50)
-# summary(df.500$sdd)
-# qqnorm(df.500$sdd)
-# qqline(df.500$sdd)
-# 
-# # quick check to make sure there are no NAs
-# colSums(is.na(df.500))
+df.500.raw <- readRDS(file.path(dir, 'df_500m_raw.rds'))
+df.500.balanced <- readRDS(file.path(dir, 'df_500m_raw_balanced.rds')) 
 
-# function to add results to table
-get.metrics <- function(model, name) {
+
+burn.cols <- c(
+  'unburned' = 'turquoise4',
+  'burned' = 'firebrick2'
+)
+
+# helper function
+get.metrics <- function(fitted.model, model.name, fire.name) {
   
-  s <- summary(model)
+  s <- summary(fitted.model)
   
   data.frame(
-    model = name,
+    fire = fire.name,
+    model_name = model.name,
     r.squared = s$r.sq,
     dev.expl = s$dev.expl,
-    AIC = AIC(model),
+    AIC = AIC(fitted.model),
     edf = sum(s$edf)
   )
 }
 
-results <- data.frame()
+# ----- plot SDD for all fires -----
+# ----- plot SDD distributions for all fires -----
+
+for (f in unique(df.500.raw$fire)) {
+  
+  p <- df.500.raw %>%
+    filter(fire == f) %>%
+    ggplot(aes(x = sdd)) +
+    geom_density(
+      fill = 'steelblue',
+      alpha = 0.4,
+      na.rm = TRUE
+    ) +
+    facet_wrap(~wy, scales = 'free') +
+    labs(
+      title = tools::toTitleCase(f),
+      x = 'Snow Disappearance Day (DOY)',
+      y = 'Density'
+    ) +
+    theme_bw()
+  
+  print(p)
+}
+
+# ==============================================================================
+# Stage 1 Modeling - Single family predictors
+# ==============================================================================
+# ------------------------- Topo-only Model ------------------------------
+# ----- Stepwise 1 -----
+
+topo.vars <- c(
+  'slope',
+  'rad_dtm_accum',
+  'tpi150',
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_sin',
+  'aspect_cos'
+)
+
+topo.results <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # elevation baseline
+  model.elev <- bam(sdd ~
+                      wy +
+                      s(elevation, k = 10),
+                    data = fire.df,
+                    method = 'ML')
+  
+  topo.results <- bind_rows(
+    topo.results,
+    get.metrics(
+      fitted.model = model.elev,
+      model.name = 'elevation',
+      fire.name = fire.name
+    )
+  )
+  
+  
+  # test each additional topographic variable
+  for (var in topo.vars) {
+    
+    model.formula <- as.formula(
+      paste0(
+        'sdd ~ wy + s(elevation, k = 10) + s(' , var, ', k = 10)'
+      )
+    )
+    
+    model <- bam(
+      model.formula,
+      data = fire.df,
+      method = 'ML'
+    )
+    
+    topo.results <- bind_rows(
+      topo.results,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('elevation + ', var), 
+        fire.name = fire.name
+      )
+    )
+    
+  }
+}
+
+topo.results <- topo.results %>%
+  group_by(fire) %>%
+  mutate(
+    AIC.elevation = AIC[model_name == 'elevation'],
+    delta.AIC.elevation = AIC - AIC.elevation,
+    delta.r.squared = r.squared - r.squared[model_name == 'elevation']
+  ) %>%
+  ungroup()
+
+topo.results %>%
+  arrange(fire, desc(dev.expl)) %>%
+  print(n = Inf)
+
+# shows that radiation definitely adds the most. Continue on to stepwise to see if adding additional variables improves the model
+
+# ----- stepwise 2 -----
+
+# updated vars
+topo.vars <- c(
+  'slope',
+  'tpi150',
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_sin',
+  'aspect_cos'
+)
+
+topo.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # elevation + radiation baseline
+  topo.elev.rad <- bam(
+    sdd ~ wy + s(elevation) + s(rad_dtm_accum),
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  topo.results.step <- bind_rows(
+    topo.results.step,
+    get.metrics(
+      fitted.model = topo.elev.rad,
+      model.name = 'topo.elev.rad',
+      fire.name = fire.name
+    )
+  )
+  
+  # test each additional variable
+  for (var in topo.vars) {
+    
+    model.formula <- as.formula(
+      paste0('sdd ~ wy + s(elevation) + s(rad_dtm_accum) + 
+             s(', var, ')')
+    )
+    
+    model <- bam(model.formula,
+                 data = fire.df,
+                 method = 'fREML',
+                 discrete = TRUE)
+    
+    # add results
+    topo.results.step <- bind_rows(
+      topo.results.step,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('topo.elev.rad.', var),
+        fire.name = fire.name
+        
+        
+      )
+    )
+    
+  }
+  
+}
+
+topo.results.step %>%
+  arrange(fire, desc(dev.expl))
+
+topo.results.step.2 <- topo.results.step
+
+# slope performs best in 3/4
+
+# ----- stepwise 3 ------
+# updated vars
+topo.vars <- c(
+  'tpi150',
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_sin',
+  'aspect_cos'
+)
+
+topo.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # elevation + radiation baseline
+  topo.elev.rad.slope <- bam(
+    sdd ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope),
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  topo.results.step <- bind_rows(
+    topo.results.step,
+    get.metrics(
+      fitted.model = topo.elev.rad.slope,
+      model.name = 'topo.elev.rad.slope',
+      fire.name = fire.name
+    )
+  )
+  
+  # test each additional variable
+  for (var in topo.vars) {
+    
+    model.formula <- as.formula(
+      paste0('sdd ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope) + 
+             s(', var, ')')
+    )
+    
+    model <- bam(model.formula,
+                 data = fire.df,
+                 method = 'fREML',
+                 discrete = TRUE)
+    
+    # add results
+    topo.results.step <- bind_rows(
+      topo.results.step,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('topo.elev.rad.slope', var),
+        fire.name = fire.name
+        
+        
+      )
+    )
+    
+  }
+  
+}
+
+topo.results.step %>%
+  arrange(fire, desc(dev.expl))
+
+topo.results.step.3 <- topo.results.step
+
+# ----- stepwise 3 ------
+# updated vars
+topo.vars <- c(
+  'tpi150',
+  'tpi510',
+  'tpi2010',
+  'aspect_sin',
+  'aspect_cos'
+)
+
+topo.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # elevation + radiation baseline
+  topo.elev.rad.slope.tpi <- bam(
+    sdd ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope) + s(tpi1200),
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  topo.results.step <- bind_rows(
+    topo.results.step,
+    get.metrics(
+      fitted.model = topo.elev.rad.slope.tpi,
+      model.name = 'topo.elev.rad.slope.tpi.',
+      fire.name = fire.name
+    )
+  )
+  
+  # test each additional variable
+  for (var in topo.vars) {
+    
+    model.formula <- as.formula(
+      paste0('sdd ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope) + s(tpi1200) +
+             s(', var, ')')
+    )
+    
+    model <- bam(model.formula,
+                 data = fire.df,
+                 method = 'fREML',
+                 discrete = TRUE)
+    
+    # add results
+    topo.results.step <- bind_rows(
+      topo.results.step,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('topo.elev.rad.slope.tpi.', var),
+        fire.name = fire.name
+        
+        
+      )
+    )
+    
+  }
+  
+}
+
+topo.results.step %>%
+  arrange(fire, desc(dev.expl))
+
+topo.results.step.4 <- topo.results.step
+
+
 
 # ==============================================================================
 # GAM
