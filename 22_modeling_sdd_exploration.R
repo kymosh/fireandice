@@ -29,11 +29,11 @@ get.metrics <- function(fitted.model, model.name, fire.name) {
     r.squared = s$r.sq,
     dev.expl = s$dev.expl,
     AIC = AIC(fitted.model),
+    BIC = BIC(fitted.model),
     edf = sum(s$edf)
   )
 }
 
-# ----- plot SDD for all fires -----
 # ----- plot SDD distributions for all fires -----
 
 for (f in unique(df.500.raw$fire)) {
@@ -61,6 +61,7 @@ for (f in unique(df.500.raw$fire)) {
 # Stage 1 Modeling - Single family predictors
 # ==============================================================================
 # ------------------------- Topo-only Model ------------------------------
+
 # ----- Stepwise 1 -----
 
 topo.vars <- c(
@@ -288,7 +289,7 @@ topo.results.step %>%
 
 topo.results.step.3 <- topo.results.step
 
-# ----- stepwise 3 ------
+# ----- stepwise 4 ------
 # updated vars
 topo.vars <- c(
   'tpi150',
@@ -357,6 +358,887 @@ topo.results.step %>%
   arrange(fire, desc(dev.expl))
 
 topo.results.step.4 <- topo.results.step
+
+
+
+
+
+
+# ------------------------- Canopy-only Model ------------------------------
+# ------ stepwise 1 -----
+# canopy variables
+canopy.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent'
+)
+
+canopy.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # wy only baseline
+  base.model <- bam(
+    sdd ~ wy,
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  canopy.results.step <- bind_rows(
+    canopy.results.step,
+    get.metrics(
+      fitted.model = base.model,
+      model.name = 'wy only',
+      fire.name = fire.name
+    )
+  )
+  
+  # test each additional variable
+  for (var in canopy.vars) {
+    
+    model.formula <- as.formula(
+      paste0('sdd ~ wy +  
+             s(', var, ')')
+    )
+    
+    model <- bam(model.formula,
+                 data = fire.df,
+                 method = 'fREML',
+                 discrete = TRUE)
+    
+    # add results
+    canopy.results.step <- bind_rows(
+      canopy.results.step,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('wy + ', var),
+        fire.name = fire.name
+        
+        
+      )
+    )
+    
+  }
+  
+}
+canopy.results.step <- canopy.results.step %>%
+  group_by(fire) %>%
+  mutate(
+    base.dev.expl = dev.expl[model_name == 'wy only'],
+    delta_dev_expl = dev.expl - base.dev.expl
+  ) %>%
+  ungroup()
+
+canopy.results.step.1 <- canopy.results.step
+
+canopy.results.step %>%
+  arrange(fire, desc(delta_dev_expl)) %>%
+  print(n = Inf)
+
+canopy.results.step.1 <- canopy.results.step
+
+# ----- stepwise 2 -----
+canopy.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent'
+)
+
+best.var.lookup <- c(
+  caldor = 'gap_dist_to_canopy_mean',
+  castle = 'ht_zkurt',
+  creek = 'ht_zpcum2',
+  dixie = 'ht_zskew'
+)
+
+canopy.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # identify the first-selected canopy var for each fire
+  best.var <- unname(best.var.lookup[fire.name])
+  
+  # remove the selected variable from the variable candidates
+  remaining.vars <- setdiff(canopy.vars, best.var)
+  
+  # --- base formula: WY + selected canopy var ---
+  base.formula <- as.formula(
+    paste0(
+      'sdd ~ wy + s(', best.var, ')'
+    )
+  )
+  
+  base.model <- bam(
+    base.formula,
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  canopy.results.step <- bind_rows(
+    canopy.results.step,
+    get.metrics(
+      fitted.model = base.model,
+      model.name = paste0('wy + ', best.var),
+      fire.name = fire.name
+    )
+  )
+  
+  # models with each additional variable
+  for (var in remaining.vars) {
+    
+    model.formula <- as.formula(
+      paste0('sdd ~ wy +  
+             s(', best.var, ') + s(',
+             var, ')')
+    )
+    
+    model <- bam(model.formula,
+                 data = fire.df,
+                 method = 'fREML',
+                 discrete = TRUE)
+    
+    # add results
+    canopy.results.step <- bind_rows(
+      canopy.results.step,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('wy + ', best.var, ' + ', var),
+        fire.name = fire.name
+        
+        
+      )
+    )
+    
+  }
+  
+}
+
+canopy.results.step <- canopy.results.step %>%
+  group_by(fire) %>%
+  mutate(
+    base.dev.expl = first(dev.expl),
+    delta_dev_expl = dev.expl - base.dev.expl
+  ) %>%
+  ungroup()
+
+canopy.results.step %>%
+  arrange(fire, desc(delta_dev_expl)) %>%
+  print(n = Inf)
+
+canopy.results.step.2 <- canopy.results.step
+
+
+
+# ----- stepwise 3 -----
+canopy.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent'
+)
+
+best.var.lookup <- list(
+  caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt'),
+  castle = c('ht_zkurt','gap_percent'),
+  creek = c('ht_zpcum2','ht_zpcum1'),
+  dixie = c('ht_zskew', 'ht_zpcum1')
+)
+
+canopy.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # identify the best-selected canopy vars for each fire
+  best.vars <- best.var.lookup[[fire.name]]
+  
+  # remove the selected variables from the candidate variables
+  remaining.vars <- setdiff(canopy.vars, best.vars)
+  
+  # base formula: WY + previously selected canopy variables
+  base.formula <- as.formula(
+    paste0(
+      'sdd ~ wy + ',
+      's(', best.vars[1], ') + ',
+      's(', best.vars[2], ')'
+    )
+  )
+  
+  base.model <- bam(
+    base.formula,
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  # get base-model metrics
+  base.metrics <- get.metrics(
+    fitted.model = base.model,
+    model.name = paste0(
+      'wy + ',
+      best.vars[1],
+      ' + ',
+      best.vars[2]
+    ),
+    fire.name = fire.name
+  ) %>%
+    mutate(
+      added_var = NA_character_,
+      delta_dev_expl = 0
+    )
+  
+  # save base-model deviance explained
+  base.dev.expl <- base.metrics$dev.expl
+  
+  canopy.results.step <- bind_rows(
+    canopy.results.step,
+    base.metrics
+  )
+  
+  # models with each additional variable
+  for (var in remaining.vars) {
+    
+    model.formula <- as.formula(
+      paste0(
+        'sdd ~ wy + ',
+        's(', best.vars[1], ') + ',
+        's(', best.vars[2], ') + ',
+        's(', var, ')'
+      )
+    )
+    
+    model <- bam(
+      model.formula,
+      data = fire.df,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    model.metrics <- get.metrics(
+      fitted.model = model,
+      model.name = paste0(
+        'wy + ',
+        best.vars[1],
+        ' + ',
+        best.vars[2],
+        ' + ',
+        var
+      ),
+      fire.name = fire.name
+    ) %>%
+      mutate(
+        added_var = var,
+        delta_dev_expl = dev.expl - base.dev.expl
+      )
+    
+    canopy.results.step <- bind_rows(
+      canopy.results.step,
+      model.metrics
+    )
+  }
+}
+
+canopy.results.step %>%
+  arrange(fire, desc(delta_dev_expl))
+
+canopy.results.step.3 <- canopy.results.step
+
+
+# ----- stepwise 4 -----
+canopy.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent'
+)
+
+best.var.lookup <- list(
+  caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6'),
+  castle = c('ht_zkurt','gap_percent', 'ht_zmax'),
+  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax'),
+  dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent')
+)
+
+canopy.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # identify the best-selected canopy vars for each fire
+  best.vars <- best.var.lookup[[fire.name]]
+  
+  # remove the selected variables from the candidate variables
+  remaining.vars <- setdiff(canopy.vars, best.vars)
+  
+  # base formula: WY + previously selected canopy variables
+  base.formula <- as.formula(
+    paste0(
+      'sdd ~ wy + ',
+      's(', best.vars[1], ') + ',
+      's(', best.vars[2], ') + ',
+      's(', best.vars[3], ')'
+    )
+  )
+  
+  base.model <- bam(
+    base.formula,
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  # get base-model metrics
+  base.metrics <- get.metrics(
+    fitted.model = base.model,
+    model.name = paste0(
+      'wy + ',
+      best.vars[1],
+      ' + ',
+      best.vars[2],
+      ' + ',
+      best.vars[3]
+    ),
+    fire.name = fire.name
+  ) %>%
+    mutate(
+      added_var = NA_character_,
+      delta_dev_expl = 0
+    )
+  
+  # save base-model deviance explained
+  base.dev.expl <- base.metrics$dev.expl
+  
+  canopy.results.step <- bind_rows(
+    canopy.results.step,
+    base.metrics
+  )
+  
+  # models with each additional variable
+  for (var in remaining.vars) {
+    
+    model.formula <- as.formula(
+      paste0(
+        'sdd ~ wy + ',
+        's(', best.vars[1], ') + ',
+        's(', best.vars[2], ') + ',
+        's(', best.vars[3], ') + ',
+        's(', var, ')'
+      )
+    )
+    
+    model <- bam(
+      model.formula,
+      data = fire.df,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    model.metrics <- get.metrics(
+      fitted.model = model,
+      model.name = paste0(
+        'wy + ',
+        best.vars[1],
+        ' + ',
+        best.vars[2],
+        ' + ',
+        best.vars[3],
+        ' + ',
+        var
+      ),
+      fire.name = fire.name
+    ) %>%
+      mutate(
+        added_var = var,
+        delta_dev_expl = dev.expl - base.dev.expl
+      )
+    
+    canopy.results.step <- bind_rows(
+      canopy.results.step,
+      model.metrics
+    )
+  }
+}
+
+canopy.results.step %>%
+  arrange(fire, desc(delta_dev_expl))
+
+canopy.results.step.4 <- canopy.results.step
+
+
+
+
+
+# ----- stepwise 5 -----
+canopy.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent'
+)
+
+best.var.lookup <- list(
+  caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6', 'ht_zmax'),
+  castle = c('ht_zkurt','gap_percent', 'ht_zmax', 'ht_zskew'),
+  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax', 'gap_percent'),
+  dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent', 'ht_zpcum2')
+)
+
+canopy.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # identify the best-selected canopy vars for each fire
+  best.vars <- best.var.lookup[[fire.name]]
+  
+  # remove the selected variables from the candidate variables
+  remaining.vars <- setdiff(canopy.vars, best.vars)
+  
+  # base formula: WY + previously selected canopy variables
+  base.formula <- as.formula(
+    paste0(
+      'sdd ~ wy + ',
+      's(', best.vars[1], ') + ',
+      's(', best.vars[2], ') + ',
+      's(', best.vars[3], ') + ',
+      's(', best.vars[4], ')'
+    )
+  )
+  
+  base.model <- bam(
+    base.formula,
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  # get base-model metrics
+  base.metrics <- get.metrics(
+    fitted.model = base.model,
+    model.name = paste0(
+      'wy + ',
+      best.vars[1],
+      ' + ',
+      best.vars[2],
+      ' + ',
+      best.vars[3],
+      ' + ',
+      best.vars[4]
+    ),
+    fire.name = fire.name
+  ) %>%
+    mutate(
+      added_var = NA_character_,
+      delta_dev_expl = 0
+    )
+  
+  # save base-model deviance explained
+  base.dev.expl <- base.metrics$dev.expl
+  
+  canopy.results.step <- bind_rows(
+    canopy.results.step,
+    base.metrics
+  )
+  
+  # models with each additional variable
+  for (var in remaining.vars) {
+    
+    model.formula <- as.formula(
+      paste0(
+        'sdd ~ wy + ',
+        's(', best.vars[1], ') + ',
+        's(', best.vars[2], ') + ',
+        's(', best.vars[3], ') + ',
+        's(', best.vars[4], ') + ',
+        's(', var, ')'
+      )
+    )
+    
+    model <- bam(
+      model.formula,
+      data = fire.df,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    model.metrics <- get.metrics(
+      fitted.model = model,
+      model.name = paste0(
+        'wy + ',
+        best.vars[1],
+        ' + ',
+        best.vars[2],
+        ' + ',
+        best.vars[3],
+        ' + ',
+        best.vars[4],
+        ' + ',
+        var
+      ),
+      fire.name = fire.name
+    ) %>%
+      mutate(
+        added_var = var,
+        delta_dev_expl = dev.expl - base.dev.expl
+      )
+    
+    canopy.results.step <- bind_rows(
+      canopy.results.step,
+      model.metrics
+    )
+  }
+}
+
+canopy.results.step %>%
+  arrange(fire, desc(delta_dev_expl)) %>%
+  select(-model_name)
+
+canopy.results.step.5 <- canopy.results.step
+
+# ----- stepwise 6 -----
+canopy.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent'
+)
+
+best.var.lookup <- list(
+  caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6', 'ht_zmax', 'gap_percent'),
+  castle = c('ht_zkurt','gap_percent', 'ht_zmax', 'ht_zskew', 'ht_zpcum2'),
+  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax', 'gap_percent', 'ht_zkurt'),
+  dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent', 'ht_zpcum2', 'ht_zkurt')
+)
+
+canopy.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # identify the best-selected canopy vars for each fire
+  best.vars <- best.var.lookup[[fire.name]]
+  
+  # remove the selected variables from the candidate variables
+  remaining.vars <- setdiff(canopy.vars, best.vars)
+  
+  # base formula: WY + previously selected canopy variables
+  base.formula <- as.formula(
+    paste0(
+      'sdd ~ wy + ',
+      's(', best.vars[1], ') + ',
+      's(', best.vars[2], ') + ',
+      's(', best.vars[3], ') + ',
+      's(', best.vars[4], ') + ',
+      's(', best.vars[5], ')'
+    )
+  )
+  
+  base.model <- bam(
+    base.formula,
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  # get base-model metrics
+  base.metrics <- get.metrics(
+    fitted.model = base.model,
+    model.name = paste0(
+      'wy + ',
+      best.vars[1],
+      ' + ',
+      best.vars[2],
+      ' + ',
+      best.vars[3],
+      ' + ',
+      best.vars[4],
+      ' + ',
+      best.vars[5]
+    ),
+    fire.name = fire.name
+  ) %>%
+    mutate(
+      added_var = NA_character_,
+      delta_dev_expl = 0
+    )
+  
+  # save base-model deviance explained
+  base.dev.expl <- base.metrics$dev.expl
+  
+  canopy.results.step <- bind_rows(
+    canopy.results.step,
+    base.metrics
+  )
+  
+  # models with each additional variable
+  for (var in remaining.vars) {
+    
+    model.formula <- as.formula(
+      paste0(
+        'sdd ~ wy + ',
+        's(', best.vars[1], ') + ',
+        's(', best.vars[2], ') + ',
+        's(', best.vars[3], ') + ',
+        's(', best.vars[4], ') + ',
+        's(', best.vars[5], ') + ',
+        's(', var, ')'
+      )
+    )
+    
+    model <- bam(
+      model.formula,
+      data = fire.df,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    model.metrics <- get.metrics(
+      fitted.model = model,
+      model.name = paste0(
+        'wy + ',
+        best.vars[1],
+        ' + ',
+        best.vars[2],
+        ' + ',
+        best.vars[3],
+        ' + ',
+        best.vars[4],
+        ' + ',
+        best.vars[5],
+        ' + ',
+        var
+      ),
+      fire.name = fire.name
+    ) %>%
+      mutate(
+        added_var = var,
+        delta_dev_expl = dev.expl - base.dev.expl
+      )
+    
+    canopy.results.step <- bind_rows(
+      canopy.results.step,
+      model.metrics
+    )
+  }
+}
+
+canopy.results.step %>%
+  arrange(fire, BIC) %>%
+  select(-model_name)
+
+canopy.results.step.6 <- canopy.results.step
+
+# ----- stepwise 7 -----
+canopy.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent'
+)
+
+best.var.lookup <- list(
+  caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6', 'ht_zmax', 'gap_percent', 'ht_zpcum9'),
+  castle = c('ht_zkurt','gap_percent', 'ht_zmax', 'ht_zskew', 'ht_zpcum2', 'ht_zpcum6'),
+  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax', 'gap_percent', 'ht_zkurt', 'ht_zskew'),
+  dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent', 'ht_zpcum2', 'ht_zkurt', 'gap_dist_to_canopy_mean')
+)
+
+canopy.results.step <- data.frame()
+
+for (fire.name in unique(df.500.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.500.raw %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # identify the best-selected canopy vars for each fire
+  best.vars <- best.var.lookup[[fire.name]]
+  
+  # remove the selected variables from the candidate variables
+  remaining.vars <- setdiff(canopy.vars, best.vars)
+  
+  # base formula: WY + previously selected canopy variables
+  base.formula <- as.formula(
+    paste0(
+      'sdd ~ wy + ',
+      's(', best.vars[1], ') + ',
+      's(', best.vars[2], ') + ',
+      's(', best.vars[3], ') + ',
+      's(', best.vars[4], ') + ',
+      's(', best.vars[5], ') + ',
+      's(', best.vars[6], ')'
+    )
+  )
+  
+  base.model <- bam(
+    base.formula,
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  # get base-model metrics
+  base.metrics <- get.metrics(
+    fitted.model = base.model,
+    model.name = paste0(
+      'wy + ',
+      best.vars[1],
+      ' + ',
+      best.vars[2],
+      ' + ',
+      best.vars[3],
+      ' + ',
+      best.vars[4],
+      ' + ',
+      best.vars[5],
+      ' + ',
+      best.vars[6]
+    ),
+    fire.name = fire.name
+  ) %>%
+    mutate(
+      added_var = NA_character_,
+      delta_dev_expl = 0
+    )
+  
+  # save base-model deviance explained
+  base.dev.expl <- base.metrics$dev.expl
+  
+  canopy.results.step <- bind_rows(
+    canopy.results.step,
+    base.metrics
+  )
+  
+  # models with each additional variable
+  for (var in remaining.vars) {
+    
+    model.formula <- as.formula(
+      paste0(
+        'sdd ~ wy + ',
+        's(', best.vars[1], ') + ',
+        's(', best.vars[2], ') + ',
+        's(', best.vars[3], ') + ',
+        's(', best.vars[4], ') + ',
+        's(', best.vars[5], ') + ',
+        's(', best.vars[6], ') + ',
+        's(', var, ')'
+      )
+    )
+    
+    model <- bam(
+      model.formula,
+      data = fire.df,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    model.metrics <- get.metrics(
+      fitted.model = model,
+      model.name = paste0(
+        'wy + ',
+        best.vars[1],
+        ' + ',
+        best.vars[2],
+        ' + ',
+        best.vars[3],
+        ' + ',
+        best.vars[4],
+        ' + ',
+        best.vars[5],
+        ' + ',
+        best.vars[6],
+        ' + ',
+        var
+      ),
+      fire.name = fire.name
+    ) %>%
+      mutate(
+        added_var = var,
+        delta_dev_expl = dev.expl - base.dev.expl
+      )
+    
+    canopy.results.step <- bind_rows(
+      canopy.results.step,
+      model.metrics
+    )
+  }
+}
+
+canopy.results.step %>%
+  arrange(fire, BIC)
+
+canopy.results.step.7 <- canopy.results.step
+
+# ---- plot AIC / BIC -----
+
+
+
 
 
 
@@ -1569,5 +2451,48 @@ summary.table <- k.results %>%
 summary.table
 
 
-# ----- cbi and elev -----
+# ----- correlation matrix -----
+canopy.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent'
+)
 
+cor.mat <- cor(
+  df.500.raw[, canopy.vars],
+  use = 'complete.obs',
+  method = 'pearson'
+)
+
+round(cor.mat, 2)
+
+library(corrplot)
+
+cor.mat <- cor(
+  df.500.raw[, canopy.vars],
+  use = 'complete.obs'
+)
+
+corrplot(
+  cor.mat,
+  method = 'color',
+  type = 'upper',
+  order = 'hclust',
+  addCoef.col = 'black',
+  tl.col = 'black',
+  tl.srt = 45,
+  number.cex = 0.7
+)
+
+
+# extra
+swe <- rast('data/processed/processed/tif/50m/dixie/dixie_swe_peak_50m.tif')
+names(swe)
+plot(swe[[1]])
+writeRaster(swe[[1]], 'data/processed/processed/tif/50m/dixie/dixie_swe_peak_50m_2023_temp.tif')
