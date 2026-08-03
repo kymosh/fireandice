@@ -1402,6 +1402,39 @@ ggplot(
   ) +
   theme_bw()
 
+# ----- exploratino using mgcv's build-in shrinkage selection -----
+fire.name <- 'castle'
+
+fire.df <- df.50.raw.test %>%
+  filter(fire == fire.name) %>%
+  droplevels()
+
+selection.model <- bam(
+  sqrt(swe_peak) ~
+    wy +
+    s(gap_percent, k = 10) +
+    s(ht_zmax, k = 10) +
+    s(ht_zpcum2, k = 10) +
+    s(ht_zpcum6, k = 10) +
+    s(ht_zpcum9, k = 10) +
+    s(ht_zpcum1, k = 10) +
+    s(ht_zskew, k = 10) +
+    s(ht_zkurt, k = 10) +
+    s(gap_dist_to_canopy_mean, k = 10),
+  data = fire.df,
+  method = 'fREML',
+  discrete = TRUE,
+  select = TRUE
+)
+
+summary(selection.model)
+
+df.50.raw.test %>%
+  filter(fire == 'castle') %>%
+  distinct(wy)
+
+# basically confirms what we've been seeing
+
 # ------------------------- Final Model Comparisons -----------------------
 # ----- compare models -----
 stage.one.results <- data.frame()
@@ -1512,39 +1545,244 @@ ggplot(
 # Stage 2 Modeling - Combined Model
 # ==============================================================================
 
-# ----- Random Forest to explore interactions -----
+# ----- Create thinned dataset for exploratory analysis -----
 
-# filter dataset so only including years all fires have in common
 # years common to all fires
 common.years <- Reduce(
   intersect,
   split(df.50.raw$wy, df.50.raw$fire)
 )
 
+# initial filtering
 df.50 <- df.50.raw %>%
-  filter(wy %in% common.years) %>%
-  mutate(fire = factor(fire)) %>%
-  select(
-    -cell,
-    -x,
-    -y,
+  filter(wy %in% common.years) %>%  # keep only years that are common to all fires
+  mutate(
+    fire = factor(fire)
+  ) %>%
+  dplyr::select(      # remove columns we don't want
+    -split,
+    -fold_id,
     -ht_zpcum9,
     -ht_zpcum1,
-    -ht_zkurt)
+    -ht_zkurt,
+    -tpi510,
+    -tpi2010,
+    -aspect_class,
+    -rad_dsm_accum
+  ) 
 
+# create a unique spatial frame
+sampling.frame <- df.50 %>%
+  distinct(
+    fire,
+    cell,
+    x,
+    y)
+
+library(purrr)
+library(raster)
+library(dismo)
+
+grid.size <- 500
+
+set.seed(61)
+
+selected.cells <- sampling.frame %>%
+  split(.$fire) %>%
+  imap_dfr(
+    function(fire.df, fire.name) {
+      
+      sampling.grid <- raster(
+        xmn = min(fire.df$x),
+        xmx = max(fire.df$x),
+        ymn = min(fire.df$y),
+        ymx = max(fire.df$y),
+        res = grid.size
+      )
+      
+      selected.xy <- dismo::gridSample(
+        x = as.matrix(fire.df[, c('x', 'y')]),
+        r = sampling.grid,
+        n = 1
+      )
+      
+      fire.df %>%
+        semi_join(
+          as.data.frame(selected.xy),
+          by = c('x', 'y')
+        )
+    }
+  )
+
+
+# now let's make a dataset where there are the same amount of cells per fire, so that dixie doesn't dominate
+n.per.fire <- selected.cells %>%
+  count(fire) %>%
+  summarize(n = min(n)) %>%
+  pull(n)
+
+selected.cells.equal <- selected.cells %>%
+  group_by(fire) %>%
+  slice_sample(
+    n = n.per.fire
+  ) %>%
+  ungroup()
+
+# create RF dataset using these selected cells
+# proportional dataset
+df.rf.prop <- df.50 %>%
+  semi_join(
+    selected.cells,
+    by = c("fire", "cell")) %>%
+  dplyr::select(-cell, -x, -y) %>%
+  droplevels()
+
+# equalized dataset
+df.rf.equal <- df.50 %>%
+  semi_join(
+    selected.cells.equal,
+    by = c("fire", "cell")) %>%
+  dplyr::select(-cell, -x, -y) %>%
+  droplevels()
+
+# --------------- Random Forest to explore interactions ---------------
+# ----- run model -----
 library(ranger)
 
-rf <- ranger(
+dim(df.rf.prop)
+str(df.rf.prop[c('fire', 'wy', 'burned')])
+sum(!complete.cases(df.rf.prop))
+
+rf.prop <- ranger(
   sqrt(swe_peak) ~ .,
-  data = df.50,
+  data = df.rf.prop,
   num.trees = 500,
-  sample.fraction = 0.20,   # each tree sees 40% of observations
   importance = 'permutation',
+  num.threads = 2,
   seed = 61
 )
-# started at 5:49pm
-sys.time()
 
+rf.equal <- ranger(
+  sqrt(swe_peak) ~ .,
+  data = df.rf.equal,
+  num.trees = 500,
+  importance = 'permutation',
+  num.threads = 2,
+  seed = 61
+)
+
+saveRDS(rf.prop, 'data/processed/processed/rds/rf_50_prop.rds')
+saveRDS(rf.equal, 'data/processed/processed/rds/rf_50_equal.rds')
+
+# ---------- RF Results ----------
+# variable importance
+prop.imp <- sort(rf.prop$variable.importance, decreasing = TRUE)
+equal.imp <- sort(rf.equal$variable.importance, decreasing = TRUE)
+
+prop.imp
+equal.imp
+
+# ----- use iml to identify interactions -----
+library(iml)
+
+# subset data
+iml.prop <- df.rf.prop %>%
+  group_by(fire, wy, burned) %>%
+  slice_sample(n = 80) %>%
+  ungroup()
+
+dim(iml.prop)
+table(iml.prop$fire)
+
+iml.equal <- df.rf.equal %>%
+  group_by(fire, wy, burned) %>%
+  slice_sample(n = 80) %>%
+  ungroup()
+
+dim(iml.equal)
+table(iml.equal$fire)
+
+# ---- prop ----
+# separate predictors and response
+# remove swe peak from predictors
+x.prop <- iml.prop %>%
+  dplyr::select(-swe_peak)
+
+# create just the response
+y.prop <- sqrt(iml.prop$swe_peak)
+
+# wrap the ranger model in an iml predictor
+ranger.predict <- function(model, newdata) {
+  predict(
+    model,
+    data = newdata)$predictions
+}
+
+predictor.prop <- Predictor$new(
+  model = rf.prop,
+  data = x.prop,
+  y = y.prop,
+  predict.function = ranger.predict,
+  batch.size = 1000
+)
+
+
+options(
+  future.globals.maxSize = 15 * 1024^3
+)
+
+future::plan(future::sequential)
+
+interaction.prop <- Interaction$new(
+  predictor.prop
+)
+
+interaction.prop$results %>%
+  arrange(desc(.interaction))
+
+# ---- equal ----
+# separate predictors and response
+# remove swe peak from predictors
+x.equal <- iml.equal %>%
+  dplyr::select(-swe_peak)
+
+# create just the response
+y.equal <- sqrt(iml.equal$swe_peak)
+
+predictor.equal <- Predictor$new(
+  model = rf.equal,
+  data = x.equal,
+  y = y.equal,
+  predict.function = ranger.predict,
+  batch.size = 1000
+)
+
+
+options(
+  future.globals.maxSize = 15 * 1024^3
+)
+
+future::plan(future::sequential)
+
+interaction.equal <- Interaction$new(
+  predictor.equal
+)
+
+interaction.equal$results %>%
+  arrange(desc(.interaction))
+
+# ----- test interactions -----
+Interaction$new(
+  predictor.prop,
+  feature = 'elevation'
+)$results %>%
+  arrange(desc(.interaction))
+
+Interaction$new(
+  predictor.equal,
+  feature = 'elevation'
+)$results %>%
+  arrange(desc(.interaction))
 
 # ----- Elevation only, then adding 1 additional topo var -----
 for (fire.name in unique(df.50.raw$fire)) {
