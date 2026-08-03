@@ -28,20 +28,6 @@ burn.cols <- c(
   'burned' = 'firebrick2'
 )
  
-
-# # trim to years 2023 and up
-# df.raw <- df.raw.0 %>%
-#   filter(wy %in% c(2023, 2024, 2025))
-# 
-# 
-# df.50 <- df.50.0 %>%
-#   semi_join(
-#     df.raw %>% select(cell, wy),
-#     by = c('cell', 'wy')
-#   )
-
-
-
 # ==============================================================================
 #  Results DF and helper functions creation
 # ==============================================================================
@@ -1675,12 +1661,12 @@ saveRDS(rf.prop, 'data/processed/processed/rds/rf_50_prop.rds')
 saveRDS(rf.equal, 'data/processed/processed/rds/rf_50_equal.rds')
 
 # ---------- RF Results ----------
+rf.prop <- readRDS('data/processed/processed/rds/rf_50_prop.rds')
+rf.equal <- readRDS('data/processed/processed/rds/rf_50_equal.rds')
+
 # variable importance
 prop.imp <- sort(rf.prop$variable.importance, decreasing = TRUE)
 equal.imp <- sort(rf.equal$variable.importance, decreasing = TRUE)
-
-prop.imp
-equal.imp
 
 # ----- use iml to identify interactions -----
 library(iml)
@@ -1784,6 +1770,11 @@ Interaction$new(
 )$results %>%
   arrange(desc(.interaction))
 
+
+
+
+
+# ------------------------ old code below ----------------------------------------
 # ----- Elevation only, then adding 1 additional topo var -----
 for (fire.name in unique(df.50.raw$fire)) {
   
