@@ -1,4 +1,4 @@
-packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger', 'tictoc', 'mgcv', 'ggplot2')
+packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger', 'tictoc', 'mgcv', 'ggplot2', 'pdp')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -1631,6 +1631,9 @@ df.rf.equal <- df.50 %>%
   dplyr::select(-cell, -x, -y) %>%
   droplevels()
 
+saveRDS(df.rf.prop, 'data/processed/processed/rds/df_rf_50_prop.rds')
+saveRDS(df.rf.equal, 'data/processed/processed/rds/df_rf_50_equal.rds')
+
 # --------------- Random Forest to explore interactions ---------------
 # ----- run model -----
 library(ranger)
@@ -1663,6 +1666,8 @@ saveRDS(rf.equal, 'data/processed/processed/rds/rf_50_equal.rds')
 # ---------- RF Results ----------
 rf.prop <- readRDS('data/processed/processed/rds/rf_50_prop.rds')
 rf.equal <- readRDS('data/processed/processed/rds/rf_50_equal.rds')
+df.rf.prop <- readRDS('data/processed/processed/rds/df_rf_50_prop.rds')
+df.rf.equal <- readRDS('data/processed/processed/rds/df_rf_50_equal.rds')
 
 # variable importance
 prop.imp <- sort(rf.prop$variable.importance, decreasing = TRUE)
@@ -1671,24 +1676,19 @@ equal.imp <- sort(rf.equal$variable.importance, decreasing = TRUE)
 # ----- use iml to identify interactions -----
 library(iml)
 
-# subset data
+# subset data to speed things up
 iml.prop <- df.rf.prop %>%
   group_by(fire, wy, burned) %>%
   slice_sample(n = 80) %>%
   ungroup()
-
-dim(iml.prop)
-table(iml.prop$fire)
 
 iml.equal <- df.rf.equal %>%
   group_by(fire, wy, burned) %>%
   slice_sample(n = 80) %>%
   ungroup()
 
-dim(iml.equal)
-table(iml.equal$fire)
 
-# ---- prop ----
+# ---- prop and equal ----
 # separate predictors and response
 # remove swe peak from predictors
 x.prop <- iml.prop %>%
@@ -1697,13 +1697,21 @@ x.prop <- iml.prop %>%
 # create just the response
 y.prop <- sqrt(iml.prop$swe_peak)
 
-# wrap the ranger model in an iml predictor
+# Define a prediction function that tells iml how to obtain predictions from a ranger model.
+# iml is model-agnostic, so it needs this wrapper function.
 ranger.predict <- function(model, newdata) {
   predict(
     model,
     data = newdata)$predictions
 }
 
+# Wrap the fitted ranger model in an iml Predictor object.
+# This object links together:
+#   - the fitted model,
+#   - the predictor data,
+#   - the response,
+#   - and the prediction function.
+# It serves as the input for all subsequent iml interpretation methods.
 predictor.prop <- Predictor$new(
   model = rf.prop,
   data = x.prop,
@@ -1712,21 +1720,6 @@ predictor.prop <- Predictor$new(
   batch.size = 1000
 )
 
-
-options(
-  future.globals.maxSize = 15 * 1024^3
-)
-
-future::plan(future::sequential)
-
-interaction.prop <- Interaction$new(
-  predictor.prop
-)
-
-interaction.prop$results %>%
-  arrange(desc(.interaction))
-
-# ---- equal ----
 # separate predictors and response
 # remove swe peak from predictors
 x.equal <- iml.equal %>%
@@ -1744,23 +1737,37 @@ predictor.equal <- Predictor$new(
 )
 
 
+
+# ----- Calculate Friedman's H-statistic for each predictor -----
+# This measures how strongly each variable interacts with all other predictors in the random forest
+
+# settings
 options(
   future.globals.maxSize = 15 * 1024^3
 )
-
 future::plan(future::sequential)
+
+interaction.prop <- Interaction$new(
+  predictor.prop
+)
+
+# arrange from high to low
+interaction.prop$results %>%
+  arrange(desc(.interaction))
 
 interaction.equal <- Interaction$new(
   predictor.equal
 )
 
+# arrange from high to low
 interaction.equal$results %>%
   arrange(desc(.interaction))
 
 # ----- test interactions -----
+# single predictor
 Interaction$new(
   predictor.prop,
-  feature = 'elevation'
+  feature = 'rad_dtm_accum'
 )$results %>%
   arrange(desc(.interaction))
 
@@ -1770,10 +1777,147 @@ Interaction$new(
 )$results %>%
   arrange(desc(.interaction))
 
+# function to do a bunch at once
+vars <- c(
+  'elevation',
+  'rad_dtm_accum',
+  'ht_zmax',
+  'aspect_cos',
+  'aspect_sin',
+  'gap_percent'
+)
+
+interaction.list <- lapply(
+  vars,
+  function(v) {
+
+    Interaction$new(
+      predictor.equal,
+      feature = v
+    )$results %>%
+      mutate(feature = v)
+
+  }
+)
+
+interaction.df <- bind_rows(interaction.list)
+
+saveRDS(interaction.df, 'data/processed/processed/rds/rf_equal_interactions_50.rds')
+
+# list top 10 interactions
+interaction.df %>%
+  filter(.feature != feature) %>%
+  arrange(desc(.interaction)) %>%
+  slice_head(n = 10)
+
+# ----- pdp plots -----
+library(pdp)
+library(future)
+library(doFuture)
+
+# subset data to speed things up
+pdp.prop <- df.rf.prop %>%
+  group_by(fire, wy, burned) %>%
+  slice_sample(n = 200) %>%
+  ungroup()
+nrow(pdp.prop)
+
+pdp.equal <- df.rf.equal %>%
+  group_by(fire, wy, burned) %>%
+  slice_sample(n = 200) %>%
+  ungroup()
+
+# make prediction wrapper
+pred.ranger <- function(object, newdata) {
+  predict(object, data = newdata)$predictions
+}
+
+
+var1 <- 'elevation'
+var2 <- 'ht_zmax'
+
+pdp.vars <- pdp::partial(
+  object = rf.prop,
+  pred.var = c(var1, var2),
+  train = pdp.prop,
+  pred.fun = pred.ranger,
+  grid.resolution = 15,
+  ice = FALSE,
+  progress = 'text'
+)
+
+# only do this if previous gives .id name
+pdp.vars.avg <- pdp.vars %>%
+  group_by(
+    across(all_of(c(var1, var2)))
+  ) %>%
+  summarize(
+    yhat = mean(yhat),
+    .groups = 'drop'
+  )
+
+names(pdp.vars.avg)
+
+# for continous vars! also may need fixing since assigning var2 and var1
+ggplot(
+  pdp.elev.zmax.avg,
+  aes(
+    x = var1,
+    y = var2,
+    fill = yhat
+  )
+) +
+  geom_tile() +
+  geom_contour(
+    aes(z = yhat),
+    color = 'white',
+    linewidth = 0.3
+  ) +
+  scale_fill_viridis_c(
+    name = expression('Predicted ' * sqrt(SWE))
+  ) +
+  labs(
+    x = paste0(var1),
+    y = paste0(var2),
+    title = paste0('Partial dependence: ', var1, ' × ', var2)
+  ) +
+  theme_minimal()
+
+names(pdp.elev.zmax)
 
 
 
+# plot as surface
+library(plotly)
 
+pdp.surface <- pdp.vars.avg %>%
+  arrange(
+    .data[[var2]],
+    .data[[var1]]
+  ) %>%
+  pivot_wider(
+    names_from = all_of(var1),
+    values_from = yhat
+  )
+
+x.values <- as.numeric(names(pdp.surface)[-1])
+y.values <- pdp.surface[[var2]]
+z.values <- as.matrix(pdp.surface[, -1])
+
+plot_ly(
+  x = x.values,
+  y = y.values,
+  z = z.values,
+  type = 'surface'
+) %>%
+  layout(
+    title = 'Partial dependence: elevation × maximum canopy height',
+    scene = list(
+      xaxis = list(title = 'Elevation (m)'),
+      yaxis = list(title = 'Maximum canopy height (m)'),
+      zaxis = list(title = 'Predicted sqrt(SWE)')
+    )
+  )
 # ------------------------ old code below ----------------------------------------
 # ----- Elevation only, then adding 1 additional topo var -----
 for (fire.name in unique(df.50.raw$fire)) {

@@ -1,7 +1,7 @@
 # Parameters for running r.sun in GRASS GIS. These are imported into rsun.py, which is the main script for running r.sun and processing outputs.
 
 # set these each run!
-fire = 'dixie'
+fire = 'castle'
 mode = 'full'   # 'test' or 'full'
 surface = 'dsm' # either 'dtm' or 'dsm' - this is used to specify which DEM to use for the r.sun runs
 in_res = 5
@@ -35,12 +35,13 @@ elif mode == 'full':
     out_dir = rf'J:\Structure_Data\Fire_Snow\fireandice\data\processed\processed\tif\5m\{fire}\rad'
 
 res = 5
-days = [349, 46, 74, 105, 135, 166] # start with just one day for testing, then add more to the list
+days = [15] #[349, 15, 46, 74, 105, 135, 166] # start with just one day for testing, then add more to the list
 step = 0.5
 linke_value = 1.8
 albedo_value = 0.6
 
 dem_name = f'{fire}_{surface}_{res}m'
+
 slope_name = f'{fire}_{surface}_{res}m_slope'
 aspect_name = f'{fire}_{surface}_{res}m_aspect'
 
