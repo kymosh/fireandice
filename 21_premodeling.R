@@ -5,7 +5,7 @@ lapply(packages, library, character.only = T)
 #  filter DFs 
 # =======================================================================================
 #  ----- setup -----
-fire <- 'creek'
+fire <- 'dixie'
 dir <- paste0('data/processed/processed/rds/', fire, '/')
 
 # --- Snowline lookup ---
@@ -69,6 +69,7 @@ df.50 <- df.50.0 %>%
     
     wy = as.factor(wy),
     cell = as.factor(cell),
+    cell_id = paste(fire, cell, sep = '_'),
     
     gap_percent = gap_gap_pct * 100,
     
@@ -94,31 +95,26 @@ df.50 <- df.50.0 %>%
     elevation >= snowline,
     ht_zmax <= 96 # remove anything taller than what is proved to be the tallest tree in the Sierra
   ) %>% 
-  select(-snowline) # remove temp column
-
-
-
-# save raw before scaling
-df.50.raw <- df.50
-
-# scale numeric predictors
-num.cols <- sapply(df.50, is.numeric)
-num.cols[c('swe_peak', 'x', 'y')] <- FALSE # don't scale the response variable or coordinates
-df.50[num.cols] <- scale(df.50[num.cols])
+  select(-snowline, -cell) # remove temp column
 
 # --- Spatial Blocking ---
 
 block.m <- 8000
-test.prop <- 0.20
 res <- 50
 df <- df.50 
 
-# study area polygon
-study <- st_read(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')) %>%
-  st_transform(epsg)
+# create df of just distinct cells
+df.cells <- df %>%
+  distinct(cell_id, .keep_all = TRUE)
 
-# your model data as points
-dat.sf <- st_as_sf(df, coords = c('x', 'y'), crs = epsg, remove = FALSE)
+stopifnot(nrow(df.cells) == n_distinct(df$cell_id))
+
+dat.sf <- st_as_sf(
+  df.cells,
+  coords = c('x', 'y'),
+  crs = epsg,
+  remove = FALSE
+)
 
 # NOTE:
 # creek used selection = 'systematic'
@@ -140,90 +136,57 @@ sb <- cv_spatial(
 
 cv_plot(sb)
 
-# create test/train categories
-sb$blocks$split <- if_else(sb$blocks$folds == 2, 'test', 'train')
-
-# plot test/train
-ggplot(sb$blocks) +
-  geom_sf(aes(fill = split)) +
-  theme_bw()
-
 # apply blocks to data
 dat.blocked <- dat.sf %>%
+  st_drop_geometry() %>%
   mutate(
-    fold_id = sb$folds_ids,
-    split = if_else(fold_id == 1, 'test', 'train')
+    fold_id = sb$folds_ids) %>%
+  select(cell_id, fold_id)
+
+stopifnot(!anyDuplicated(dat.blocked$cell_id))
+stopifnot(nrow(dat.blocked) == nrow(df.cells))
+stopifnot(!anyNA(dat.blocked$fold_id))
+
+n.before <- nrow(df)
+
+# add folds to raw
+df.50.raw <- df %>%
+  select(-any_of('fold_id')) %>%
+  left_join(
+    dat.blocked,
+    by = 'cell_id'
   )
 
+stopifnot(nrow(df.50.raw) == n.before)
+stopifnot(!anyNA(df.50.raw$fold_id))
 
-# --- check these numbers for new study areas ---
-# proportion numbers per fold
-# sb$blocks %>%
-#   st_drop_geometry() %>%
-#   count(folds) %>%
-#   mutate(prop = n / sum(n))
-# 
-# # proportion of pixels per fold
-# dat.blocked %>%
-#   st_drop_geometry() %>%
-#   count(split) %>%
-#   mutate(prop = n / sum(n))
-# 
-# dat.blocked %>%
-#   st_drop_geometry() %>%
-#   count(fold_id) %>%
-#   mutate(prop = n / sum(n))
-# 
-# # check SDD years are balanced across train/test test
-# dat.blocked %>%
-#   st_drop_geometry() %>%
-#   count(wy, split) %>%
-#   group_by(wy) %>%
-#   mutate(prop = n / sum(n))
-# 
-# dat.blocked %>%
-#   st_drop_geometry() %>%
-#   distinct(x, y, wy, fold_id, split) %>%
-#   count(x, y) %>%
-#   filter(n > 1)
-# 
-# dat.blocked %>%
-#   st_drop_geometry() %>%
-#   group_by(x, y) %>%
-#   summarize(
-#     n_folds = n_distinct(fold_id),
-#     n_splits = n_distinct(split),
-#     .groups = 'drop'
-#   ) %>%
-#   filter(n_folds > 1 | n_splits > 1)
-
-
-# --- save ---
-dat.blocked <- st_drop_geometry(dat.blocked)
-saveRDS(dat.blocked, file.path(dir, paste0(fire, '_df_', res, 'm.rds')))
-saveRDS(dat.blocked, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
-saveRDS(dat.blocked, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
-
-
-# add same folds to raw
-
-stopifnot(nrow(df.50.raw) == nrow(dat.blocked))
-stopifnot(all(df.50.raw$x == dat.blocked$x))
-stopifnot(all(df.50.raw$y == dat.blocked$y))
-stopifnot(all(df.50.raw$wy == dat.blocked$wy))
-
-df.50.raw <- df.50.raw %>%
-  mutate(
-    fold_id = dat.blocked$fold_id,
-    split = dat.blocked$split
+# verify that repeated observations from each 50 m cell stay in one fold
+fold.check <- df.50.raw %>%
+  group_by(cell_id) %>%
+  summarize(
+    n_folds = n_distinct(fold_id),
+    .groups = 'drop'
   )
 
-# save raw + fold_ids
+stopifnot(all(fold.check$n_folds == 1))
+
+# verify that every cell_id corresponds to only one coordinate pair
+cell.xy.check <- df %>%
+  group_by(cell_id) %>%
+  summarize(
+    n_xy = n_distinct(paste(x, y)),
+    .groups = 'drop'
+  )
+
+stopifnot(all(cell.xy.check$n_xy == 1))
+
+
+# save
 saveRDS(df.50.raw, paste0(dir, fire, '_df_50m_raw.rds'))
 saveRDS(df.50.raw, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '/', fire, '_df_50m_raw.rds')) # save to J: drive
 saveRDS(df.50.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '/', fire, '_df_50m_raw.rds')) # save to G: drive backup
 
-  
+
 
 
 # ----- 500m -----
@@ -255,6 +218,7 @@ df.500 <- df.500.0 %>%
     
     wy = as.factor(wy),
     cell = as.factor(cell),
+    cell_id = paste(fire, cell, sep = '_'),
     
     gap_percent = gap_gap_pct * 100,
     
@@ -281,33 +245,29 @@ df.500 <- df.500.0 %>%
 
   ) %>% 
   filter(
-    elevation >= snowline,
+    elevation >= snowline
   ) %>% 
-  select(-snowline)
-
-# save raw values before scaling
-df.500.raw <- df.500
-
-# scale numeric predictors
-num.cols <- sapply(df.500, is.numeric)
-num.cols[c('sdd', 'x', 'y')] <- FALSE # don't scale the response variable'
-df.500[num.cols] <- scale(df.500[num.cols])
+  select(-snowline, -cell)
 
 
-
-# --- spatial blocking ---
+# --- Spatial Blocking ---
 
 block.m <- 8000
-test.prop <- 0.20
 res <- 500
-df <- df.500 # or df.500
+df <- df.500 
 
-# study area polygon
-study <- st_read(paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')) %>%
-  st_transform(epsg)
+# create df of just distinct cells
+df.cells <- df %>%
+  distinct(cell_id, .keep_all = TRUE)
 
-# your model data as points
-dat.sf <- st_as_sf(df, coords = c('x', 'y'), crs = epsg, remove = FALSE)
+stopifnot(nrow(df.cells) == n_distinct(df$cell_id))
+
+dat.sf <- st_as_sf(
+  df.cells,
+  coords = c('x', 'y'),
+  crs = epsg,
+  remove = FALSE
+)
 
 # NOTE:
 # creek used selection = 'systematic'
@@ -329,41 +289,52 @@ sb <- cv_spatial(
 
 cv_plot(sb)
 
-# create test/train categories
-sb$blocks$split <- if_else(sb$blocks$folds == 2, 'test', 'train')
-
-# plot test/train
-ggplot(sb$blocks) +
-  geom_sf(aes(fill = split)) +
-  theme_bw()
-
 # apply blocks to data
 dat.blocked <- dat.sf %>%
+  st_drop_geometry() %>%
   mutate(
-    fold_id = sb$folds_ids,
-    split = if_else(fold_id == 1, 'test', 'train')
+    fold_id = sb$folds_ids) %>%
+  select(cell_id, fold_id)
+
+stopifnot(!anyDuplicated(dat.blocked$cell_id))
+stopifnot(nrow(dat.blocked) == nrow(df.cells))
+stopifnot(!anyNA(dat.blocked$fold_id))
+
+
+n.before <- nrow(df)
+
+# add folds to raw
+df.500.raw <- df %>%
+  select(-any_of('fold_id')) %>%
+  left_join(
+    dat.blocked,
+    by = 'cell_id'
   )
 
-# --- save ---
-dat.blocked <- st_drop_geometry(dat.blocked)
-saveRDS(dat.blocked, file.path(dir, paste0(fire, '_df_', res, 'm.rds')))
-saveRDS(dat.blocked, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
-saveRDS(dat.blocked, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '_df_', res, 'm.rds'))
+stopifnot(nrow(df.500.raw) == n.before)
+stopifnot(!anyNA(df.500.raw$fold_id))
 
-
-# add same folds to raw
-stopifnot(nrow(df.500.raw) == nrow(dat.blocked))
-stopifnot(all(df.500.raw$x == dat.blocked$x))
-stopifnot(all(df.500.raw$y == dat.blocked$y))
-stopifnot(all(df.500.raw$wy == dat.blocked$wy))
-
-df.500.raw <- df.500.raw %>%
-  mutate(
-    fold_id = dat.blocked$fold_id,
-    split = dat.blocked$split
+# verify that repeated observations from each 500 m cell stay in one fold
+fold.check <- df.500.raw %>%
+  group_by(cell_id) %>%
+  summarize(
+    n_folds = n_distinct(fold_id),
+    .groups = 'drop'
   )
 
-# save raw + fold_ids
+stopifnot(all(fold.check$n_folds == 1))
+
+# verify that every cell_id corresponds to only one coordinate pair
+cell.xy.check <- df %>%
+  group_by(cell_id) %>%
+  summarize(
+    n_xy = n_distinct(paste(x, y)),
+    .groups = 'drop'
+  )
+
+stopifnot(all(cell.xy.check$n_xy == 1))
+
+# save
 saveRDS(df.500.raw, paste0(dir, fire, '_df_500m_raw.rds'))
 saveRDS(df.500.raw, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/', fire, '/', fire, '_df_500m_raw.rds')) # save to J: drive
 saveRDS(df.500.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/', fire, '/', fire, '_df_500m_raw.rds')) # save to G: drive backup
@@ -393,12 +364,13 @@ dfs <- lapply(fires, function(fire) {
 df.raw.0 <- bind_rows(dfs)
 
 df.raw <- df.raw.0 %>%
-  rename(gap_percent = gap_gap_pct) %>%
+  select(-gap_gap_pct) %>%
   filter(complete.cases(select(., -aspect_class)))
   
 
-saveRDS(df.raw, paste0(rds.dir, 'df_', res, '_raw_all_metrics.rds'))
-
+saveRDS(df.raw, paste0(rds.dir, 'df_', res, '_raw.rds'))
+saveRDS(df.raw, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/df_', res, 'm_raw.rds')) # save to J: drive
+saveRDS(df.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/df_', res, 'm_raw.rds')) # save to G: drive backup
 
 # =======================================================================================
 #  Elevation Matching
@@ -408,8 +380,8 @@ saveRDS(df.raw, paste0(rds.dir, 'df_', res, '_raw_all_metrics.rds'))
 set.seed(61)
 
 rds.dir <- 'data/processed/processed/rds/'
-res <- '500m'
-df.raw.file <- paste0(rds.dir, 'df_', res, '_raw_all_metrics.rds')
+res <- '50m'
+df.raw.file <- paste0(rds.dir, 'df_', res, '_raw.rds')
 
 df.raw <- readRDS(df.raw.file)
 
@@ -446,7 +418,9 @@ df.balanced %>%
     values_from = n
   )
 
-saveRDS(df.balanced, paste0(rds.dir, 'df_', res, '_raw_balanced_all_metrics.rds'))
+saveRDS(df.balanced, paste0(rds.dir, 'df_', res, '_raw_balanced.rds'))
+saveRDS(df.balanced, paste0('J:/Fire_Snow/fireandice/data/processed/processed/rds/df_', res, 'm_raw_balanced.rds')) # save to J: drive
+saveRDS(df.balanced, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rds/df_', res, 'm_raw_balanced.rds')) # save to G: drive backup
 
 # scale numeric predictors
 df.balanced.scaled <- df.balanced

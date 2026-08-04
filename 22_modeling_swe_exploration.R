@@ -9,8 +9,12 @@ lapply(packages, library, character.only = T)
 set.seed(61)
 dir <- 'data/processed/processed/rds/' 
 
-df.50.raw <- readRDS(file.path(dir, 'df_50m_raw.rds'))
+df.50.raw.0 <- readRDS(file.path(dir, 'df_50m_raw.rds'))
 df.50.balanced <- readRDS(file.path(dir, 'df_50m_raw_balanced.rds')) 
+
+# create cell ID that is unique across fires
+df.50.raw <- df.50.raw.0 %>%
+  mutate(cell_id = interaction(fire, cell, drop = TRUE))
 
 df.50.raw.test <- df.50.raw %>%
   group_by(fire) %>%
@@ -1530,7 +1534,6 @@ ggplot(
 # ==============================================================================
 # Stage 2 Modeling - Combined Model
 # ==============================================================================
-
 # ----- Create thinned dataset for exploratory analysis -----
 
 # years common to all fires
@@ -1804,6 +1807,8 @@ interaction.df <- bind_rows(interaction.list)
 
 saveRDS(interaction.df, 'data/processed/processed/rds/rf_equal_interactions_50.rds')
 
+interaction.df <- readRDS('data/processed/processed/rds/rf_equal_interactions_50.rds')
+
 # list top 10 interactions
 interaction.df %>%
   filter(.feature != feature) %>%
@@ -1918,265 +1923,32 @@ plot_ly(
       zaxis = list(title = 'Predicted sqrt(SWE)')
     )
   )
-# ------------------------ old code below ----------------------------------------
-# ----- Elevation only, then adding 1 additional topo var -----
-for (fire.name in unique(df.50.raw$fire)) {
-  
-  # create fire-specific df
-  fire.df <- df.50.raw.test %>%
-    filter(fire == fire.name) %>%
-    droplevels()
-  
-  # elevation baseline
-  model.elev <- bam(sqrt(swe_peak) ~
-                      wy +
-                      s(elevation, k = 10),
-                    data = fire.df,
-                    method = 'ML')
-  
-  topo.results <- bind_rows(
-    topo.results,
-    get.metrics(
-      fitted.model = model.elev,
-      model.name = 'elevation',
-      fire.name = fire.name
-    )
-  )
-# ----- null model with just spatial term *old -----
-gam.null <- bam(
-  sqrt(swe_peak) ~ factor(wy) +
-    s(x, y, bs = 'tp', k = 200),
-  data = df.check,
-  method = 'fREML',
-  discrete = TRUE
-)
-# plot of modeled spatial structure
-plot(
-  gam.null,
-  select = 1,
-  scheme = 2,
-  too.far = 0.05,
-  main = "Spatial smooth: s(x, y)"
-)
+# --------------- Build Model ---------------
 
-results <- rbind(
-  results,
-  get.metrics(gam.null, "Null")
-)
-gam.check(gam.test)
-
-# ----- null topo *old -----
-topo <- bam(
-  sqrt(swe_peak) ~
-    wy +
-    s(elevation) +
-    s(rad_dtm_accum) +
-    s(slope),
-  data = df.50.raw.test,
-  method = "fREML",
-  discrete = TRUE
-)
-
-summary(gam.topo)
-gam.check(gam.topo)
-
-# add results
-results <- rbind(
-  results,
-  get.metrics(gam.topo, "Topo")
-)
-
-# plot residuals
-plot(
-  fitted(gam.topo),
-  residuals(gam.topo),
-  pch = 16,
-  cex = 0.1
-)
-abline(h = 0)
-
-qqnorm(
-  sample(residuals(gam.topo), 50000)
-)
-qqline(
-  sample(residuals(gam.topo), 50000)
-)
-
-df.check$resid.topo <- residuals(gam.topo)
-
-ggplot(df.check,
-       aes(x, y, color = resid.topo)) +
-  geom_point(size = 0.3) +
-  scale_color_gradient2(
-    midpoint = 0,
-    limits = c(-0.35, 0.35)
-  ) +
-  coord_equal()
-
-summary(df.check$resid.topo)
-
-quantile(
-  df.check$resid.topo,
-  probs = c(0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
-)
+base <- bam(sqrt(swe_peak) ~ wy + fire +
+                   s(elevation) + s(rad_dtm_accum) + s(slope) + s(aspect_sin) + 
+                   s(gap_percent) + s(ht_zpcum2) + s(ht_zmax) + s(ht_zskew),
+            data = df.50.raw,
+            method = 'fREML',
+            discrete = TRUE)
 
 
-gam.topo <- bam(
-  sqrt(swe_peak) ~
-    factor(wy) +
-    s(topo_elev) +
-    s(rad_dtm_accum) +
-    s(topo_slope) +
-    s(topo_tpi150) +
-    s(topo_tpi2010),
-  data = df.check,
-  method = "fREML",
-  discrete = TRUE
-)
-
-summary(gam.topo)
-gam.check(gam.topo)
-
-# add results
-results <- rbind(
-  results,
-  get.metrics(gam.topo, "Topo")
-)
-
-# plot residuals
-plot(
-  fitted(gam.topo),
-  residuals(gam.topo),
-  pch = 16,
-  cex = 0.1
-)
-abline(h = 0)
-
-qqnorm(
-  sample(residuals(gam.topo), 50000)
-)
-qqline(
-  sample(residuals(gam.topo), 50000)
-)
-
-df.check$resid.topo <- residuals(gam.topo)
-
-ggplot(df.check,
-       aes(x, y, color = resid.topo)) +
-  geom_point(size = 0.3) +
-  scale_color_gradient2(
-    midpoint = 0,
-    limits = c(-0.35, 0.35)
-  ) +
-  coord_equal()
-
-summary(df.check$resid.topo)
-
-quantile(
-  df.check$resid.topo,
-  probs = c(0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
-)
+df.50.raw %>%
+  group_by(cell_id) %>%
+  summarize(
+    n_folds = n_distinct(fold_id),
+    .groups = 'drop'
+  ) %>%
+  count(n_folds)
 
 
-# ----- null topo with spatial term *old -----
-gam.topo.sxy <- bam(
-  sqrt(swe_peak) ~
-    factor(wy) +
-    s(topo_elev) +
-    s(rad_dtm_accum) +
-    s(topo_slope) +
-    s(topo_tpi150) +
-    s(topo_tpi2010) +
-    s(x, y, bs = "tp", k = 200),
-  data = df.check,
-  method = "fREML",
-  discrete = TRUE
-)
-
-summary(gam.topo.sxy)
-gam.check(gam.topo.sxy)
-
-# add results
-results <- rbind(
-  results,
-  get.metrics(gam.topo.sxy, "Topo with s(x,y)")
-)
 
 
-df.check$resid.topo <- residuals(gam.topo.sxy)
-
-ggplot(df.check,
-       aes(x, y, color = resid.topo)) +
-  geom_point(size = 0.3) +
-  scale_color_gradient2(
-    midpoint = 0,
-    limits = c(-0.35, 0.35)
-  ) +
-  coord_equal()
-
-summary(df.check$resid.topo)
-
-quantile(
-  df.check$resid.topo,
-  probs = c(0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
-)
 
 
-gam.topo <- bam(
-  sqrt(swe_peak) ~
-    factor(wy) +
-    s(topo_elev) +
-    s(rad_dtm_accum) +
-    s(topo_slope) +
-    s(topo_tpi150) +
-    s(topo_tpi2010),
-  data = df.check,
-  method = "fREML",
-  discrete = TRUE
-)
 
-summary(gam.topo)
-gam.check(gam.topo)
 
-# add results
-results <- rbind(
-  results,
-  get.metrics(gam.topo, "Topo")
-)
 
-# plot residuals
-plot(
-  fitted(gam.topo),
-  residuals(gam.topo),
-  pch = 16,
-  cex = 0.1
-)
-abline(h = 0)
-
-qqnorm(
-  sample(residuals(gam.topo), 50000)
-)
-qqline(
-  sample(residuals(gam.topo), 50000)
-)
-
-df.check$resid.topo <- residuals(gam.topo)
-
-ggplot(df.check,
-       aes(x, y, color = resid.topo)) +
-  geom_point(size = 0.3) +
-  scale_color_gradient2(
-    midpoint = 0,
-    limits = c(-0.35, 0.35)
-  ) +
-  coord_equal()
-
-summary(df.check$resid.topo)
-
-quantile(
-  df.check$resid.topo,
-  probs = c(0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
-)
 
 
 
