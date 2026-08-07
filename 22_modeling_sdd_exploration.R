@@ -467,19 +467,20 @@ for (fire.name in unique(df.500.raw$fire)) {
     filter(fire == fire.name) %>%
     droplevels()
   
-  # identify the first-selected canopy var for each fire
+  # identify first-selected canopy variable
   best.var <- unname(best.var.lookup[fire.name])
   
-  # remove the selected variable from the variable candidates
+  # remove selected variable from candidates
   remaining.vars <- setdiff(canopy.vars, best.var)
   
-  # --- base formula: WY + selected canopy var ---
+  # base formula: WY + selected canopy variable
   base.formula <- as.formula(
     paste0(
       'sdd ~ wy + s(', best.var, ')'
     )
   )
   
+  # fit base model
   base.model <- bam(
     base.formula,
     data = fire.df,
@@ -487,60 +488,69 @@ for (fire.name in unique(df.500.raw$fire)) {
     discrete = TRUE
   )
   
+  # get base-model metrics
+  base.metrics <- get.metrics(
+    fitted.model = base.model,
+    model.name = paste0('wy + ', best.var),
+    fire.name = fire.name
+  ) %>%
+    mutate(
+      added_var = NA_character_,
+      delta_dev_expl = 0
+    )
+  
+  # save base deviance explained
+  base.dev.expl <- base.metrics$dev.expl
+  
   canopy.results.step <- bind_rows(
     canopy.results.step,
-    get.metrics(
-      fitted.model = base.model,
-      model.name = paste0('wy + ', best.var),
-      fire.name = fire.name
-    )
+    base.metrics
   )
   
   # models with each additional variable
   for (var in remaining.vars) {
     
     model.formula <- as.formula(
-      paste0('sdd ~ wy +  
-             s(', best.var, ') + s(',
-             var, ')')
-    )
-    
-    model <- bam(model.formula,
-                 data = fire.df,
-                 method = 'fREML',
-                 discrete = TRUE)
-    
-    # add results
-    canopy.results.step <- bind_rows(
-      canopy.results.step,
-      get.metrics(
-        fitted.model = model,
-        model.name = paste0('wy + ', best.var, ' + ', var),
-        fire.name = fire.name
-        
-        
+      paste0(
+        'sdd ~ wy + ',
+        's(', best.var, ') + ',
+        's(', var, ')'
       )
     )
     
+    model <- bam(
+      model.formula,
+      data = fire.df,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    model.metrics <- get.metrics(
+      fitted.model = model,
+      model.name = paste0(
+        'wy + ',
+        best.var,
+        ' + ',
+        var
+      ),
+      fire.name = fire.name
+    ) %>%
+      mutate(
+        added_var = var,
+        delta_dev_expl = dev.expl - base.dev.expl
+      )
+    
+    canopy.results.step <- bind_rows(
+      canopy.results.step,
+      model.metrics
+    )
   }
-  
 }
 
-canopy.results.step <- canopy.results.step %>%
-  group_by(fire) %>%
-  mutate(
-    added_var = var,
-    base.dev.expl = first(dev.expl),
-    delta_dev_expl = dev.expl - base.dev.expl
-  ) %>%
-  ungroup()
-
 canopy.results.step %>%
-  arrange(fire, desc(delta_dev_expl)) %>%
-  print(n = Inf)
+  arrange(fire, desc(delta_dev_expl))
 
 canopy.results.step.2 <- canopy.results.step
-
 
 
 # ----- stepwise 3 -----
@@ -548,7 +558,7 @@ canopy.results.step.2 <- canopy.results.step
 best.var.lookup <- list(
   caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt'),
   castle = c('ht_zkurt','gap_percent'),
-  creek = c('ht_zpcum2','ht_zpcum1'),
+  creek = c('ht_zpcum2','ht_zmax'),
   dixie = c('ht_zskew', 'ht_zpcum1')
 )
 
@@ -661,7 +671,7 @@ canopy.results.step.3 <- canopy.results.step
 best.var.lookup <- list(
   caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6'),
   castle = c('ht_zkurt','gap_percent', 'ht_zmax'),
-  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax'),
+  creek = c('ht_zpcum2', 'ht_zmax', 'gap_percent'),
   dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent')
 )
 
@@ -783,7 +793,7 @@ canopy.results.step.4 <- canopy.results.step
 best.var.lookup <- list(
   caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6', 'ht_zmax'),
   castle = c('ht_zkurt','gap_percent', 'ht_zmax', 'ht_zskew'),
-  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax', 'gap_percent'),
+  creek = c('ht_zpcum2', 'ht_zmax', 'gap_percent', 'ht_zpcum6'),
   dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent', 'ht_zpcum2')
 )
 
@@ -908,7 +918,7 @@ canopy.results.step.5 <- canopy.results.step
 best.var.lookup <- list(
   caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6', 'ht_zmax', 'gap_percent'),
   castle = c('ht_zkurt','gap_percent', 'ht_zmax', 'ht_zskew', 'ht_zpcum2'),
-  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax', 'gap_percent', 'ht_zkurt'),
+  creek = c('ht_zpcum2', 'ht_zmax', 'gap_percent', 'ht_zpcum6', 'ht_zskew'),
   dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent', 'ht_zpcum2', 'ht_zkurt')
 )
 
@@ -1039,7 +1049,7 @@ canopy.results.step.6 <- canopy.results.step
 best.var.lookup <- list(
   caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6', 'ht_zmax', 'gap_percent', 'ht_zpcum9'),
   castle = c('ht_zkurt','gap_percent', 'ht_zmax', 'ht_zskew', 'ht_zpcum2', 'ht_zpcum6'),
-  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax', 'gap_percent', 'ht_zkurt', 'ht_zskew'),
+  creek = c('ht_zpcum2', 'ht_zmax', 'gap_percent', 'ht_zpcum6', 'ht_zskew', 'ht_zkurt'),
   dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent', 'ht_zpcum2', 'ht_zkurt', 'gap_dist_to_canopy_mean')
 )
 
@@ -1178,7 +1188,7 @@ canopy.results.step.7 <- canopy.results.step
 best.var.lookup <- list(
   caldor = c('gap_dist_to_canopy_mean', 'ht_zkurt', 'ht_zpcum6', 'ht_zmax', 'gap_percent', 'ht_zpcum9', 'ht_zskew'),
   castle = c('ht_zkurt','gap_percent', 'ht_zmax', 'ht_zskew', 'ht_zpcum2', 'ht_zpcum6', 'gap_dist_to_canopy_mean'),
-  creek = c('ht_zpcum2','ht_zpcum1', 'ht_zmax', 'gap_percent', 'ht_zkurt', 'ht_zskew', 'ht_zpcum6'),
+  creek = c('ht_zpcum2', 'ht_zmax', 'gap_percent', 'ht_zpcum6', 'ht_zskew', 'ht_zkurt', 'gap_dist_to_canopy_mean'),
   dixie = c('ht_zskew', 'ht_zpcum1', 'gap_percent', 'ht_zpcum2', 'ht_zkurt', 'gap_dist_to_canopy_mean', 'ht_zmax')
 )
 
@@ -1439,24 +1449,30 @@ for (fire.name in unique(df.500.balanced$fire)) {
               discrete = TRUE)
   
   # --- canopy --- 
-  #### THESE ARE STILL SWE FORMULAS, CHANGE TO SDD ONCE FORMULAS ARE FIGURED OUT ###
-  if (fire.name %in% c('caldor', 'castle')) {
+   
+  if (fire.name %in% c('caldor')) {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent) + s(ht_zmax) + s(ht_zpcum2),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_dist_to_canopy_mean) + s(ht_zkurt) + s(ht_zpcum6) + s(ht_zmax) + s(gap_percent),
+                  data = fire.df,
+                  method = 'fREML',
+                  discrete = TRUE)
+    
+  } else if (fire.name == 'castle') {
+    
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zkurt) + s(gap_percent) + s(ht_zmax) + s(ht_zskew) + s(ht_zpcum2),
                   data = fire.df,
                   method = 'fREML',
                   discrete = TRUE)
     
   } else if (fire.name == 'creek') {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zskew) + s(ht_zmax) + s(ht_zpcum2),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2) + s(ht_zmax) + s(gap_percent) + s(ht_zpcum6),
                   data = fire.df,
                   method = 'fREML',
-                  discrete = TRUE)
+                  discrete = TRUE)  
     
   } else if (fire.name == 'dixie') {
-    
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent) + s(ht_zmax) + s(gap_dist_to_canopy_mean),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zskew) + s(ht_zpcum1) + s(gap_percent) + s(ht_zpcum2) + s(ht_zkurt) + s(gap_dist_to_canopy_mean),
                   data = fire.df,
                   method = 'fREML',
                   discrete = TRUE)

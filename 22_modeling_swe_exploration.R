@@ -9,12 +9,10 @@ lapply(packages, library, character.only = T)
 set.seed(61)
 dir <- 'data/processed/processed/rds/' 
 
-df.50.raw.0 <- readRDS(file.path(dir, 'df_50m_raw.rds'))
+df.50.raw <- readRDS(file.path(dir, 'df_50m_raw.rds'))
 df.50.balanced <- readRDS(file.path(dir, 'df_50m_raw_balanced.rds')) 
 
-# create cell ID that is unique across fires
-df.50.raw <- df.50.raw.0 %>%
-  mutate(cell_id = interaction(fire, cell, drop = TRUE))
+#str(df.50.raw)
 
 df.50.raw.test <- df.50.raw %>%
   group_by(fire) %>%
@@ -1288,7 +1286,7 @@ canopy.results.step %>%
 
 canopy.results.step.8 <- canopy.results.step
 
-# ---- plot AIC / BIC -----
+# ---- plot BIC -----
 
 # Put all saved stepwise tables in order
 step.results <- list(
@@ -1341,7 +1339,7 @@ final.selected <- step.results[[length(step.results)]] %>%
   filter(delta_dev_expl != 0) %>%
   group_by(fire) %>%
   slice_min(
-    AIC,
+    BIC,
     n = 1,
     with_ties = FALSE
   ) %>%
@@ -1368,7 +1366,7 @@ ggplot(
   model.path,
   aes(
     x = variables_removed,
-    y = AIC,
+    y = BIC,
     group = 1
   )
 ) +
@@ -1387,8 +1385,8 @@ ggplot(
   ) +
   labs(
     x = 'Number of canopy variables removed',
-    y = 'AIC',
-    title = 'Change in AIC as canopy variables are removed'
+    y = 'BIC',
+    title = 'Change in BIC as canopy variables are removed'
   ) +
   theme_bw()
 
@@ -1443,23 +1441,30 @@ for (fire.name in unique(df.50.balanced$fire)) {
               discrete = TRUE)
   
   # --- canopy --- 
-  if (fire.name %in% c('caldor', 'castle')) {
+  if (fire.name %in% c('caldor')) {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent) + s(ht_zmax) + s(ht_zpcum2),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent) + s(ht_zpcum2) + s(ht_zmax) + s(gap_dist_to_canopy_mean) + s(ht_zpcum6),
                                 data = fire.df,
                                 method = 'fREML',
                                 discrete = TRUE)
     
+  } else if (fire.name == 'castle') {
+    
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2) + s(gap_percent) + s(ht_zmax) + s(ht_zskew),
+                  data = fire.df,
+                  method = 'fREML',
+                  discrete = TRUE)
+    
   } else if (fire.name == 'creek') {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zskew) + s(ht_zmax) + s(ht_zpcum2),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2) + s(ht_zmax) + s(ht_zskew),
                         data = fire.df,
                         method = 'fREML',
                         discrete = TRUE)
     
   } else if (fire.name == 'dixie') {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent) + s(ht_zmax) + s(gap_dist_to_canopy_mean),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zmax) + s(gap_percent) + s(gap_dist_to_canopy_mean) + s(ht_zskew),
                         data = fire.df,
                         method = 'fREML',
                         discrete = TRUE)
