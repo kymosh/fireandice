@@ -12,7 +12,7 @@ dir <- 'data/processed/processed/rds/'
 df.50.raw <- readRDS(file.path(dir, 'df_50m_raw.rds'))
 df.50.balanced <- readRDS(file.path(dir, 'df_50m_raw_balanced.rds')) 
 
-#str(df.50.raw)
+# str(df.50.raw)
 
 df.50.raw.test <- df.50.raw %>%
   group_by(fire) %>%
@@ -1423,11 +1423,88 @@ df.50.raw.test %>%
 
 # basically confirms what we've been seeing
 
+# ----- determine k value -----
+fires <- c('castle', 'caldor', 'creek')
+# increase k values and compare to determine correct value
+
+# --- topo ---
+for (fire.name in fires) {
+  
+  # create fire-specific df
+  fire.df <- df.50.balanced %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  topo <- bam(sqrt(swe_peak) ~ wy + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20),
+              data = fire.df,
+              method = 'fREML',
+              discrete = TRUE)
+  print(fire.name)
+  print(k.check(topo, subsample = 10000, n.rep = 400))
+  plot(topo, pages = 1)
+}
+
+# --- canopy --- 
+for (fire.name in fires) {
+  
+  # create fire-specific df
+  fire.df <- df.50.balanced %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  
+  if (fire.name %in% c('caldor')) {
+    
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent, k = 20) + s(ht_zpcum2, k = 20) + s(ht_zmax, k = 20) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zpcum6, k = 20),
+                  data = fire.df,
+                  method = 'fREML',
+                  discrete = TRUE)
+    
+  } else if (fire.name == 'castle') {
+    
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2, k = 20) + s(gap_percent, k = 20) + s(ht_zmax, k = 20) + s(ht_zskew, k = 20),
+                  data = fire.df,
+                  method = 'fREML',
+                  discrete = TRUE)
+    
+  } else if (fire.name == 'creek') {
+    
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2, k = 20) + s(ht_zmax, k = 20) + s(ht_zskew, k = 20),
+                  data = fire.df,
+                  method = 'fREML',
+                  discrete = TRUE) }
+  
+  print(fire.name)
+  print(k.check(canopy))
+  plot(canopy, pages = 1)
+}
+
+# --- cbi ---
+for (fire.name in fires) {
+  
+  # create fire-specific df
+  fire.df <- df.50.balanced %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  cbi <- bam(sqrt(swe_peak) ~ wy + s(cbibc, k = 20),
+             data = fire.df,
+             method = 'fREML',
+             discrete = TRUE)
+  print(fire.name)
+  print(k.check(cbi, subsample = 10000, n.rep = 400))
+  plot(cbi, pages = 1)
+}
+
 # ------------------------- Final Model Comparisons -----------------------
 # ----- compare models -----
 stage.one.results <- data.frame()
 
-for (fire.name in unique(df.50.balanced$fire)) {
+# NOTE: when comparing GAMs with different fixed effects (not smoothed models), use ML as method instead of fREML! fREML can only compare well between models
+# that have the same fixed effects
+fires <- c('castle', 'caldor', 'creek')
+
+for (fire.name in fires) {
   
   # create fire-specific df
   fire.df <- df.50.balanced %>%
@@ -1435,7 +1512,7 @@ for (fire.name in unique(df.50.balanced$fire)) {
     droplevels()
   
   # --- topo ---
-  topo <- bam(sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope) + s(aspect_sin),
+  topo <- bam(sqrt(swe_peak) ~ wy + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20),
               data = fire.df,
               method = 'fREML',
               discrete = TRUE)
@@ -1443,39 +1520,39 @@ for (fire.name in unique(df.50.balanced$fire)) {
   # --- canopy --- 
   if (fire.name %in% c('caldor')) {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent) + s(ht_zpcum2) + s(ht_zmax) + s(gap_dist_to_canopy_mean) + s(ht_zpcum6),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent, k = 20) + s(ht_zpcum2, k = 20) + s(ht_zmax, k = 20) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zpcum6, k = 20),
                                 data = fire.df,
                                 method = 'fREML',
                                 discrete = TRUE)
     
   } else if (fire.name == 'castle') {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2) + s(gap_percent) + s(ht_zmax) + s(ht_zskew),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2, k = 20) + s(gap_percent, k = 20) + s(ht_zmax, k = 20) + s(ht_zskew, k = 20),
                   data = fire.df,
                   method = 'fREML',
                   discrete = TRUE)
     
   } else if (fire.name == 'creek') {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2) + s(ht_zmax) + s(ht_zskew),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2, k = 20) + s(ht_zmax, k = 20) + s(ht_zskew, k = 20),
                         data = fire.df,
                         method = 'fREML',
                         discrete = TRUE)
     
   } else if (fire.name == 'dixie') {
     
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zmax) + s(gap_percent) + s(gap_dist_to_canopy_mean) + s(ht_zskew),
+    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zmax, k = 20) + s(gap_percent, k = 20) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
                         data = fire.df,
                         method = 'fREML',
                         discrete = TRUE)
   }
   
-  burned <- bam(sqrt(swe_peak) ~ wy + burned,
-                data = fire.df,
-                method = 'fREML',
-                discrete = TRUE)
+  # burned <- bam(sqrt(swe_peak) ~ wy + burned,
+  #               data = fire.df,
+  #               method = 'fREML',
+  #               discrete = TRUE)
   
-  cbi <- bam(sqrt(swe_peak) ~ wy + s(cbibc),
+  cbi <- bam(sqrt(swe_peak) ~ wy + s(cbibc, k = 20),
              data = fire.df,
              method = 'fREML',
              discrete = TRUE)
@@ -1484,7 +1561,7 @@ for (fire.name in unique(df.50.balanced$fire)) {
     stage.one.results,
     get.metrics(topo, 'Topography', fire.name),
     get.metrics(canopy, 'Canopy', fire.name),
-    get.metrics(burned, 'Burned Status', fire.name),
+    # get.metrics(burned, 'Burned Status', fire.name),
     get.metrics(cbi, 'Burned Severity', fire.name)
   )
   
@@ -1493,7 +1570,7 @@ for (fire.name in unique(df.50.balanced$fire)) {
 stage.one.results %>%
   arrange(fire, desc(dev.expl))
   
-saveRDS(stage.one.results, paste0(dir, 'stage_one_results_swe.rds'))
+saveRDS(stage.one.results, paste0(dir, 'stage_one_results_swe_k20.rds'))
 
 # plot
 ggplot(
@@ -1512,7 +1589,7 @@ ggplot(
     values = c(
       'Topography' = 'steelblue3',
       'Canopy' = 'forestgreen',
-      'Burned Status' = 'darkorange2',
+     # 'Burned Status' = 'darkorange2',
       'Burned Severity' = 'firebrick3'
     )
   ) +
@@ -1536,40 +1613,33 @@ ggplot(
 
 
 
+
 # ==============================================================================
 # Stage 2 Modeling - Combined Model
 # ==============================================================================
 # ----- Create thinned dataset for exploratory analysis -----
 
 # years common to all fires
-common.years <- Reduce(
-  intersect,
-  split(df.50.raw$wy, df.50.raw$fire)
-)
+common.years <- df.50.raw %>%
+  filter(fire != 'dixie') %>%
+  distinct(fire, wy) %>%
+  count(wy) %>%
+  filter(n == 3) %>%   # 3 remaining fires
+  pull(wy)
 
-# initial filtering
+# remove dixie fire and non-common years
 df.50 <- df.50.raw %>%
-  filter(wy %in% common.years) %>%  # keep only years that are common to all fires
-  mutate(
-    fire = factor(fire)
-  ) %>%
-  dplyr::select(      # remove columns we don't want
-    -split,
-    -fold_id,
-    -ht_zpcum9,
-    -ht_zpcum1,
-    -ht_zkurt,
-    -tpi510,
-    -tpi2010,
-    -aspect_class,
-    -rad_dsm_accum
-  ) 
+  filter(
+    fire != 'dixie',
+    wy %in% common.years) %>%
+  
+  droplevels()
 
 # create a unique spatial frame
 sampling.frame <- df.50 %>%
   distinct(
     fire,
-    cell,
+    cell_id,
     x,
     y)
 
@@ -1608,102 +1678,83 @@ selected.cells <- sampling.frame %>%
     }
   )
 
-
-# now let's make a dataset where there are the same amount of cells per fire, so that dixie doesn't dominate
-n.per.fire <- selected.cells %>%
-  count(fire) %>%
-  summarize(n = min(n)) %>%
-  pull(n)
-
-selected.cells.equal <- selected.cells %>%
-  group_by(fire) %>%
-  slice_sample(
-    n = n.per.fire
-  ) %>%
-  ungroup()
-
 # create RF dataset using these selected cells
-# proportional dataset
-df.rf.prop <- df.50 %>%
+# dataset is proportional to number of cells per fire
+
+keep.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent',
+  'elevation',
+  'rad_dtm_accum',
+  'slope',
+  'aspect_sin',
+  'aspect_cos',
+  'tpi150',
+  'tpi1200',
+  'wy',
+  'burned',
+  'fire',
+  'swe_peak'
+)
+
+df.rf <- df.50 %>%
   semi_join(
     selected.cells,
-    by = c("fire", "cell")) %>%
-  dplyr::select(-cell, -x, -y) %>%
+    by = c("fire", "cell_id")) %>%
+  dplyr::select(all_of(keep.vars)) %>%
   droplevels()
 
-# equalized dataset
-df.rf.equal <- df.50 %>%
-  semi_join(
-    selected.cells.equal,
-    by = c("fire", "cell")) %>%
-  dplyr::select(-cell, -x, -y) %>%
-  droplevels()
 
-saveRDS(df.rf.prop, 'data/processed/processed/rds/df_rf_50_prop.rds')
-saveRDS(df.rf.equal, 'data/processed/processed/rds/df_rf_50_equal.rds')
+saveRDS(df.rf, 'data/processed/processed/rds/df_rf_50.rds')
+
 
 # --------------- Random Forest to explore interactions ---------------
-# ----- run model -----
+# ----- run model and save results -----
 library(ranger)
 
-dim(df.rf.prop)
-str(df.rf.prop[c('fire', 'wy', 'burned')])
-sum(!complete.cases(df.rf.prop))
+dim(df.rf)
+str(df.rf[c('fire', 'wy', 'burned')])
+sum(!complete.cases(df.rf))
 
-rf.prop <- ranger(
+rf.50 <- ranger(
   sqrt(swe_peak) ~ .,
-  data = df.rf.prop,
+  data = df.rf,
   num.trees = 500,
   importance = 'permutation',
   num.threads = 2,
   seed = 61
 )
 
-rf.equal <- ranger(
-  sqrt(swe_peak) ~ .,
-  data = df.rf.equal,
-  num.trees = 500,
-  importance = 'permutation',
-  num.threads = 2,
-  seed = 61
-)
-
-saveRDS(rf.prop, 'data/processed/processed/rds/rf_50_prop.rds')
-saveRDS(rf.equal, 'data/processed/processed/rds/rf_50_equal.rds')
-
-# ---------- RF Results ----------
-rf.prop <- readRDS('data/processed/processed/rds/rf_50_prop.rds')
-rf.equal <- readRDS('data/processed/processed/rds/rf_50_equal.rds')
-df.rf.prop <- readRDS('data/processed/processed/rds/df_rf_50_prop.rds')
-df.rf.equal <- readRDS('data/processed/processed/rds/df_rf_50_equal.rds')
+saveRDS(rf.50, 'data/processed/processed/rds/rf_50.rds')
+rf.50 <- readRDS('data/processed/processed/rds/rf_50.rds')
+df.rf <- readRDS('data/processed/processed/rds/df_rf_50.rds')
 
 # variable importance
-prop.imp <- sort(rf.prop$variable.importance, decreasing = TRUE)
-equal.imp <- sort(rf.equal$variable.importance, decreasing = TRUE)
+sort(rf.50$variable.importance, decreasing = TRUE)
 
 # ----- use iml to identify interactions -----
 library(iml)
 
 # subset data to speed things up
-iml.prop <- df.rf.prop %>%
+iml <- df.rf %>%
   group_by(fire, wy, burned) %>%
   slice_sample(n = 80) %>%
   ungroup()
 
-iml.equal <- df.rf.equal %>%
-  group_by(fire, wy, burned) %>%
-  slice_sample(n = 80) %>%
-  ungroup()
-
-
-# ---- prop and equal ----
 # separate predictors and response
 # remove swe peak from predictors
-x.prop <- iml.prop %>%
+x <- iml %>%
   dplyr::select(-swe_peak)
 
 # create just the response
-y.prop <- sqrt(iml.prop$swe_peak)
+y <- sqrt(iml$swe_peak)
 
 # Define a prediction function that tells iml how to obtain predictions from a ranger model.
 # iml is model-agnostic, so it needs this wrapper function.
@@ -1720,29 +1771,15 @@ ranger.predict <- function(model, newdata) {
 #   - the response,
 #   - and the prediction function.
 # It serves as the input for all subsequent iml interpretation methods.
-predictor.prop <- Predictor$new(
-  model = rf.prop,
-  data = x.prop,
-  y = y.prop,
+predictor <- Predictor$new(
+  model = rf.50,
+  data = x,
+  y = y,
   predict.function = ranger.predict,
   batch.size = 1000
 )
 
-# separate predictors and response
-# remove swe peak from predictors
-x.equal <- iml.equal %>%
-  dplyr::select(-swe_peak)
 
-# create just the response
-y.equal <- sqrt(iml.equal$swe_peak)
-
-predictor.equal <- Predictor$new(
-  model = rf.equal,
-  data = x.equal,
-  y = y.equal,
-  predict.function = ranger.predict,
-  batch.size = 1000
-)
 
 
 
@@ -1755,23 +1792,29 @@ options(
 )
 future::plan(future::sequential)
 
-interaction.prop <- Interaction$new(
-  predictor.prop
+interaction <- Interaction$new(
+  predictor
 )
 
 # arrange from high to low
-interaction.prop$results %>%
+interaction$results %>%
   arrange(desc(.interaction))
 
-interaction.equal <- Interaction$new(
-  predictor.equal
+interaction <- Interaction$new(
+  predictor
 )
 
 # arrange from high to low
-interaction.equal$results %>%
+interaction$results %>%
   arrange(desc(.interaction))
 
 # ----- test interactions -----
+# settings
+options(
+  future.globals.maxSize = 15 * 1024^3
+)
+future::plan(future::sequential)
+
 # single predictor
 Interaction$new(
   predictor.prop,
@@ -1792,7 +1835,8 @@ vars <- c(
   'ht_zmax',
   'aspect_cos',
   'aspect_sin',
-  'gap_percent'
+  'gap_percent',
+  'ht_zpcum2'
 )
 
 interaction.list <- lapply(
@@ -1800,7 +1844,7 @@ interaction.list <- lapply(
   function(v) {
 
     Interaction$new(
-      predictor.equal,
+      predictor,
       feature = v
     )$results %>%
       mutate(feature = v)
@@ -1810,7 +1854,7 @@ interaction.list <- lapply(
 
 interaction.df <- bind_rows(interaction.list)
 
-saveRDS(interaction.df, 'data/processed/processed/rds/rf_equal_interactions_50.rds')
+saveRDS(interaction.df, 'data/processed/processed/rds/rf_interactions_50.rds')
 
 interaction.df <- readRDS('data/processed/processed/rds/rf_equal_interactions_50.rds')
 
@@ -1928,25 +1972,288 @@ plot_ly(
       zaxis = list(title = 'Predicted sqrt(SWE)')
     )
   )
-# --------------- Build Model ---------------
+# -------------------------- Build Model --------------------------
 
-base <- bam(sqrt(swe_peak) ~ wy + fire +
-                   s(elevation) + s(rad_dtm_accum) + s(slope) + s(aspect_sin) + 
-                   s(gap_percent) + s(ht_zpcum2) + s(ht_zmax) + s(ht_zskew),
-            data = df.50.raw,
+# ----- create dataset -----
+# years common to all fires
+common.years <- df.50.raw %>%
+  filter(fire != 'dixie') %>%
+  distinct(fire, wy) %>%
+  count(wy) %>%
+  filter(n == 3) %>%   # 3 remaining fires
+  pull(wy)
+
+keep.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent',
+  'elevation',
+  'rad_dtm_accum',
+  'slope',
+  'aspect_sin',
+  'aspect_cos',
+  'tpi150',
+  'tpi1200',
+  'wy',
+  'burned',
+  'fire',
+  'swe_peak'
+)
+
+# remove dixie fire, non-common years, and other variables
+df.50 <- df.50.raw %>%
+  filter(
+    fire != 'dixie',
+    wy %in% common.years) %>%
+  
+  droplevels() %>%
+  
+  dplyr::select(all_of(keep.vars))
+
+base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20),
+            data = df.50,
             method = 'fREML',
             discrete = TRUE)
 
+summary(base)
+k.check(base, subsample=10000, n.rep = 400)
+plot(base)
 
-df.50.raw %>%
-  group_by(cell_id) %>%
-  summarize(
-    n_folds = n_distinct(fold_id),
-    .groups = 'drop'
+# methods to follow:
+# 1. do stepwise with just topo, to determine topo metrics
+# 2. do same with canopy metrics
+# 3. determine k values for each
+# 4. combine into single model
+# 5. experiment with adding interactions and fixed variables
+  # ** make sure if adding fixed variables you change from fREML to ML !
+
+
+# ----- Topo Stepwise Selection -----
+# ----- Stepwise 1 -----
+
+topo.vars <- c(
+  'slope',
+  'rad_dtm_accum',
+  'tpi150',
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_sin',
+  'aspect_cos'
+)
+
+topo.results <- data.frame()
+
+# elevation baseline
+base <- bam(sqrt(swe_peak) ~
+                      wy +
+                      s(elevation, k = 10),
+                    data = fire.df,
+                    method = 'fREML')
+  
+  topo.results <- bind_rows(
+    topo.results,
+    get.metrics(
+      fitted.model = model.elev,
+      model.name = 'elevation',
+      fire.name = fire.name
+    )
+  )
+  
+  
+  # test each additional topographic variable
+  for (var in topo.vars) {
+    
+    model.formula <- as.formula(
+      paste0(
+        'sqrt(swe_peak) ~ wy + s(elevation, k = 10) + s(' , var, ', k = 10)'
+      )
+    )
+    
+    model <- bam(
+      model.formula,
+      data = fire.df,
+      method = 'ML'
+    )
+    
+    topo.results <- bind_rows(
+      topo.results,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('elevation + ', var), 
+        fire.name = fire.name
+      )
+    )
+    
+  }
+}
+
+topo.results <- topo.results %>%
+  group_by(fire) %>%
+  mutate(
+    AIC.elevation = AIC[model_name == 'elevation'],
+    delta.AIC.elevation = AIC - AIC.elevation,
+    delta.r.squared = r.squared - r.squared[model_name == 'elevation']
   ) %>%
-  count(n_folds)
+  ungroup()
 
+topo.results %>%
+  arrange(fire, AIC) %>%
+  print(n = Inf)
 
+# shows that radiation definitely adds the most. Continue on to stepwise to see if adding additional variables improves the model
+
+# ----- stepwise 2 -----
+
+# updated vars
+topo.vars <- c(
+  'slope',
+  'tpi150',
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_sin',
+  'aspect_cos'
+)
+
+topo.results.step <- data.frame()
+
+for (fire.name in unique(df.50.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.50.raw.test %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # elevation + radiation baseline
+  topo.elev.rad <- bam(
+    sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum),
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  topo.results.step <- bind_rows(
+    topo.results.step,
+    get.metrics(
+      fitted.model = topo.elev.rad,
+      model.name = 'topo.elev.rad',
+      fire.name = fire.name
+    )
+  )
+  
+  # test each additional variable
+  for (var in topo.vars) {
+    
+    model.formula <- as.formula(
+      paste0('sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum) + 
+             s(', var, ')')
+    )
+    
+    model <- bam(model.formula,
+                 data = fire.df,
+                 method = 'fREML',
+                 discrete = TRUE)
+    
+    # add results
+    topo.results.step <- bind_rows(
+      topo.results.step,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('topo.elev.rad.', var),
+        fire.name = fire.name
+        
+        
+      )
+    )
+    
+  }
+  
+}
+
+topo.results.step %>%
+  arrange(fire, AIC)
+
+topo.results.step.2 <- topo.results.step
+
+# slope still seems to add enough to keep it in the model
+
+# ----- stepwise 3 ------
+# updated vars
+topo.vars <- c(
+  'tpi150',
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_sin',
+  'aspect_cos'
+)
+
+topo.results.step <- data.frame()
+
+for (fire.name in unique(df.50.raw$fire)) {
+  
+  # create fire-specific df
+  fire.df <- df.50.raw.test %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  # elevation + radiation baseline
+  topo.elev.rad.slope <- bam(
+    sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope),
+    data = fire.df,
+    method = 'fREML',
+    discrete = TRUE
+  )
+  
+  topo.results.step <- bind_rows(
+    topo.results.step,
+    get.metrics(
+      fitted.model = topo.elev.rad,
+      model.name = 'topo.elev.rad',
+      fire.name = fire.name
+    )
+  )
+  
+  # test each additional variable
+  for (var in topo.vars) {
+    
+    model.formula <- as.formula(
+      paste0('sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope) + 
+             s(', var, ')')
+    )
+    
+    model <- bam(model.formula,
+                 data = fire.df,
+                 method = 'fREML',
+                 discrete = TRUE)
+    
+    # add results
+    topo.results.step <- bind_rows(
+      topo.results.step,
+      get.metrics(
+        fitted.model = model,
+        model.name = paste0('topo.elev.rad.', var),
+        fire.name = fire.name
+        
+        
+      )
+    )
+    
+  }
+  
+}
+
+topo.results.step %>%
+  arrange(fire, AIC)
+
+topo.results.step.3 <- topo.results.step
 
 
 
