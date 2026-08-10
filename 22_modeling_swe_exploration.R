@@ -34,12 +34,28 @@ burn.cols <- c(
 #  Results DF and helper functions creation
 # ==============================================================================
 
+# individual fires
 get.metrics <- function(fitted.model, model.name, fire.name) {
   
   s <- summary(fitted.model)
   
   data.frame(
     fire = fire.name,
+    model_name = model.name,
+    r.squared = s$r.sq,
+    dev.expl = s$dev.expl,
+    AIC = AIC(fitted.model),
+    BIC = BIC(fitted.model),
+    edf = sum(s$edf)
+  )
+}
+
+# combined model 
+get.metrics.combined <- function(fitted.model, model.name) {
+  
+  s <- summary(fitted.model)
+  
+  data.frame(
     model_name = model.name,
     r.squared = s$r.sq,
     dev.expl = s$dev.expl,
@@ -1999,6 +2015,8 @@ keep.vars <- c(
   'aspect_sin',
   'aspect_cos',
   'tpi150',
+  'tpi510',
+  'tpi2010',
   'tpi1200',
   'wy',
   'burned',
@@ -2022,7 +2040,7 @@ base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20),
             discrete = TRUE)
 
 summary(base)
-k.check(base, subsample=10000, n.rep = 400)
+k.check(base, subsample = 10000, n.rep = 400)
 plot(base)
 
 # methods to follow:
@@ -2036,6 +2054,7 @@ plot(base)
 
 # ----- Topo Stepwise Selection -----
 # ----- Stepwise 1 -----
+added_var = NA_character_
 
 topo.vars <- c(
   'slope',
@@ -2051,65 +2070,64 @@ topo.vars <- c(
 topo.results <- data.frame()
 
 # elevation baseline
-base <- bam(sqrt(swe_peak) ~
-                      wy +
-                      s(elevation, k = 10),
-                    data = fire.df,
-                    method = 'fREML')
+base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20),
+            data = df.50,
+            method = 'fREML',
+            discrete = TRUE)
   
-  topo.results <- bind_rows(
+topo.results <- bind_rows(
     topo.results,
-    get.metrics(
-      fitted.model = model.elev,
-      model.name = 'elevation',
-      fire.name = fire.name
+    get.metrics.combined(
+      fitted.model = base,
+      model.name = 'elevation'
     )
   )
   
   
-  # test each additional topographic variable
-  for (var in topo.vars) {
+# test each additional topographic variable
+for (var in topo.vars) {
     
     model.formula <- as.formula(
       paste0(
-        'sqrt(swe_peak) ~ wy + s(elevation, k = 10) + s(' , var, ', k = 10)'
+        'sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(' , var, ', k = 20)'
       )
     )
     
     model <- bam(
       model.formula,
-      data = fire.df,
-      method = 'ML'
+      data = df.50,
+      method = 'fREML',
+      discrete = TRUE
     )
     
     topo.results <- bind_rows(
       topo.results,
-      get.metrics(
+      get.metrics.combined(
         fitted.model = model,
-        model.name = paste0('elevation + ', var), 
-        fire.name = fire.name
+        model.name = paste0('elevation + ', var)
       )
     )
     
   }
-}
+
 
 topo.results <- topo.results %>%
-  group_by(fire) %>%
   mutate(
-    AIC.elevation = AIC[model_name == 'elevation'],
-    delta.AIC.elevation = AIC - AIC.elevation,
+    BIC.elevation = BIC[model_name == 'elevation'],
+    delta.BIC.elevation = BIC - BIC.elevation,
     delta.r.squared = r.squared - r.squared[model_name == 'elevation']
   ) %>%
   ungroup()
 
 topo.results %>%
-  arrange(fire, AIC) %>%
-  print(n = Inf)
+  arrange(BIC) 
 
-# shows that radiation definitely adds the most. Continue on to stepwise to see if adding additional variables improves the model
+topo.results.step.1 <- topo.results
+
 
 # ----- stepwise 2 -----
+
+
 
 # updated vars
 topo.vars <- c(
@@ -2124,67 +2142,63 @@ topo.vars <- c(
 
 topo.results.step <- data.frame()
 
-for (fire.name in unique(df.50.raw$fire)) {
+# elevation + radiation baseline
+base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20),
+  data = df.50,
+  method = 'fREML',
+  discrete = TRUE
+)
   
-  # create fire-specific df
-  fire.df <- df.50.raw.test %>%
-    filter(fire == fire.name) %>%
-    droplevels()
-  
-  # elevation + radiation baseline
-  topo.elev.rad <- bam(
-    sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum),
-    data = fire.df,
-    method = 'fREML',
-    discrete = TRUE
-  )
-  
-  topo.results.step <- bind_rows(
+topo.results.step <- bind_rows(
     topo.results.step,
-    get.metrics(
-      fitted.model = topo.elev.rad,
-      model.name = 'topo.elev.rad',
-      fire.name = fire.name
+    get.metrics.combined(
+      fitted.model = base,
+      model.name = 'topo.elev.rad'
     )
   )
   
-  # test each additional variable
-  for (var in topo.vars) {
+# test each additional variable
+for (var in topo.vars) {
     
     model.formula <- as.formula(
-      paste0('sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum) + 
-             s(', var, ')')
+      paste0('sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(', var, ', k = 20)')
     )
     
     model <- bam(model.formula,
-                 data = fire.df,
+                 data = df.50,
                  method = 'fREML',
                  discrete = TRUE)
     
     # add results
     topo.results.step <- bind_rows(
       topo.results.step,
-      get.metrics(
+      get.metrics.combined(
         fitted.model = model,
-        model.name = paste0('topo.elev.rad.', var),
-        fire.name = fire.name
-        
-        
+        model.name = paste0('topo.elev.rad.', var)
       )
     )
     
   }
   
-}
+topo.results.step <- topo.results.step %>%
+  mutate(
+    BIC.base = BIC[model_name == 'topo.elev.rad'],
+    delta.BIC = BIC - BIC.base,
+    delta.r.squared =
+      r.squared -
+      r.squared[model_name == 'topo.elev.rad']
+  )
+
 
 topo.results.step %>%
-  arrange(fire, AIC)
+  arrange(BIC)
 
 topo.results.step.2 <- topo.results.step
 
-# slope still seems to add enough to keep it in the model
 
-# ----- stepwise 3 ------
+
+# ----- stepwise 3 -----
+
 # updated vars
 topo.vars <- c(
   'tpi150',
@@ -2197,61 +2211,56 @@ topo.vars <- c(
 
 topo.results.step <- data.frame()
 
-for (fire.name in unique(df.50.raw$fire)) {
+# new baseline
+base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20),
+            data = df.50,
+            method = 'fREML',
+            discrete = TRUE
+)
+
+topo.results.step <- bind_rows(
+  topo.results.step,
+  get.metrics.combined(
+    fitted.model = base,
+    model.name = 'base'
+  )
+)
+
+# test each additional variable
+for (var in topo.vars) {
   
-  # create fire-specific df
-  fire.df <- df.50.raw.test %>%
-    filter(fire == fire.name) %>%
-    droplevels()
-  
-  # elevation + radiation baseline
-  topo.elev.rad.slope <- bam(
-    sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope),
-    data = fire.df,
-    method = 'fREML',
-    discrete = TRUE
+  model.formula <- as.formula(
+    paste0('sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(', var, ', k = 20)')
   )
   
+  model <- bam(model.formula,
+               data = df.50,
+               method = 'fREML',
+               discrete = TRUE)
+  
+  # add results
   topo.results.step <- bind_rows(
     topo.results.step,
-    get.metrics(
-      fitted.model = topo.elev.rad,
-      model.name = 'topo.elev.rad',
-      fire.name = fire.name
+    get.metrics.combined(
+      fitted.model = model,
+      model.name = paste0('base + ', var)
     )
   )
-  
-  # test each additional variable
-  for (var in topo.vars) {
-    
-    model.formula <- as.formula(
-      paste0('sqrt(swe_peak) ~ wy + s(elevation) + s(rad_dtm_accum) + s(slope) + 
-             s(', var, ')')
-    )
-    
-    model <- bam(model.formula,
-                 data = fire.df,
-                 method = 'fREML',
-                 discrete = TRUE)
-    
-    # add results
-    topo.results.step <- bind_rows(
-      topo.results.step,
-      get.metrics(
-        fitted.model = model,
-        model.name = paste0('topo.elev.rad.', var),
-        fire.name = fire.name
-        
-        
-      )
-    )
-    
-  }
   
 }
 
+topo.results.step <- topo.results.step %>%
+  mutate(
+    BIC.base = BIC[model_name == 'base'],
+    delta.BIC = BIC - BIC.base,
+    delta.r.squared =
+      r.squared -
+      r.squared[model_name == 'base']
+  )
+
+
 topo.results.step %>%
-  arrange(fire, AIC)
+  arrange(BIC)
 
 topo.results.step.3 <- topo.results.step
 
@@ -2287,6 +2296,249 @@ topo.results.step.3 <- topo.results.step
 
 
 
+
+
+# ----- stepwise 4 -----
+
+# updated vars
+topo.vars <- c(
+  'tpi150',
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_cos'
+)
+
+topo.results.step <- data.frame()
+
+# new baseline
+base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20),
+            data = df.50,
+            method = 'fREML',
+            discrete = TRUE
+)
+
+topo.results.step <- bind_rows(
+  topo.results.step,
+  get.metrics.combined(
+    fitted.model = base,
+    model.name = 'base'
+  )
+)
+
+# test each additional variable
+for (var in topo.vars) {
+  
+  model.formula <- as.formula(
+    paste0('sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(', var, ', k = 20)')
+  )
+  
+  model <- bam(model.formula,
+               data = df.50,
+               method = 'fREML',
+               discrete = TRUE)
+  
+  # add results
+  topo.results.step <- bind_rows(
+    topo.results.step,
+    get.metrics.combined(
+      fitted.model = model,
+      model.name = paste0('base + ', var)
+    )
+  )
+  
+}
+
+topo.results.step <- topo.results.step %>%
+  mutate(
+    BIC.base = BIC[model_name == 'base'],
+    delta.BIC = BIC - BIC.base,
+    delta.r.squared =
+      r.squared -
+      r.squared[model_name == 'base']
+  )
+
+
+topo.results.step %>%
+  arrange(BIC)
+
+topo.results.step.4 <- topo.results.step
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ----- stepwise 5 -----
+
+# updated vars
+topo.vars <- c(
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_cos'
+)
+
+topo.results.step <- data.frame()
+
+# new baseline
+base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(tpi150, k = 20),
+            data = df.50,
+            method = 'fREML',
+            discrete = TRUE
+)
+
+topo.results.step <- bind_rows(
+  topo.results.step,
+  get.metrics.combined(
+    fitted.model = base,
+    model.name = 'base'
+  )
+)
+
+# test each additional variable
+for (var in topo.vars) {
+  
+  model.formula <- as.formula(
+    paste0('sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(tpi150, k = 20) + s(', var, ', k = 20)')
+  )
+  
+  model <- bam(model.formula,
+               data = df.50,
+               method = 'fREML',
+               discrete = TRUE)
+  
+  # add results
+  topo.results.step <- bind_rows(
+    topo.results.step,
+    get.metrics.combined(
+      fitted.model = model,
+      model.name = paste0('base + ', var)
+    )
+  )
+  
+}
+
+topo.results.step <- topo.results.step %>%
+  mutate(
+    BIC.base = BIC[model_name == 'base'],
+    delta.BIC = BIC - BIC.base,
+    delta.r.squared =
+      r.squared -
+      r.squared[model_name == 'base']
+  )
+
+
+topo.results.step %>%
+  arrange(BIC)
+
+topo.results.step.5 <- topo.results.step
+
+# ----- plot BIC -----
+
+# saved stepwise tables in order
+step.results <- list(
+  `1` = topo.results.step.1,
+  `2` = topo.results.step.2,
+  `3` = topo.results.step.3,
+  `4` = topo.results.step.4,
+  `5` = topo.results.step.5
+)
+
+# extract the baseline model from each step
+model.path <- imap_dfr(
+  step.results,
+  function(results, step.number) {
+    
+    if (step.number == '1') {
+      
+      results %>%
+        filter(model_name == 'wy only')
+      
+    } else {
+      
+      results %>%
+        filter(is.na(added_var))
+    }
+  },
+  .id = 'step'
+) %>%
+  mutate(
+    step = as.integer(step),
+    
+    # step 1 = 0 predictors
+    # step 2 = 1 predictor, etc.
+    predictor_n = step - 1
+  )
+
+# check that exactly one baseline model was identified per step
+imap_dfr(
+  step.results,
+  ~ tibble(
+    step = .y,
+    n_base_rows = sum(.x$delta_dev_expl == 0, na.rm = TRUE)
+  )
+)
+
+final.selected <- step.results[[length(step.results)]] %>%
+  filter(delta_dev_expl != 0) %>%
+  slice_min(
+    BIC,
+    n = 1,
+    with_ties = FALSE
+  ) %>%
+  mutate(
+    step = length(step.results) + 1,
+    canopy_n = length(step.results)
+  )
+
+model.path <- bind_rows(
+  model.path,
+  final.selected
+) %>%
+  mutate(
+    full_n = max(predictor_n),
+    variables_removed = full_n - predictor_n
+  )
+
+ggplot(
+  model.path,
+  aes(
+    x = predictor_n,
+    y = BIC,
+    group = 1
+  )
+) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_x_continuous(
+    breaks = seq(
+      0,
+      max(model.path$variables_removed),
+      by = 1
+    )
+  ) +
+  labs(
+    x = 'Number of variables',
+    y = 'BIC',
+    title = 'BIC by number of variables'
+  ) +
+  theme_bw()
 
 
 
