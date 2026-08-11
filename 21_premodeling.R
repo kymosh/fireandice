@@ -350,7 +350,7 @@ saveRDS(df.500.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processe
 # --- raw ---
 fires <- c('creek', 'castle', 'caldor', 'dixie')
 rds.dir <- 'data/processed/processed/rds/'
-res <- '500m' # 500m or 50m
+res <- '50m' # 500m or 50m
 
 dfs <- lapply(fires, function(fire) {
   
@@ -365,7 +365,8 @@ df.raw.0 <- bind_rows(dfs)
 
 df.raw <- df.raw.0 %>%
   select(-gap_gap_pct) %>%
-  filter(complete.cases(select(., -aspect_class)))
+  filter(complete.cases(select(., -aspect_class))) %>%
+  mutate(fire = factor(fire))
   
 
 saveRDS(df.raw, paste0(rds.dir, 'df_', res, '_raw.rds'))
