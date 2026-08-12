@@ -1651,6 +1651,11 @@ df.50 <- df.50.raw %>%
   
   droplevels()
 
+
+
+
+# --------------- Random Forest to explore interactions ---------------
+# ----- create reduced dataset for RF run -----
 # create a unique spatial frame
 sampling.frame <- df.50 %>%
   distinct(
@@ -1730,8 +1735,6 @@ df.rf <- df.50 %>%
 
 saveRDS(df.rf, 'data/processed/processed/rds/df_rf_50.rds')
 
-
-# --------------- Random Forest to explore interactions ---------------
 # ----- run model and save results -----
 library(ranger)
 
@@ -2021,7 +2024,8 @@ keep.vars <- c(
   'wy',
   'burned',
   'fire',
-  'swe_peak'
+  'swe_peak',
+  'fold_id'
 )
 
 # remove dixie fire, non-common years, and other variables
@@ -2033,6 +2037,8 @@ df.50 <- df.50.raw %>%
   droplevels() %>%
   
   dplyr::select(all_of(keep.vars))
+
+
 
 base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20),
             data = df.50,
@@ -2144,7 +2150,7 @@ topo.vars <- c(
 topo.results.step <- data.frame()
 
 # elevation + radiation baseline
-base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20),
+base2 <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20),
   data = df.50,
   method = 'fREML',
   discrete = TRUE
@@ -2692,7 +2698,7 @@ canopy.results.step <- data.frame()
 # new baseline formula
 new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20)')
 # new baseline model
-base <- bam(as.formula(new.base.formula),
+base7 <- bam(as.formula(new.base.formula),
             data = df.50,
             method = 'fREML',
             discrete = TRUE)
@@ -2770,7 +2776,7 @@ canopy.results.step <- data.frame()
 # new baseline formula
 new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_percent, k = 20)')
 # new baseline model
-base <- bam(as.formula(new.base.formula),
+base8 <- bam(as.formula(new.base.formula),
             data = df.50,
             method = 'fREML',
             discrete = TRUE)
@@ -2845,7 +2851,7 @@ canopy.results.step <- data.frame()
 # new baseline formula
 new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_percent, k = 20) + s(gap_dist_to_canopy_mean, k = 20)')
 # new baseline model
-base <- bam(as.formula(new.base.formula),
+base9 <- bam(as.formula(new.base.formula),
             data = df.50,
             method = 'fREML',
             discrete = TRUE)
@@ -2919,7 +2925,7 @@ canopy.results.step <- data.frame()
 # new baseline formula
 new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_percent, k = 20) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
 # new baseline model
-base <- bam(as.formula(new.base.formula),
+base10 <- bam(as.formula(new.base.formula),
             data = df.50,
             method = 'fREML',
             discrete = TRUE)
@@ -2993,7 +2999,7 @@ canopy.results.step <- data.frame()
 new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_percent, k = 20)', 
                            ' + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 20)')
 # new baseline model
-base <- bam(as.formula(new.base.formula),
+base11 <- bam(as.formula(new.base.formula),
             data = df.50,
             method = 'fREML',
             discrete = TRUE)
@@ -3050,79 +3056,6 @@ canopy.results.step %>%
 
 canopy.results.step.6 <- canopy.results.step
 
-# ----- stepwise 7 -----
-
-# updated vars
-canopy.vars <- c(
-  'ht_zpcum6',
-  'ht_zpcum9',
-  'ht_zpcum1',
-  'ht_zkurt'
-)
-
-
-canopy.results.step <- data.frame()
-
-# new baseline formula
-new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_percent, k = 20)', 
-                           ' + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 20)')
-# new baseline model
-base <- bam(as.formula(new.base.formula),
-            data = df.50,
-            method = 'fREML',
-            discrete = TRUE)
-
-canopy.results.step <- bind_rows(
-  canopy.results.step,
-  get.metrics.combined(
-    fitted.model = base,
-    model.name = 'base'
-  ) %>%
-    mutate(
-      added_var = NA_character_
-    )
-)
-
-# test each additional variable
-for (var in canopy.vars) {
-  
-  model.formula <- as.formula(
-    paste0(new.base.formula, ' + s(', var, ', k = 20)')
-  )
-  
-  model <- bam(model.formula,
-               data = df.50,
-               method = 'fREML',
-               discrete = TRUE)
-  
-  # add results
-  canopy.results.step <- bind_rows(
-    canopy.results.step,
-    get.metrics.combined(
-      fitted.model = model,
-      model.name = paste0(' + ', var)
-    ) %>%
-      mutate(
-        added_var = var
-      )
-  )
-  
-}
-
-canopy.results.step <- canopy.results.step %>%
-  mutate(
-    BIC.base = BIC[is.na(added_var)],
-    delta.BIC = BIC - BIC.base,
-    delta.r.squared =
-      r.squared -
-      r.squared[is.na(added_var)]
-  )
-
-
-canopy.results.step %>%
-  arrange(BIC)
-
-canopy.results.step.7 <- canopy.results.step
 # ----- plot BIC -----
 
 # saved stepwise tables in order
@@ -3217,71 +3150,146 @@ ggplot(
 
 
 
+# ---- plot BIC improvements through whole stepwise -----
+# saved stepwise tables in order
+step.models <- list(
+  `1` = base,
+  `2` = base2,
+  `3` = base3,
+  `4` = base4,
+  `5` = base5,
+  `6` = base.topo,
+  `7` = base7,
+  `8` = base8,
+  `9` = base9,
+  `10` = base10,
+  `11` = base11,
+  `12` = canopy
+)
+
+# extract metrics from each fitted model
+model.path <- imap_dfr(
+  step.models,
+  function(model, step.number) {
+    
+    get.metrics.combined(
+      fitted.model = model,
+      model.name = paste0('model_', step.number)
+    ) %>%
+      mutate(
+        predictor_n = as.integer(step.number),
+        stage = if_else(predictor_n <= 6,
+                        'Topography',
+                        'Canopy')
+      )
+  }
+)
+
+ggplot(
+  model.path,
+  aes(
+    x = predictor_n,
+    y = BIC,
+    color = stage
+  )
+) +
+  geom_line(
+    aes(group = 1),
+    color = 'grey50'
+  ) +
+  geom_point(size = 3) +
+  geom_vline(
+    xintercept = 6.5,
+    linetype = 'dashed'
+  ) +
+  scale_x_continuous(
+    breaks = seq(
+      1,
+      max(model.path$predictor_n),
+      by = 1
+    )
+  ) +
+  labs(
+    x = 'Model Step',
+    y = 'BIC',
+    color = 'Predictor group',
+    title = 'BIC during combined-model variable selection'
+  ) +
+  theme_bw()
+
+# --- Delta BIC ---
+model.path <- model.path %>%
+  arrange(predictor_n) %>%
+  mutate(
+    delta.BIC.previous = BIC - lag(BIC)
+  )
+
+ggplot(
+  model.path %>% filter(!is.na(delta.BIC.previous)),
+  aes(
+    x = predictor_n,
+    y = delta.BIC.previous,
+    fill = stage
+  )
+) +
+  geom_col() +
+  geom_hline(yintercept = 0) +
+  scale_x_continuous(
+    breaks = 2:max(model.path$predictor_n)
+  ) +
+  labs(
+    x = 'Model step',
+    y = expression(Delta*'BIC from previous model'),
+    fill = 'Predictor group',
+    title = 'Change in BIC during combined-model variable selection'
+  ) +
+  theme_bw()
+
+# quantify
+model.path %>%
+  arrange(predictor_n) %>%
+  mutate(
+    delta.BIC.previous = BIC - lag(BIC),
+    delta.r2.previous = r.squared - lag(r.squared),
+    delta.dev.previous = dev.expl - lag(dev.expl)
+  ) %>%
+  dplyr::select(
+    predictor_n,
+    stage,
+    BIC,
+    delta.BIC.previous,
+    r.squared,
+    delta.r2.previous,
+    dev.expl,
+    delta.dev.previous
+  )
+
 # ---------- Canopy k-value Selection ----------
 canopy <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-              + s(tpi150, k = 10) + s(tpi2010, k = 20) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
-              + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 10),
-            data = df.50,
-            method = 'fREML',
-            discrete = TRUE)
+              + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
+              + s(ht_zskew, k = 20),
+              data = df.50,
+              method = 'fREML',
+              discrete = TRUE)
 
-
-summary(canopy)
-k.check(canopy, subsample = 10000, n.rep = 400)
+k.check(canopy, subsample = 10000, n.rep = 10000)
 plot(canopy, pages = 3)
 
+# ------------------- new base model -----------------------------
+canopy <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
+              + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
+              + s(ht_zskew, k = 20),
+              data = df.50,
+              method = 'fREML',
+              discrete = TRUE)
+# ------------------- Model Diagnostics ----------------------------
 
-
-# ------------------- Base Model Diagnostics ----------------------------
+# --- concurvity ---
 concurvity(canopy, full = TRUE) 
-concurvity(canopy, full = FALSE)
+conc <- concurvity(canopy, full = FALSE)
+round(conc$estimate, 2)
 
-# since these metrics had really high concurvity scores, experiment removing them
-# remove gap distance
-canopy.no.gapdist <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-                         + s(tpi150, k = 10) + s(tpi2010, k = 20) + s(ht_zmax, k = 10) + s(gap_percent, k = 10)
-                         + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 10),
-                         data = df.50,
-                         method = 'fREML',
-                         discrete = TRUE)
-
-# remove skew
-canopy.no.skew <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-                      + s(tpi150, k = 10) + s(tpi2010, k = 20) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
-                      + s(ht_zpcum2, k = 10),
-                      data = df.50,
-                      method = 'fREML',
-                      discrete = TRUE)
-
-# remove zpcum2
-canopy.no.zpcum2 <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-                        + s(tpi150, k = 10) + s(tpi2010, k = 20) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
-                        + s(ht_zskew, k = 20),
-                        data = df.50,
-                        method = 'fREML',
-                        discrete = TRUE)
-
-AIC(
-  canopy,
-  canopy.no.gapdist,
-  canopy.no.skew,
-  canopy.no.zpcum2
-)
-
-BIC(
-  canopy,
-  canopy.no.gapdist,
-  canopy.no.skew,
-  canopy.no.zpcum2
-)
-
-concurvity(canopy.no.gapdist, full = TRUE)
-concurvity(canopy.no.skew, full = TRUE)
-concurvity(canopy.no.zpcum2, full = TRUE)
-
-gam.check(canopy)
-
-# check residuals
+# --- Residuals check ---
 set.seed(61)
 
 resid.df <- tibble(
@@ -3308,18 +3316,17 @@ ggplot(
     y = 'Deviance residuals'
   ) +
   theme_bw()
-# ------------------- Testing Interactions ------------------------------
 
+
+
+
+# ------------------- Testing Interactions ------------------------------
+# ----- base -----
 interaction.results <- data.frame()
 
-base.formula <- 'sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-              + s(tpi150, k = 10) + s(tpi2010, k = 20) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
-              + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 10)'
-
-
-base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-            + s(tpi150, k = 10) + s(tpi2010, k = 20) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
-            + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 10),
+base.A <- bam(sqrt(swe_peak) ~ wy + fire + burned + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
+            + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
+            + s(ht_zskew, k = 20),
               data = df.50,
               method = 'fREML',
               discrete = TRUE)
@@ -3330,30 +3337,25 @@ base <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum,
 interaction.results <- bind_rows(
   interaction.results,
   get.metrics.combined(
-    fitted.model = base,
+    fitted.model = base.A,
     model.name = 'base'
   )
 )
 
-# --- Interactions to test: ---
+rf.interactions <- readRDS('data/processed/processed/rds/rf_interactions_50.rds')
+rf.interactions <-  rf.interactions %>%
+  filter(.feature != feature) %>%
+  arrange(desc(.interaction))
 
+rf.interactions[1:20]
 
-
-# fire-specific canopy-height relationship
-# s(ht_zmax, by = fire, k = 10)
-
-# burned vs unburned gap relationship
-# burned + s(gap_percent, by = burned, k = 10) *** change to method = ML
-
-# continuous x continuous:
-# s(gap_dist_to_canopy_mean, gap_percent)
-
+# ----- Primary Interactions -----
 
 # fire-specific elevation relationship
 # s(elevation, by = fire, k = 20)
-elev.fire <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-            + s(tpi150, k = 10) + s(tpi2010, k = 20) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
-            + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 10),
+elev.fire <- bam(sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
+            + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
+            + s(ht_zskew, k = 20),
             data = df.50,
             method = 'fREML',
             discrete = TRUE)
@@ -3368,9 +3370,9 @@ interaction.results <- bind_rows(
 
 # water-year-specific elevation relationship
 # s(elevation, by = wy, k = 20)
-elev.wy <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-            + s(tpi150, k = 10) + s(tpi2010, k = 20) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
-            + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 10),
+elev.wy <- bam(sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
+            + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
+            + s(ht_zskew, k = 20),
             data = df.50,
             method = 'fREML',
             discrete = TRUE)
@@ -3383,6 +3385,349 @@ interaction.results <- bind_rows(
   )
 )
 
-plot(elev.wy, pages = 5)
+# elevation by wy and fire
+# s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20)
+elev.fire.wy <- bam(sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
+                    + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
+                    + s(ht_zskew, k = 20),
+                    data = df.50,
+                    method = 'fREML',
+                    discrete = TRUE)
+
+interaction.results <- bind_rows(
+  interaction.results,
+  get.metrics.combined(
+    fitted.model = elev.fire.wy,
+    model.name = 'elevation x wy, elevation x fire'
+  )
+)
+
+# keep this model going forward as new base
+
+# ----- Canopy-Specific interactions -----
+interaction.results <- data.frame()
+
+base.B <- bam(sqrt(swe_peak) ~ wy + fire + burned 
+              + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
+              + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+              + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+                    data = df.50,
+                    method = 'fREML',
+                    discrete = TRUE)
+
+interaction.results <- bind_rows(
+  interaction.results,
+  get.metrics.combined(
+    fitted.model = base.B,
+    model.name = 'new base with elevation x wy & fire'
+  )
+)
+
+# par(mfrow = c(1,1))
+# summary(base.2)
+plot(base.2, scale = 0, select = 15)
+
+# fire-specific canopy-height relationship
+# s(ht_zmax, by = fire, k = 10)
+zmax.fire <- bam(sqrt(swe_peak) ~ wy + fire + burned 
+            + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
+            + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+            + s(ht_zmax, by = fire, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+            data = df.50,
+            method = 'fREML',
+            discrete = TRUE)
+
+interaction.results <- bind_rows(
+  interaction.results,
+  get.metrics.combined(
+    fitted.model = zmax.fire,
+    model.name = 'zmax x fire'
+  )
+)
+
+# adding percent gap & burned interaction
+# + burned + s(gap_percent, by = burned)
+gap.burned <- bam(sqrt(swe_peak) ~ wy + fire + burned
+                         + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
+                         + s(rad_dtm_accum, k = 10)  + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                         + s(ht_zmax, k = 10) + s(gap_percent, by = burned, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+                         data = df.50,
+                         method = 'fREML',
+                         discrete = TRUE)
+
+# summary(gap.burned)
+# 
+par(mfrow = c(2, 2))
+plot(
+  gap.burned,
+  pages = 5,
+  scale = 0
+)
+
+interaction.results <- bind_rows(
+  interaction.results,
+  get.metrics.combined(
+    fitted.model = gap.burned,
+    model.name = 'gap x burned'
+  )
+)
 
 interaction.results
+
+# add percent gap/ gap dist to canopy interaction
+pgap.gapdist <- bam(sqrt(swe_peak) ~ wy + fire + burned
+                             + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
+                             + s(rad_dtm_accum, k = 10)  + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                             + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20) 
+                             + ti(gap_dist_to_canopy_mean, gap_percent, k = c(10, 10)),
+                             data = df.50,
+                             method = 'fREML',
+                             discrete = TRUE)
+
+interaction.results <- bind_rows(
+  interaction.results,
+  get.metrics.combined(
+    fitted.model = pgap.gapdist,
+    model.name = 'percent gap x dist to canopy'
+  )
+)
+
+par(mfrow = c(1, 1))
+plot.gam(pgap.gapdist, select = 17, scheme = 1, too.far = 0.05, n2 = 80, theta = 0)
+vis.gam(x = pgap.gapdist, view = c('gap_dist_to_canopy_mean', 'gap_percent'), plot.type = 'persp', too.far = 0.05, theta = 90)
+vis.gam(x = pgap.gapdist, view = c('gap_dist_to_canopy_mean', 'gap_percent'), plot.type = 'persp', too.far = 0.05, theta = 180)
+vis.gam(x = pgap.gapdist, view = c('gap_dist_to_canopy_mean', 'gap_percent'), plot.type = 'persp', too.far = 0.05, theta = 270)
+vis.gam(x = pgap.gapdist, view = c('gap_dist_to_canopy_mean', 'gap_percent'), plot.type = 'persp', too.far = 0.05, theta = 360)
+
+interaction.results
+
+
+# zmax x burned
+zmax.burned <- bam(sqrt(swe_peak) ~ wy + fire + burned 
+              + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
+              + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+              + s(ht_zmax, by = burned, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+              data = df.50,
+              method = 'fREML',
+              discrete = TRUE)
+
+interaction.results <- bind_rows(
+  interaction.results,
+  get.metrics.combined(
+    fitted.model = zmax.burned,
+    model.name = 'zmax x burned'
+  )
+)
+
+tpi1200.zmax <- bam(sqrt(swe_peak) ~ wy + fire + burned 
+              + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
+              + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+              + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)
+              + ti(tpi1200, ht_zmax, k = c(10, 10)),
+              data = df.50,
+              method = 'fREML',
+              discrete = TRUE)
+
+interaction.results <- bind_rows(
+  interaction.results,
+  get.metrics.combined(
+    fitted.model = tpi1200.zmax,
+    model.name = 'tpi1200 x zmax'
+  )
+)
+
+gapdist.zmax <- bam(sqrt(swe_peak) ~ wy + fire + burned 
+              + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
+              + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+              + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)
+              + ti(gap_dist_to_canopy_mean, ht_zmax, k = c(10, 10)),
+              data = df.50,
+              method = 'fREML',
+              discrete = TRUE)
+
+interaction.results <- bind_rows(
+  interaction.results,
+  get.metrics.combined(
+    fitted.model = gapdist.zmax,
+    model.name = 'gap dist to canopy x zmax'
+  )
+)
+
+interaction.results
+
+
+# -------------------- Model Evaluation ------------------------
+
+# ----- verify structure -----
+table(df.50$fold_id)
+
+df.50 %>%
+  count(fire, fold_id)
+# ----- 5-fold spatial cross-validation function -----
+
+cv_bam <- function(formula, data, k_folds = 5) {
+  
+  # empty dataframes to store results
+  cv.results <- data.frame()
+  cv.fire.results <- data.frame()
+  
+  # loop through each spatial fold
+  for (fold in 1:k_folds) {
+    
+    # use all other folds to train the model
+    train <- data %>%
+      filter(fold_id != fold)
+    
+    # hold out the current fold for model evaluation
+    test <- data %>%
+      filter(fold_id == fold)
+    
+    # fit the GAM to the training data
+    model <- bam(
+      formula,
+      data = train,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    # predict sqrt(SWE) for observations in the held-out fold
+    pred <- predict(
+      model,
+      newdata = test
+    )
+    
+    # observed response on the same sqrt scale as the model
+    obs <- sqrt(test$swe_peak)
+    
+    # ----- overall fold metrics -----
+    
+    rmse <- sqrt(
+      mean(
+        (obs - pred)^2,
+        na.rm = TRUE
+      )
+    )
+    
+    r2 <- cor(
+      obs,
+      pred,
+      use = 'complete.obs'
+    )^2
+    
+    cv.results <- bind_rows(
+      cv.results,
+      data.frame(
+        fold = fold,
+        RMSE = rmse,
+        R2 = r2
+      )
+    )
+    
+    # ----- fire-specific metrics -----
+    
+    fire.results <- test %>%
+      mutate(
+        obs = sqrt(swe_peak),
+        pred = pred
+      ) %>%
+      group_by(fire) %>%
+      summarize(
+        n = n(),
+        RMSE = sqrt(
+          mean(
+            (obs - pred)^2,
+            na.rm = TRUE
+          )
+        ),
+        R2 = cor(
+          obs,
+          pred,
+          use = 'complete.obs'
+        )^2,
+        .groups = 'drop'
+      ) %>%
+      mutate(
+        fold = fold
+      )
+    
+    # save fire-specific fold results
+    cv.fire.results <- bind_rows(
+      cv.fire.results,
+      fire.results
+    )
+  }
+  
+  # summarize overall performance across folds
+  cv.summary <- cv.results %>%
+    summarize(
+      RMSE_mean = mean(RMSE),
+      RMSE_sd = sd(RMSE),
+      R2_mean = mean(R2),
+      R2_sd = sd(R2)
+    )
+  
+  # return all results
+  list(
+    fold.results = cv.results,
+    fire.results = cv.fire.results,
+    summary = cv.summary
+  )
+}
+
+# ----- model formulas to test -----
+formula.A <- as.formula('sqrt(swe_peak) ~ wy + fire + burned + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
+
+formula.B <- as.formula('sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
+
+formula.C <- as.formula('sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
+
+formula.D <- as.formula('sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10)  + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, by = burned, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
+
+# run 
+cv.A <- cv_bam(
+  formula = formula.A,
+  data = df.50
+)
+
+cv.B <- cv_bam(
+  formula = formula.B,
+  data = df.50
+)
+
+cv.C <- cv_bam(
+  formula = formula.C,
+  data = df.50
+)
+
+cv.D <- cv_bam(
+  formula = formula.D,
+  data = df.50
+)
+
+cv.A
+cv.B
+cv.C
+cv.D
+
+# ==============================================================================
+# Stage 2 Modeling - Model Results
+# ==============================================================================
+# ----- winning model -----
+model.swe <- bam(sqrt(swe_peak) ~ wy + fire + burned 
+              + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
+              + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+              + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+              data = df.50,
+              method = 'fREML',
+              discrete = TRUE)
+
+# ----- get stats -----
+summary(model.swe)
+
+plot(
+  model.swe,
+  pages = 2,
+  scheme = 1,
+  scale = 0,
+  residuals = FALSE
+)

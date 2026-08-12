@@ -4,27 +4,27 @@ lapply(packages, library, character.only = T)
 
 set.seed(14)
 
-# ----- initialize dataset -----
-fire <- 'creek'
+# ==============================================================================
+# Initialize Dataframe
+# ==============================================================================
+# get dataframe
+set.seed(61)
+dir <- 'data/processed/processed/rds/' 
 
-dir <- paste0('data/processed/processed/rds/', fire) 
+df.50.raw <- readRDS(file.path(dir, 'df_50m_raw.rds'))
+# df.50.balanced <- readRDS(file.path(dir, 'df_50m_raw_balanced.rds')) 
 
-# df.50 as scaled values
-df.50.0 <- readRDS(file.path(dir, paste0(fire, '_df_50m.rds')))
+# str(df.50.raw)
 
-# df.raw has unscaled values
-df.raw.0 <- readRDS(file.path(dir, paste0(fire, '_long_df_50m_raw.rds')))
+df.50.raw.test <- df.50.raw %>%
+  group_by(fire) %>%
+  slice_sample(n = 10000) %>%
+  ungroup()
 
-# trim to years 2023 and up
-df.raw <- df.raw.0 %>%
-  filter(wy %in% c(2023, 2024, 2025))
-
-
-df.50 <- df.50.0 %>%
-  semi_join(
-    df.raw %>% select(cell, wy),
-    by = c('cell', 'wy')
-  )
+# df.50.balanced.test <- df.50.balanced %>%
+#   group_by(fire) %>%
+#   slice_sample(n = 10000) %>%
+#   ungroup()
 
 
 burn.cols <- c(
@@ -33,47 +33,30 @@ burn.cols <- c(
 )
 
 
-
-best.model.swe <- bam(
+model.swe <- bam(
   sqrt(swe_peak) ~
-    wy +
-    s(topo_elev) +
+    wy + fire + burned +
+    s(elevation, by = wy) +
+    s(elevation, by = fire) +
     s(rad_dtm_accum) +
-    s(topo_slope) +
-    s(topo_tpi150) +
-    s(topo_tpi2010) + 
-    s(gap_gap_pct, by = burned) +
-    s(ht_zmax, by = burned) +
-    ti(topo_elev, gap_gap_pct, by = burned),
+    s(slope) +
+    s(aspect_sin) +
+    s(tpi150) +
+    s(tpi2010) +
+    s(ht_zmax) +
+    s(gap_percent) +
+    s(gap_dist_to_canopy_mean) +
+    s(ht_zskew),
   data = df.50,
   method = "fREML",
   discrete = TRUE
 )
 
 
-# whole dataset
-df.test <- df.50
-
 # if sampling
-df.check <- df.test |>
+df.check <- df.50 |>
   dplyr::slice_sample(n = 100000)
 
-# best model
-gam.topo.canopy.best <- bam(
-  sqrt(swe_peak) ~
-    factor(wy) +
-    s(topo_elev) +
-    s(rad_dtm_accum) +
-    s(topo_slope) +
-    s(topo_tpi150) +
-    s(topo_tpi2010) + 
-    s(gap_gap_pct, by = burned) +
-    s(ht_zmax, by = burned)
-  ,
-  data = df.50, # select what dataset to use, sample or not
-  method = "fREML",
-  discrete = TRUE
-)
 # ==============================================================================
 #  Create prediction dataset for gap pct
 # ==============================================================================
