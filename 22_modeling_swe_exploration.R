@@ -1633,8 +1633,6 @@ ggplot(
 # ==============================================================================
 # Stage 2 Modeling - Combined Model
 # ==============================================================================
-# ----- Create thinned dataset for exploratory analysis -----
-
 # years common to all fires
 common.years <- df.50.raw %>%
   filter(fire != 'dixie') %>%
@@ -1648,7 +1646,6 @@ df.50 <- df.50.raw %>%
   filter(
     fire != 'dixie',
     wy %in% common.years) %>%
-  
   droplevels()
 
 
@@ -3716,7 +3713,7 @@ cv.D
 model.swe <- bam(sqrt(swe_peak) ~ wy + fire + burned 
               + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
               + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
-              + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+              + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) + s(gap_dist_to_canopy_mean, by = fire, k = 20) + s(ht_zskew, by = fire, k = 20),
               data = df.50,
               method = 'fREML',
               discrete = TRUE)
@@ -3731,3 +3728,119 @@ plot(
   scale = 0,
   residuals = FALSE
 )
+
+k.check(
+  model.swe,
+  subsample = 10000,
+  n.rep = 400
+)
+
+# ----- test with smooth spatial term -----
+fires <- c('caldor', 'castle', 'creek')
+models <- list()
+models.xy <- list()
+
+for (fire.name in fires) {
+  
+  df <- df.50 %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  model.swe <- bam(sqrt(swe_peak) ~ wy + burned 
+                   + s(elevation, by = wy, k = 20) + s(elevation, k = 20)
+                   + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                   + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+                   data = df,
+                   method = 'fREML',
+                   discrete = TRUE)
+
+  model.swe.xy <- bam(sqrt(swe_peak) ~ wy + burned 
+                    + s(elevation, by = wy, k = 20) + s(elevation, k = 20) + s(x,y, k = 100)
+                    + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                    + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+                    data = df,
+                    method = 'fREML',
+                    discrete = TRUE)
+  
+  # save models by fire
+  models[[fire.name]] <- model.swe
+  models.xy[[fire.name]] <- model.swe.xy
+  
+  # diagnostics
+  print(fire.name)
+  
+  print(summary(model.swe))
+  print(summary(model.swe.xy))
+  
+  print(k.check(
+    model.swe,
+    subsample = 10000,
+    n.rep = 10000
+  ))
+  
+  print(k.check(
+    model.swe.xy,
+    subsample = 10000,
+    n.rep = 10000
+  ))
+  
+}
+
+# ----- corr plot for predictors -----
+# years common to all fires
+common.years <- df.50.raw %>%
+  filter(fire != 'dixie') %>%
+  distinct(fire, wy) %>%
+  count(wy) %>%
+  filter(n == 3) %>%   # 3 remaining fires
+  pull(wy)
+
+keep.vars <- c(
+  'ht_zpcum2',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent',
+  'elevation',
+  'rad_dtm_accum',
+  'slope',
+  'aspect_sin',
+  'tpi150',
+  'tpi2010'
+)
+
+# remove dixie fire, non-common years, and other variables
+df.50.corr <- df.50.raw %>%
+  filter(
+    fire != 'dixie',
+    wy %in% common.years) %>%
+  
+  droplevels() %>%
+  
+  dplyr::select(all_of(keep.vars))
+
+cor.mat <- cor(
+  df.50.corr,
+  use = 'complete.obs',
+  method = 'pearson'
+)
+
+round(cor.mat, 2)
+
+library(corrplot)
+
+corrplot(
+  cor.mat,
+  method = 'color',
+  type = 'upper',
+  order = 'hclust',
+  addCoef.col = 'black',
+  tl.col = 'black',
+  tl.srt = 45,
+  diag = FALSE
+)
+
+
+# ----- concurvity again -----
+concurvity(model.swe, full = TRUE) 
+conc <- concurvity(model.swe, full = FALSE)
+round(conc$estimate, 2)
