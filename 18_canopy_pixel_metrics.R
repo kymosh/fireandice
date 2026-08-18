@@ -50,6 +50,12 @@ run.cover.metrics <- function(fire, acq, run.test = TRUE) {
     fire %in% c('caldor', 'dixie') ~ 32610
   )
   
+  # determine correct height to filter by per fire
+  max.height <- dplyr::case_when(
+    fire == 'castle' ~ 100, 
+    fire %in% c('caldor', 'dixie') ~ 75
+  )
+  
   # j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
   j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed' # base directory for KM COMP
   norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq) # where normalized files live
@@ -65,7 +71,7 @@ run.cover.metrics <- function(fire, acq, run.test = TRUE) {
   }
   
   # filter out obviously bad values
-  opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
+  opt_filter(ctg.run) <- paste0('-drop_z_below -0.25 -drop_z_above ', max.height,' -drop_class 7 18')
   
   # --- settings ---
   set_lidr_threads(1)
@@ -297,6 +303,12 @@ run.height.metrics <- function(fire, acq, run.test = TRUE) {
     fire %in% c('caldor', 'dixie') ~ 32610
   )
   
+  # determine correct height to filter by per fire
+  max.height <- dplyr::case_when(
+    fire == 'castle' ~ 100, 
+    fire %in% c('caldor', 'dixie') ~ 75
+  )
+  
   j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
   norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq) # where normalized files live
   ctg.norm <- readLAScatalog(norm.dir)
@@ -311,7 +323,7 @@ run.height.metrics <- function(fire, acq, run.test = TRUE) {
   }
   
   # filter out obviously bad values
-  opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
+  opt_filter(ctg.run) <- paste0('-drop_z_below -0.25 -drop_z_above ', max.height,' -drop_class 7 18')
   
   # --- settings ---
   set_lidr_threads(1)
@@ -563,3 +575,112 @@ out.file <- paste0(out.dir.base, fire, '/canopy_metrics/', fire, '_', metric, '_
 writeRaster(masked.list[[1]], out.file, overwrite = TRUE)
 
 
+# troubleshooting
+summary(df.castle$ht_zmax)
+
+quantile(
+  df.castle$ht_zmax,
+  probs = c(0.90, 0.95, 0.99, 0.995, 0.999, 1),
+  na.rm = TRUE
+)
+
+ggplot(
+  df.caldor %>%
+    filter(ht_zmax >= 60),
+  aes(x = ht_zmax)
+) +
+  geom_histogram(
+    binwidth = 0.25
+  ) +
+  geom_vline(
+    xintercept = 75,
+    linetype = 'dashed'
+  ) +
+  labs(
+    x = 'Maximum canopy height (m)',
+    y = 'Number of observations'
+  ) +
+  theme_bw()
+
+
+# ----- inspect upper-tail lidar heights -----
+
+inspect.height.tail <- function(fire, acq, n.tiles = 20) {
+  
+  j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed'
+  norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
+  
+  files <- list.files(
+    norm.dir,
+    pattern = '\\.la[sz]$',
+    full.names = TRUE
+  )
+  
+  # sample tiles reproducibly
+  set.seed(61)
+  test.files <- sample(
+    files,
+    size = min(n.tiles, length(files))
+  )
+  
+  height.list <- lapply(test.files, function(f) {
+    
+    las <- readLAS(
+      f,
+      filter = '-drop_z_below 50 -drop_class 7 18',
+      select = 'z'
+    )
+    
+    if (is.empty(las)) {
+      return(NULL)
+    }
+    
+    data.frame(
+      Z = las$Z,
+      file = basename(f)
+    )
+  })
+  
+  height.df <- bind_rows(height.list)
+  
+  height.df
+}
+
+castle.heights <- inspect.height.tail(
+  fire = 'castle',
+  acq = 'CA_SierraNevada_9_14_2022',
+  n.tiles = 20
+)
+
+summary(castle.heights$Z)
+
+quantile(
+  castle.heights$Z,
+  probs = c(
+    0.90, 0.95, 0.99,
+    0.995, 0.999, 0.9999, 1
+  ),
+  na.rm = TRUE
+)
+
+ggplot(
+  castle.heights %>%
+    filter(Z <= 120),
+  aes(x = Z)
+) +
+  geom_histogram(
+    binwidth = 0.5
+  ) +
+  geom_vline(
+    xintercept = 75,
+    linetype = 'dashed'
+  ) +
+  geom_vline(
+    xintercept = 100,
+    linetype = 'dashed'
+  ) +
+  labs(
+    x = 'Height above ground (m)',
+    y = 'Number of lidar returns'
+  ) +
+  theme_bw()
