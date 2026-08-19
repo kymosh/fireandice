@@ -8,12 +8,12 @@ lapply(packages, library, character.only = T)
 # ------------------------------------------------------------------------------
 # Catalog setup 
 # ------------------------------------------------------------------------------
-fire <- 'dixie'
-acq <- 'CA_SierraNevada_4_2022_low'
+fire <- 'castle'
+acq <- 'CA_SierraNevada_9_14_2022'
 
 # pick depending on which computer
-#j.dir <- 'data/processed/processed' # processing comp
-j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed' # km comp
+j.dir <- 'data/processed/processed' # processing comp
+#j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed' # km comp
 
 # normalized tiles
 norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq)
@@ -75,7 +75,7 @@ mean(las.norm$Z[las.norm$Classification != 2] < -1, na.rm = TRUE)
 # Canopy Height Model
 # =================================================================================
 
-workers <- 8 # 10 for processing comp
+workers <- 10 # 10 for processing comp
 
 
 # shouldn't need to change anything in this section!
@@ -98,8 +98,14 @@ if (run.test) {
 
 plot(ctg.run, chunk = TRUE)
 
+# determine correct height to filter by per fire
+max.height <- dplyr::case_when(
+  fire == 'castle' ~ 100, 
+  fire %in% c('caldor', 'dixie') ~ 75
+)
+
 # filter points to remove obvious bad high/low points
-opt_filter(ctg.run) <- '-drop_z_below -0.25 -drop_z_above 75 -drop_class 7 18'
+opt_filter(ctg.run) <- paste0('-drop_z_below -0.25 -drop_z_above ', max.height,' -drop_class 7 18')
 
 # ----- CHM Settings -----
 
@@ -174,16 +180,13 @@ metric <- 'chm'
 # out.dir.base <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/' # KM comp
 out.dir.base <- 'data/processed/processed/tif/1m/' # processing comp
 
-acqs <- c(
-  'CA_SierraNevada_5_2022',
-  'CA_SierraNevada_8_2022'
-)
+acqs <- 'CA_SierraNevada_9_14_2022'
 
 path <- paste0(out.dir.base, fire, '/', fire, '_chm_6340/', acqs[1])
 files <- list.files(path, full.names = T)
 r <- rast(files[1])
 
-epsg <- 32610
+epsg <- 32611
 
 
 
