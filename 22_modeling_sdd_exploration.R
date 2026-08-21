@@ -10,7 +10,26 @@ set.seed(61)
 dir <- 'data/processed/processed/rds/' 
 
 df.500.raw <- readRDS(file.path(dir, 'df_500m_raw.rds'))
-df.500.balanced <- readRDS(file.path(dir, 'df_500m_raw_balanced.rds')) 
+df.500.balanced.0 <- readRDS(file.path(dir, 'df_500m_raw_balanced.rds')) 
+
+df.500 <- df.500.raw %>%
+  mutate(
+    fire = factor(
+      fire,
+      levels = c('caldor', 'castle', 'creek'),
+      labels = c('Caldor', 'Castle', 'Creek') # capitalize
+    )) %>%
+  droplevels()
+
+df.500.balanced <- df.500.balanced.0 %>%
+  mutate(
+    fire = factor(
+      fire,
+      levels = c('caldor', 'castle', 'creek'),
+      labels = c('Caldor', 'Castle', 'Creek') # capitalize
+    )) %>%
+  droplevels()
+
 
 
 burn.cols <- c(
@@ -1433,12 +1452,15 @@ ggplot(
 
 # ------------------------- Final Model Comparisons -----------------------
 # ----- compare models -----
+fires <- c('Castle', 'Caldor', 'Creek')
+
+df <- df.500 # df.500 OR df.500.balanced
 stage.one.results <- data.frame()
 
-for (fire.name in unique(df.500.balanced$fire)) {
+for (fire.name in fires) {
   
   # create fire-specific df
-  fire.df <- df.500.balanced %>%
+  fire.df <- df %>%
     filter(fire == fire.name) %>%
     droplevels()
   
@@ -1450,38 +1472,38 @@ for (fire.name in unique(df.500.balanced$fire)) {
   
   # --- canopy --- 
    
-  if (fire.name %in% c('caldor')) {
+  if (fire.name == 'Caldor') {
     
     canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_dist_to_canopy_mean) + s(ht_zkurt) + s(ht_zpcum6) + s(ht_zmax) + s(gap_percent),
                   data = fire.df,
                   method = 'fREML',
                   discrete = TRUE)
     
-  } else if (fire.name == 'castle') {
+  } else if (fire.name == 'Castle') {
     
     canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zkurt) + s(gap_percent) + s(ht_zmax) + s(ht_zskew) + s(ht_zpcum2),
                   data = fire.df,
                   method = 'fREML',
                   discrete = TRUE)
     
-  } else if (fire.name == 'creek') {
+  } else if (fire.name == 'Creek') {
     
     canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2) + s(ht_zmax) + s(gap_percent) + s(ht_zpcum6),
                   data = fire.df,
                   method = 'fREML',
                   discrete = TRUE)  
-    
-  } else if (fire.name == 'dixie') {
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zskew) + s(ht_zpcum1) + s(gap_percent) + s(ht_zpcum2) + s(ht_zkurt) + s(gap_dist_to_canopy_mean),
-                  data = fire.df,
-                  method = 'fREML',
-                  discrete = TRUE)
   }
+  # } else if (fire.name == 'dixie') {
+  #   canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zskew) + s(ht_zpcum1) + s(gap_percent) + s(ht_zpcum2) + s(ht_zkurt) + s(gap_dist_to_canopy_mean),
+  #                 data = fire.df,
+  #                 method = 'fREML',
+  #                 discrete = TRUE)
+  # }
   
-  burned <- bam(sdd ~ wy + burned,
-                data = fire.df,
-                method = 'fREML',
-                discrete = TRUE)
+  # burned <- bam(sdd ~ wy + burned,
+  #               data = fire.df,
+  #               method = 'fREML',
+  #               discrete = TRUE)
   
   cbi <- bam(sdd ~ wy + s(cbibc),
              data = fire.df,
@@ -1492,7 +1514,7 @@ for (fire.name in unique(df.500.balanced$fire)) {
     stage.one.results,
     get.metrics(topo, 'Topography', fire.name),
     get.metrics(canopy, 'Canopy', fire.name),
-    get.metrics(burned, 'Burned Status', fire.name),
+    # get.metrics(burned, 'Burned Status', fire.name),
     get.metrics(cbi, 'Burned Severity', fire.name)
   )
   
@@ -1501,7 +1523,7 @@ for (fire.name in unique(df.500.balanced$fire)) {
 stage.one.results %>%
   arrange(fire, desc(dev.expl))
 
-saveRDS(stage.one.results, paste0(dir, 'stage_one_results_sdd.rds'))
+# saveRDS(stage.one.results, paste0(dir, 'stage_one_results_sdd.rds'))
 
 # --------------- plot results ---------------
 # ----- deviance explained -----

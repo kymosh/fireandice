@@ -9,7 +9,6 @@ lapply(packages, library, character.only = T)
 
 # ----- master-raster 500m -----
 fires <- c('dixie', 'castle', 'caldor')
-fire <- 'creek'
 
 for (fire in fires) {
   res <- '500m'
@@ -54,7 +53,6 @@ for (fire in fires) {
 # ----- master-raster 50m -----
 
 fires <- c('dixie', 'castle', 'caldor')
-fire <- 'creek'
 
 for (fire in fires) {
   res <- '50m'
@@ -278,12 +276,17 @@ build_long_500m <- function(df, forest.cols, remove.cols, keep.canopy = NULL) {
 # read rasters and convert to dfs
 # ===========================================================================================
 
-fire <- 'creek'
+fire <- 'castle'
 
 dir <- 'data/processed/processed/tif/'
 
 r.50 <- rast(paste0(dir, '50m/', fire, '/', fire, '_master_50m.tif'))
 r.500 <- rast(paste0(dir, '500m/', fire, '/', fire, '_master_500m.tif'))
+
+if (fire == 'castle') {
+names(r.500)[names(r.500) == 'CBI_bc'] <- 'cbibc'
+names(r.50)[names(r.50) == 'CBI_bc'] <- 'cbibc'
+}
 
 df.50 <- as.data.frame(r.50, cells = TRUE, xy = TRUE)
 df.500 <- as.data.frame(r.500, cells = TRUE, xy = TRUE)

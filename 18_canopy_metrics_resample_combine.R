@@ -36,7 +36,7 @@ lapply(rasters, ext)
 # origin
 lapply(rasters, origin)
 
-# --- if origins are off! ---
+# ----- if origins are off! -----
 
 # usually it's the gap one that is off, if so, use this
 gap.aligned <- resample(
@@ -51,28 +51,36 @@ rasters.aligned <- list(
   height = rasters$height
 )
 
+# ----- if extents are off! -----
+template <- rasters$height
 
-# ----- combine into single stack 
-canopy.stack <- rast(rasters.aligned)
+rasters$gap <- extend(
+  rasters$gap,
+  ext(template),
+  snap = 'near'
+)
+
+# ----- combine into single stack ----- 
+canopy.stack <- rast(rasters)
 
 # restore correct names
 names(canopy.stack) <- unlist(lapply(rasters, names))
 
 plot(canopy.stack)
-out.name <- paste0(dir, fire, '_canopy_metrics_50m.tif')
+out.name <- paste0('data/processed/processed/tif/50m/', fire, '/', fire, '_canopy_metrics_50m.tif')
 
 # save
-writeRaster(canopy.stack, out.name)
+writeRaster(canopy.stack, out.name, overwrite = TRUE)
 
 # ------------------------------------------------------------------
 # Aggregate Canopy Metrics to 500m
 # ------------------------------------------------------------------
 
-fire <- 'dixie'
+fire <- 'castle'
 
 dir <- 'data/processed/processed/tif/'
 in.dir <- paste0(dir, '50m/', fire)
-out.dir <- paste0(dir, '500m/', fire, '/canopy_metrics')
+out.dir <- paste0(dir, '500m/', fire, '/')
 
 # SDD data at ~500m res
 target <- rast(paste0(dir, '500m/', fire, '/snow_metrics/', fire, '_sdd_wy2023_500m.tif'))
@@ -97,10 +105,6 @@ for (i in seq_len(nlyr(canopy))) {
   y <- exactextractr::exact_resample(x, target, fun = 'mean')
   
   names(y) <- paste0(nm, '_500m')
-  
-  # write immediately (safer)
-  f <- file.path(out.dir, paste0(nm, '_500m.tif'))
-  writeRaster(y, f, overwrite = TRUE)
   
   out.list[[i]] <- y
 }

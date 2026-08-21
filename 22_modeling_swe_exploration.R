@@ -10,16 +10,40 @@ set.seed(61)
 dir <- 'data/processed/processed/rds/' 
 
 df.50.raw <- readRDS(file.path(dir, 'df_50m_raw.rds'))
-df.50.balanced <- readRDS(file.path(dir, 'df_50m_raw_balanced.rds')) 
 
-# str(df.50.raw)
+# years common to all fires
+common.years <- df.50.raw %>%
+  filter(fire != 'dixie') %>%
+  distinct(fire, wy) %>%
+  count(wy) %>%
+  filter(n == 3) %>%   # 3 remaining fires
+  pull(wy)
 
-df.50.raw.test <- df.50.raw %>%
-  group_by(fire) %>%
-  slice_sample(n = 10000) %>%
-  ungroup()
+# remove dixie fire and non-common years
+df.50 <- df.50.raw %>%
+  filter(
+    fire != 'dixie',
+    wy %in% common.years) %>%
+  mutate(
+    fire = recode(
+      fire,
+      'caldor' = 'Caldor',
+      'creek' = 'Creek'
+    )
+  ) %>%
+  droplevels()
 
-df.50.balanced.test <- df.50.balanced %>%
+df.50.balanced.0 <- readRDS(file.path(dir, 'df_50m_raw_balanced.rds'))
+df.50.balanced <- df.50.balanced.0 %>%
+  mutate(
+    fire = factor(
+      fire,
+      levels = c('caldor', 'castle', 'creek'),
+      labels = c('Caldor', 'Castle', 'Creek') # capitalize
+    )) %>%
+  droplevels()
+
+df.50.raw.test <- df.50 %>%
   group_by(fire) %>%
   slice_sample(n = 10000) %>%
   ungroup()
@@ -30,6 +54,7 @@ burn.cols <- c(
   'burned' = 'firebrick2'
 )
  
+rm(df.50.raw)
 # ==============================================================================
 #  Results DF and helper functions creation
 # ==============================================================================
@@ -129,7 +154,7 @@ for (fire.name in unique(df.50.raw.test$fire)) {
                       wy +
                       s(elevation, k = 10),
                     data = fire.df,
-                    method = 'ML')
+                    method = 'fREML')
   
   topo.results <- bind_rows(
     topo.results,
@@ -1406,7 +1431,7 @@ ggplot(
   ) +
   theme_bw()
 
-# ----- exploratino using mgcv's build-in shrinkage selection -----
+# ----- exploration using mgcv's build-in shrinkage selection -----
 fire.name <- 'castle'
 
 fire.df <- df.50.raw.test %>%
@@ -1518,12 +1543,15 @@ stage.one.results <- data.frame()
 
 # NOTE: when comparing GAMs with different fixed effects (not smoothed models), use ML as method instead of fREML! fREML can only compare well between models
 # that have the same fixed effects
-fires <- c('castle', 'caldor', 'creek')
+fires <- c('Castle', 'Caldor', 'Creek')
+
+df <- df.50 # df.50 OR df.50.balanced
+stage.one.results <- data.frame()
 
 for (fire.name in fires) {
   
   # create fire-specific df
-  fire.df <- df.50.balanced %>%
+  fire.df <- df %>%
     filter(fire == fire.name) %>%
     droplevels()
   
@@ -1534,34 +1562,35 @@ for (fire.name in fires) {
               discrete = TRUE)
   
   # --- canopy --- 
-  if (fire.name %in% c('caldor')) {
+  if (fire.name %in% c('Caldor')) {
     
     canopy <- bam(sqrt(swe_peak) ~ wy + s(gap_percent, k = 20) + s(ht_zpcum2, k = 20) + s(ht_zmax, k = 20) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zpcum6, k = 20),
                                 data = fire.df,
                                 method = 'fREML',
                                 discrete = TRUE)
     
-  } else if (fire.name == 'castle') {
+  } else if (fire.name == 'Castle') {
     
     canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2, k = 20) + s(gap_percent, k = 20) + s(ht_zmax, k = 20) + s(ht_zskew, k = 20),
                   data = fire.df,
                   method = 'fREML',
                   discrete = TRUE)
     
-  } else if (fire.name == 'creek') {
+  } else if (fire.name == 'Creek') {
     
     canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zpcum2, k = 20) + s(ht_zmax, k = 20) + s(ht_zskew, k = 20),
                         data = fire.df,
                         method = 'fREML',
                         discrete = TRUE)
-    
-  } else if (fire.name == 'dixie') {
-    
-    canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zmax, k = 20) + s(gap_percent, k = 20) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
-                        data = fire.df,
-                        method = 'fREML',
-                        discrete = TRUE)
   }
+    
+  # } else if (fire.name == 'dixie') {
+  #   
+  #   canopy <- bam(sqrt(swe_peak) ~ wy + s(ht_zmax, k = 20) + s(gap_percent, k = 20) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20),
+  #                       data = fire.df,
+  #                       method = 'fREML',
+  #                       discrete = TRUE)
+  # }
   
   # burned <- bam(sqrt(swe_peak) ~ wy + burned,
   #               data = fire.df,
@@ -1586,8 +1615,6 @@ for (fire.name in fires) {
 stage.one.results %>%
   arrange(fire, desc(dev.expl))
   
-saveRDS(stage.one.results, paste0(dir, 'stage_one_results_swe_k20.rds'))
-
 # plot
 ggplot(
   stage.one.results,
@@ -1619,8 +1646,8 @@ ggplot(
     legend.position = 'top'
   )
 
-
-
+old.stage.one.results <- readRDS('data/processed/processed/rds/stage_one_results_swe_k20_balancedelev.rds')
+saveRDS(stage.one.results, paste0(dir, 'stage_one_results_swe_k20.rds'))
 
 
 
@@ -1647,9 +1674,6 @@ df.50 <- df.50.raw %>%
     fire != 'dixie',
     wy %in% common.years) %>%
   droplevels()
-
-
-
 
 # --------------- Random Forest to explore interactions ---------------
 # ----- create reduced dataset for RF run -----
@@ -3554,12 +3578,6 @@ interaction.results
 
 
 # -------------------- Model Evaluation ------------------------
-
-# ----- verify structure -----
-table(df.50$fold_id)
-
-df.50 %>%
-  count(fire, fold_id)
 # ----- 5-fold spatial cross-validation function -----
 
 cv_bam <- function(formula, data, k_folds = 5) {
@@ -3672,13 +3690,12 @@ cv_bam <- function(formula, data, k_folds = 5) {
 }
 
 # ----- model formulas to test -----
-formula.A <- as.formula('sqrt(swe_peak) ~ wy + fire + burned + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
+formula.A <- as.formula('sqrt(swe_peak) ~ wy * fire + s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) + s(ht_zskew, by = fire, k = 20)')
 
-formula.B <- as.formula('sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
+formula.B <- as.formula('sqrt(swe_peak) ~ wy * fire + s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, k = 10) + s(ht_zskew, by = fire, k = 20)')
 
-formula.C <- as.formula('sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
+formula.C <- as.formula('sqrt(swe_peak) ~ wy * fire + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) + s(ht_zskew, by = fire, k = 20)')
 
-formula.D <- as.formula('sqrt(swe_peak) ~ wy + fire + burned + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10)  + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, by = burned, k = 10) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
 
 # run 
 cv.A <- cv_bam(
@@ -3696,27 +3713,26 @@ cv.C <- cv_bam(
   data = df.50
 )
 
-cv.D <- cv_bam(
-  formula = formula.D,
-  data = df.50
-)
+
 
 cv.A
 cv.B
 cv.C
-cv.D
+
+
 
 # ==============================================================================
 # Stage 2 Modeling - Model Results
 # ==============================================================================
 # ----- winning model -----
-model.swe <- bam(sqrt(swe_peak) ~ wy + fire + burned 
-              + s(elevation, by = wy, k = 20) + s(elevation, by = fire, k = 20) 
-              + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
-              + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) + s(gap_dist_to_canopy_mean, by = fire, k = 20) + s(ht_zskew, by = fire, k = 20),
-              data = df.50,
-              method = 'fREML',
-              discrete = TRUE)
+model.swe <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                 + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
+                 + s(ht_zskew, by = fire, k = 20),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
 
 # ----- get stats -----
 summary(model.swe)
@@ -3787,19 +3803,11 @@ for (fire.name in fires) {
 }
 
 # ----- corr plot for predictors -----
-# years common to all fires
-common.years <- df.50.raw %>%
-  filter(fire != 'dixie') %>%
-  distinct(fire, wy) %>%
-  count(wy) %>%
-  filter(n == 3) %>%   # 3 remaining fires
-  pull(wy)
 
 keep.vars <- c(
-  'ht_zpcum2',
   'ht_zmax',
-  'gap_dist_to_canopy_mean',
   'gap_percent',
+  'ht_skew',
   'elevation',
   'rad_dtm_accum',
   'slope',
@@ -3808,18 +3816,9 @@ keep.vars <- c(
   'tpi2010'
 )
 
-# remove dixie fire, non-common years, and other variables
-df.50.corr <- df.50.raw %>%
-  filter(
-    fire != 'dixie',
-    wy %in% common.years) %>%
-  
-  droplevels() %>%
-  
-  dplyr::select(all_of(keep.vars))
 
 cor.mat <- cor(
-  df.50.corr,
+  df.50,
   use = 'complete.obs',
   method = 'pearson'
 )
@@ -3844,3 +3843,178 @@ corrplot(
 concurvity(model.swe, full = TRUE) 
 conc <- concurvity(model.swe, full = FALSE)
 round(conc$estimate, 2)
+
+# ----- calculate within-fire canopy correlations -----
+df.50 %>%
+  group_by(fire) %>%
+  summarise(
+    cor_gap_ht = cor(
+      gap_percent,
+      ht_zmax,
+      use = 'complete.obs'
+    ),
+    cor_gap_skew = cor(
+      gap_percent,
+      ht_zskew,
+      use = 'complete.obs'
+    ),
+    cor_ht_skew = cor(
+      ht_zmax,
+      ht_zskew,
+      use = 'complete.obs'
+    )
+  )
+
+# ----------------------- burn interactions ----------------------------
+
+model.swe <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                 + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
+                 + s(ht_zskew, by = fire, k = 20),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
+
+model.swe.burned <- bam(sqrt(swe_peak) ~ wy * fire + burned
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                 + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
+                 + s(ht_zskew, by = fire, k = 20),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
+
+model.swe.cbi <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc)
+                        + s(elevation, by = wy, k = 20)
+                        + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                        + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
+                        + s(ht_zskew, by = fire, k = 20),
+                        data = df.50,
+                        method = 'fREML',
+                        discrete = TRUE)
+
+model.topo <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
+
+cv.canopy <- cv_bam(
+  formula = model.swe$formula,
+  data = df.50
+)
+
+cv.canopy.burned <- cv_bam(
+  formula = model.swe.burned$formula,
+  data = df.50
+)
+
+cv.canopy.cbi <- cv_bam(
+  formula = model.swe.cbi$formula,
+  data = df.50
+)
+
+cv.topo <- cv_bam(
+  formula = model.topo$formula,
+  data = df.50
+)
+
+cv.A 
+cv.B 
+cv.C
+cv.D
+
+cv.results <- bind_rows(
+  
+  cv.D$fold.results %>%
+    mutate(model = 'Topography'),
+  
+  cv.A$fold.results %>%
+    mutate(model = 'Topography + Canopy'),
+  
+  cv.B$fold.results %>%
+    mutate(model = 'Topography + Canopy + Burned'),
+  
+  cv.C$fold.results %>%
+    mutate(model = 'Topography + Canopy + CBI')
+)
+
+cv.results
+
+# ----- plot model results -----
+library(dplyr)
+library(ggplot2)
+
+# set model order
+cv.results <- cv.results %>%
+  mutate(
+    model = factor(
+      model,
+      levels = c(
+        'Topography',
+        'Topography + Canopy',
+        'Topography + Canopy + Burned',
+        'Topography + Canopy + CBI'
+      )
+    )
+  )
+
+cv.summary <- cv.results %>%
+  group_by(model) %>%
+  summarize(
+    R2_mean = mean(R2),
+    R2_sd = sd(R2),
+    .groups = 'drop'
+  )
+
+ggplot(cv.results, aes(x = model, y = R2)) +
+  
+  # individual folds
+  geom_jitter(
+    width = 0.06,
+    size = 2,
+    alpha = 0.55
+  ) +
+  
+  # mean
+  geom_point(
+    data = cv.summary,
+    aes(
+      x = model,
+      y = R2_mean
+    ),
+    inherit.aes = FALSE,
+    size = 3.5
+  ) +
+  
+  # mean +/- SD
+  geom_errorbar(
+    data = cv.summary,
+    aes(
+      x = model,
+      ymin = R2_mean - R2_sd,
+      ymax = R2_mean + R2_sd
+    ),
+    inherit.aes = FALSE,
+    width = 0.12,
+    linewidth = 0.7
+  ) +
+  
+  labs(
+    x = NULL,
+    y = expression('Cross-validated ' * R^2)
+  ) +
+  
+  theme_classic() +
+  
+  theme(
+    axis.text.x = element_text(
+      angle = 30,
+      hjust = 1
+    )
+  )
+
+
+

@@ -5,7 +5,7 @@ lapply(packages, library, character.only = T)
 #  filter DFs 
 # =======================================================================================
 #  ----- setup -----
-fire <- 'dixie'
+fire <- 'castle'
 dir <- paste0('data/processed/processed/rds/', fire, '/')
 
 # --- Snowline lookup ---
@@ -59,6 +59,12 @@ df.50 <- df.50.0 %>%
     swe_peak > 0 # drop all cells where there was no snow
   ) %>%  
   mutate(
+    fire = recode(
+      fire,
+      'caldor' = 'Caldor',
+      'castle' = 'Castle',
+      'creek' = 'Creek'
+    ),
     snowline = case_when(
       wy == 2023 ~ snowline.2023,
       wy == 2024 ~ snowline.2024,
@@ -208,6 +214,12 @@ df.500 <- df.500.0 %>%
     sdd > 0
   ) %>%  
   mutate(
+    fire = recode(
+    fire,
+    'caldor' = 'Caldor',
+    'castle' = 'Castle',
+    'creek' = 'Creek'
+  ),
     snowline = case_when(
       wy == 2023 ~ snowline.2023,
       wy == 2024 ~ snowline.2024,
@@ -381,7 +393,7 @@ saveRDS(df.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rd
 set.seed(61)
 
 rds.dir <- 'data/processed/processed/rds/'
-res <- '50m'
+res <- '500m'
 df.raw.file <- paste0(rds.dir, 'df_', res, '_raw.rds')
 
 df.raw <- readRDS(df.raw.file)
