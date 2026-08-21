@@ -6,7 +6,7 @@ lapply(packages, library, character.only = T)
 # ------------------------------------------------------------------
 
 # --- read in metric rasters ---
-fire <- 'creek'
+fire <- 'castle'
 dir <- paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/')
 
 cover <- rast(paste0(dir, fire, '_cover_metrics_50m.tif'))

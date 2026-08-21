@@ -13,26 +13,22 @@ lapply(packages, library, character.only = T)
 fire <- 'castle'
 old.epsg <- 6340
 new.epsg <- 32611
+acqs <- 'CA_SierraNevada_9_14_2022'
 
+# --- define dirs ---
 # pick depending on which computer
 j.dir <- 'data/processed/processed/tif/' # processing comp
 #j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/' # km comp
 
-chm.dir <- paste0(j.dir, '1m/', fire, '/', fire, '_chm_6340')
-out.dir <- paste0(j.dir, '50m/', fire, '/canopy_metrics/gap_dist_', new.epsg)
-
+chm.dir <- paste0(j.dir, '1m/', fire, '/', fire, '_chm_6340/', acqs)
+out.dir <- paste0(j.dir, '50m/', fire, '/canopy_metrics/gap_dist_', old.epsg)
 dir.create(out.dir, recursive = T, showWarnings = F)
+
+# --- read files and setup ---
 chm.files <- list.files(chm.dir, pattern = '\\.tif$', full.names = TRUE)
-
-# check CRS
-r <- rast(chm.files[1])
-crs(r, describe = T)$code
-
 
 # use 70% of available memory before spilling to temp files
 terraOptions(memfrac = 0.7)
-
-
 
 vrt.file <- paste0(chm.dir, '/rasterize_canopy.vrt')
 chm.vrt <- rast(vrt.file)
@@ -139,20 +135,9 @@ gap.metric.single.tile <- function(vrt.file,
     out <- c(gap.pct.50, dist.to.gap.mean, dist.to.canopy.mean, dist.to.canopy.max)
     out <- mask(out, template50)
     
-    # ---------------- REPROJECT OUTPUT ----------------
-    target.crs <- paste0('EPSG:', new.epsg)
-    
-    out.proj <- terra::project(
-      out,
-      target.crs,
-      method = 'near'
-    )
-    
-    names(out.proj) <- names(out)
-    
     # ---------------- WRITE OUTPUT ----------------
     writeRaster(
-      out.proj,
+      out,
       filename = file.path(out.dir, paste0(base, '_gap_dist_metrics_50m.tif')),
       overwrite = TRUE
     )
@@ -284,7 +269,7 @@ end <- Sys.time()
 message('Full run finished in ', round(difftime(end, start, units = 'mins'), 2), ' minutes')
 # ran on 2/2/26 and finished in 126 minutes - that was with % gap metrics
 # rerun on 2/16 w/out % gap metrics and finished in 19 minutes
-
+# 8:49
 
 # ==============================================================================
 # Checks and Validation
@@ -336,27 +321,78 @@ hist(mx, breaks = 50, main = 'Max distance to canopy per tile')
 
 
 # ==============================================================================
-#  Mosaic into single raster
+# Mosaic and reproject gap metrics
 # ==============================================================================
-library(terra)
+
+# ----- get native 6340 gap metric tiles -----
+
+gap.files <- list.files(
+  out.dir,
+  pattern = '_gap_dist_metrics_50m\\.tif$',
+  full.names = TRUE
+)
+
+length(gap.files) == length(chm.files)
+
+# ----- create VRT mosaic -----
+
+gap.vrt.file <- file.path(
+  out.dir,
+  paste0(fire, '_gap_dist_metrics_50m_6340.vrt')
+)
+
+gap.vrt <- vrt(
+  gap.files,
+  filename = gap.vrt.file,
+  overwrite = TRUE
+)
+
+names(gap.vrt) <- c(
+  'gap_pct',
+  'dist_to_gap_mean',
+  'dist_to_canopy_mean',
+  'dist_to_canopy_max'
+)
+
+names(gap.vrt)
+crs(gap.vrt, describe = TRUE)$code
+res(gap.vrt)
+
+# ----- load target 50 m template -----
+
+template.file <- paste0(j.dir,'50m/', fire, '/', fire, '_topo_50m.tif')
+template <- rast(template.file)[[1]]
+
+# ----- reproject to exact template grid -----
+
+gap.proj <- terra::project(
+  gap.vrt,
+  template,
+  method = 'near'
+)
+
+# ----- check result -----
+
+crs(gap.proj, describe = TRUE)$code
+res(gap.proj)
+
+compareGeom(
+  gap.proj,
+  template,
+  stopOnError = FALSE
+)
+
+names(gap.proj)
 
 
-files <- list.files(out.dir, pattern = '\\.tif$', full.names = TRUE)
-length(files)
-raster.list <- lapply(files, rast)
-raster.collection <- sprc(raster.list)
+# ----- write final raster -----
+out.file <- paste0(j.dir, '50m/', fire, '/canopy_metrics/', fire, '_gap_dist_metrics_50m.tif')
 
-m <- mosaic(raster.collection)
-plot(m)
-plot(m$dist_to_canopy_max)
-
-crs(m, describe = T)$code
-
-write.dir <- paste0('data/processed/processed/tif/50m/', fire, '/canopy_metrics/')
-out.m <- paste0(write.dir, fire, '_gap_50m_32611.tif')
-writeRaster(m, out.m, overwrite = T)
-
-
+writeRaster(
+  gap.proj,
+  out.file,
+  overwrite = TRUE
+)
 
 
 
@@ -374,14 +410,15 @@ writeRaster(m, out.m, overwrite = T)
 # ------------------------------------------------------------------------------
 # setup 
 # ------------------------------------------------------------------------------
-fire <- 'dixie'
-old.epsg <- 6339
-new.epsg <- 32610
+fire <- 'castle'
+old.epsg <- 6340
+new.epsg <- 32611
+acqs <- 'CA_SierraNevada_9_14_2022'
 
+# --- define dirs ---
 # pick depending on which computer
 j.dir <- 'data/processed/processed/tif/' # processing comp
 #j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed/tif/' # km comp
-
 chm.file <- paste0(j.dir, '1m/', fire, '/', 'chm_1m_', old.epsg, '.tif')
 out.dir <- paste0(j.dir, '50m/', fire, '/canopy_metrics/gap_dist_', new.epsg)
 

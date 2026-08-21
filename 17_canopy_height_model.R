@@ -127,9 +127,7 @@ opt_output_files(ctg.run) <- file.path(out.dir, paste0(fire, '_chm_{ORIGINALFILE
 
 # ----- run CHM -----
 
-# started at 6:48pm on 5/17
-# restart catalog processing at failed chunk
-# opt_restart(ctg.run) <- 1
+opt_restart(ctg.run) <- 1
 
 start.time <- Sys.time()
 chm <- rasterize_canopy(ctg.run, res = res.m, algorithm = p2r(subcircle = 0.2), overwrite = TRUE)
@@ -167,7 +165,7 @@ res(chm.test)
 
 
 # ==============================================================================
-#  Mosaic into single raster
+# Mosaic native CHM tiles, mask water, then reproject final mosaic
 # ==============================================================================
 library(terra)
 library(sf)
@@ -182,31 +180,37 @@ out.dir.base <- 'data/processed/processed/tif/1m/' # processing comp
 
 acqs <- 'CA_SierraNevada_9_14_2022'
 
-path <- paste0(out.dir.base, fire, '/', fire, '_chm_6340/', acqs[1])
-files <- list.files(path, full.names = T)
-r <- rast(files[1])
-
-epsg <- 32611
+native.epsg <- 6340
+target.epsg <- 32611
 
 
 
-# --- settings - don't touch ---
-# study area + water
+# --- settings - don't touch! ---
+
+# ----- study area and water -----
 fire.shp <- read_sf(
   paste0('data/processed/processed/shp/studyarea_extents/study_extent_', fire, '_simple.shp')
 )
 
 water <- get_nhdphr(
-  AOI = st_transform(fire.shp, 'EPSG:32610'),
+  AOI = st_transform(fire.shp, paste0('EPSG:', target.epsg)),
   type = 'nhdwaterbody'
 )
 
-water <- st_transform(water, 'EPSG:6339')
+# transform to native epsg for masking
+water <- st_transform(water, paste0('EPSG:', native.epsg))
+
 water.v <- vect(water)
 
-st_write(water, paste0('data/processed/processed/shp/nhd_water_', fire, '_6339.shp'))
+st_write(water, paste0(
+  'data/processed/processed/shp/nhd_water_',
+  fire, '_', native.epsg, '.shp'
+),
+delete_dsn = TRUE)
 
-# --- mosaic together ---
+
+# ----- Mosaic tiles within each acquisition -----
+
 mosaic_acq <- function(acq) {
   
   message('Mosaicking ', acq, '...')
@@ -241,60 +245,120 @@ mosaic_acq <- function(acq) {
 
 # run function on each acq
 masked.list <- lapply(acqs, mosaic_acq)
-template <- masked.list[[1]]
 
-masked.list.32610 <- lapply(masked.list, function(x) {
-  
-  r <- project(
-    x,
-    template,
-    method = 'near',
-    align_only = TRUE
-  )
-  
-  names(r) <- names(x)
-  r
-})
-
-masked.list <- masked.list.32610
+# stop if one acq path is wrong/empty
+masked.list <- Filter(Negate(is.null), masked.list)
+if (length(masked.list) == 0) {
+  stop('No acquisition mosaics were created.')
+}
 
 # combine
 combine <- masked.list[[1]]
 
-
-for (i in 2:length(masked.list)) {
+if (length(masked.list) > 1) {
   
-  e <- union(ext(combine), ext(masked.list[[i]]))
-  
-  combine.ext <- extend(combine, e)
-  next.ext <- extend(masked.list[[i]], e)
-  
-  combine <- cover(combine.ext, next.ext)
-  names(combine) <- names(masked.list[[1]])
+  for (i in 2:length(masked.list)) {
+    
+    e <- union(ext(combine), ext(masked.list[[i]]))
+    
+    combine.ext <- extend(combine, e)
+    next.ext <- extend(masked.list[[i]], e)
+    
+    combine <- cover(combine.ext, next.ext)
+    names(combine) <- names(masked.list[[1]])
+  }
 }
 
 plot(combine)
 
 # save
-out.file <- paste0(out.dir.base, fire, '/chm_1m_', epsg, '.tif')
+chm.native.filename <- paste0(out.dir.base, fire, '/', fire, '_chm_1m_', native.epsg, '.tif')
 
-writeRaster(combine, out.file, overwrite = TRUE)
+writeRaster(
+  combine,
+  chm.native.filename,
+  overwrite = TRUE,
+  wopt = list(
+    gdal = c('COMPRESS=LZW')
+  )
+)
 
 
+# ----- Reproject final mosaic to target CRS -----
+
+# Use existing Castle raster to define target CRS/grid origin
+template.50.0 <- rast(
+  'data/processed/processed/tif/50m/castle/castle_topo_50m.tif'
+)
+
+# since castle topo template is a stacked raster, just take first raster in stack
+template.50 <- template.50.0[[1]]
+
+target.crs <- crs(template.50)
+target.origin <- origin(template.50)
 
 
+# Project native mosaic extent to target CRS
+combine.poly <- as.polygons(ext(combine))
+crs(combine.poly) <- crs(combine)
+
+combine.poly.proj <- project(
+  combine.poly,
+  target.crs
+)
 
 
+# Build 1 m target grid
+target <- rast(
+  ext = ext(combine.poly.proj),
+  res = 1,
+  crs = target.crs
+)
+
+origin(target) <- target.origin
+
+
+# Reproject CHM
+combine.proj <- project(
+  combine,
+  target,
+  method = 'bilinear'
+)
+
+names(combine.proj) <- names(combine)
+
+plot(combine.proj)
+
+
+# --- save ---
+
+out.file <- paste0(
+  out.dir.base,
+  fire,
+  '/', fire, '_chm_1m_',
+  target.epsg,
+  '.tif'
+)
+
+writeRaster(
+  combine.proj,
+  out.file,
+  overwrite = TRUE,
+  wopt = list(
+    gdal = c('COMPRESS=LZW')
+  )
+)
 
 # =================================================================================
-# Reproject CHM to target CRS
+# Reproject CHM to target CRS *** by tile ***
 # =================================================================================
 
 # NOTE: this code has been used for dtm not just chm! Make sure in.dir is what you want
-# in.dir  <- 'data/processed/processed/tif/1m/castle/castle_chm_6340'
+in.dir  <- 'data/processed/processed/tif/1m/castle/castle_chm_6340'
 # in.dir <- 'data/processed/processed/tif/1m/creek_chm_test_36'
-in.dir <- 'data/raw/DEM/castle'
-out.dir <- 'data/processed/processed/tif/1m/castle/castle_dtm_32611'
+# in.dir <- 'data/raw/DEM/castle'
+# out.dir <- 'data/processed/processed/tif/1m/castle/castle_dtm_32611'
+out.dir <- 'data/processed/processed/tif/1m/castle/castle_chm_32611'
 dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 files <- list.files(in.dir, pattern = '\\.tif$', full.names = TRUE)

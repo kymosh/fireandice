@@ -56,8 +56,8 @@ run.cover.metrics <- function(fire, acq, run.test = TRUE) {
     fire %in% c('caldor', 'dixie') ~ 75
   )
   
-  # j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
-  j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed' # base directory for KM COMP
+  j.dir <- 'data/processed/processed' # base directory for PROCESSING COMP
+  # j.dir <- 'J:/Fire_Snow/fireandice/data/processed/processed' # base directory for KM COMP
   norm.dir <- file.path(j.dir, paste0('laz/normalized/', fire), acq) # where normalized files live
   ctg.norm <- readLAScatalog(norm.dir)
     
@@ -487,7 +487,7 @@ library(nhdplusTools)
 # --- settings - change these ---
 fire <- 'castle'
 epsg <- '32611'
-metric <- 'height'
+metric <- 'cover'
 
 acq <- c(
   'CA_SierraNevada_9_14_2022'
@@ -555,24 +555,27 @@ masked.list <- lapply(acq, mosaic_acq)
 # combine
 combine <- masked.list[[1]]
 
-for (i in 2:length(masked.list)) {
+if (length(masked.list) > 1) {
   
-  e <- union(ext(combine), ext(masked.list[[i]]))
-  
-  combine.ext <- extend(combine, e)
-  next.ext <- extend(masked.list[[i]], e)
-  
-  combine <- cover(combine.ext, next.ext)
-  names(combine) <- names(masked.list[[1]])
+  for (i in 2:length(masked.list)) {
+    
+    e <- union(ext(combine), ext(masked.list[[i]]))
+    
+    combine.ext <- extend(combine, e)
+    next.ext <- extend(masked.list[[i]], e)
+    
+    combine <- cover(combine.ext, next.ext)
+    names(combine) <- names(masked.list[[1]])
+  }
 }
 
 plot(combine)
 
 
 # save
-out.file <- paste0(out.dir.base, fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m_', epsg, '.tif')
+out.file <- paste0(out.dir.base, fire, '/canopy_metrics/', fire, '_', metric, '_metrics_50m.tif')
 
-writeRaster(masked.list[[1]], out.file, overwrite = TRUE)
+writeRaster(combine, out.file, overwrite = TRUE)
 
 
 # troubleshooting
