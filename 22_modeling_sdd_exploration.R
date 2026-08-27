@@ -3,14 +3,14 @@ install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
 # ==============================================================================
-# Initialize Dataframe
+# Setup
 # ==============================================================================
+# ----- read in and initialze dfs -----
 # get dataframe
 set.seed(61)
 dir <- 'data/processed/processed/rds/' 
 
 df.500.raw <- readRDS(file.path(dir, 'df_500m_raw.rds'))
-df.500.balanced.0 <- readRDS(file.path(dir, 'df_500m_raw_balanced.rds')) 
 
 # years common to all fires
 common.years <- df.500.raw %>%
@@ -34,24 +34,11 @@ df.500 <- df.500.raw %>%
   ) %>%
   droplevels()
 
-df.500.balanced <- df.500.balanced.0 %>%
-  filter(fire != 'dixie') %>%
-  mutate(
-    fire = factor(
-      fire,
-      levels = c('caldor', 'Castle', 'creek'),
-      labels = c('Caldor', 'Castle', 'Creek') # capitalize
-    )) %>%
-  droplevels()
-
-
-
 burn.cols <- c(
   'unburned' = 'turquoise4',
   'burned' = 'firebrick2'
 )
-
-# helper function
+# ----- helper functions -----
 get.metrics <- function(fitted.model, model.name, fire.name) {
   
   s <- summary(fitted.model)
@@ -67,7 +54,6 @@ get.metrics <- function(fitted.model, model.name, fire.name) {
   )
 }
 
-# combined model 
 get.metrics.combined <- function(fitted.model, model.name) {
   
   s <- summary(fitted.model)
@@ -81,6 +67,135 @@ get.metrics.combined <- function(fitted.model, model.name) {
     edf = sum(s$edf)
   )
 }
+
+cv_bam <- function(formula, data, k_folds = 5) {
+  
+  # empty dataframes to store results
+  cv.results <- data.frame()
+  cv.fire.results <- data.frame()
+  
+  # loop through each spatial fold
+  for (fold in 1:k_folds) {
+    
+    # use all other folds to train the model
+    train <- data %>%
+      filter(fold_id != fold)
+    
+    # hold out the current fold for model evaluation
+    test <- data %>%
+      filter(fold_id == fold)
+    
+    # fit GAM to training data
+    model <- bam(
+      formula,
+      data = train,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    # predict response for held-out fold
+    pred <- predict(
+      model,
+      newdata = test,
+      type = 'response'
+    )
+    
+    # get observed response exactly as specified
+    # on the left side of the model formula
+    obs <- eval(
+      formula[[2]],
+      envir = test
+    )
+    
+    # ----- overall fold metrics -----
+    
+    rmse <- sqrt(
+      mean(
+        (obs - pred)^2,
+        na.rm = TRUE
+      )
+    )
+    
+    r2 <- cor(
+      obs,
+      pred,
+      use = 'complete.obs'
+    )^2
+    
+    cv.results <- bind_rows(
+      cv.results,
+      data.frame(
+        fold = fold,
+        RMSE = rmse,
+        R2 = r2
+      )
+    )
+    
+    # ----- fire-specific metrics -----
+    
+    fire.results <- test %>%
+      mutate(
+        obs = obs,
+        pred = pred
+      ) %>%
+      group_by(fire) %>%
+      summarize(
+        n = n(),
+        RMSE = sqrt(
+          mean(
+            (obs - pred)^2,
+            na.rm = TRUE
+          )
+        ),
+        R2 = cor(
+          obs,
+          pred,
+          use = 'complete.obs'
+        )^2,
+        .groups = 'drop'
+      ) %>%
+      mutate(
+        fold = fold
+      )
+    
+    cv.fire.results <- bind_rows(
+      cv.fire.results,
+      fire.results
+    )
+  }
+  
+  # summarize overall performance across folds
+  cv.summary <- cv.results %>%
+    summarize(
+      RMSE_mean = mean(RMSE),
+      RMSE_sd = sd(RMSE),
+      R2_mean = mean(R2),
+      R2_sd = sd(R2)
+    )
+  
+  # return all results
+  list(
+    fold.results = cv.results,
+    fire.results = cv.fire.results,
+    summary = cv.summary
+  )
+}
+
+# ----- balanced dataset -----
+df.500.balanced.0 <- readRDS(file.path(dir, 'df_500m_raw_balanced.rds')) 
+df.500.balanced <- df.500.balanced.0 %>%
+  filter(fire != 'dixie') %>%
+  mutate(
+    fire = factor(
+      fire,
+      levels = c('caldor', 'Castle', 'creek'),
+      labels = c('Caldor', 'Castle', 'Creek') # capitalize
+    )) %>%
+  droplevels()
+
+
+
+
 
 # ----- plot SDD distributions for all fires -----
 
@@ -1415,7 +1530,7 @@ canopy.results.step %>%
 
 canopy.results.step.8 <- canopy.results.step
 
-# ---- plot AIC / BIC -----
+# ---- Plot BIC -----
 
 # Put all saved stepwise tables in order
 step.results <- list(
@@ -1677,10 +1792,12 @@ topo.vars <- c(
 topo.results.step <- data.frame()
 
 # elevation baseline
-base <- bam(sdd ~ wy + fire + s(elevation, k = 20),
+base <- bam(sdd ~ wy * fire + s(elevation, by = wy, k = 10),
             data = df.500,
             method = 'fREML',
             discrete = TRUE)
+
+base.1.model <- base
 
 topo.results.step <- bind_rows(
   topo.results.step,
@@ -1697,7 +1814,7 @@ for (var in topo.vars) {
   
   model.formula <- as.formula(
     paste0(
-      'sdd ~ wy + fire + s(elevation, k = 20) + s(' , var, ', k = 20)'
+      'sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(' , var, ', k = 20)'
     )
   )
   
@@ -1751,11 +1868,13 @@ topo.vars <- c(
 topo.results.step <- data.frame()
 
 # elevation + radiation baseline
-base <- bam(sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20),
+base <- bam(sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20),
              data = df.500,
              method = 'fREML',
              discrete = TRUE
 )
+
+base.2.model <- base
 
 topo.results.step <- bind_rows(
   topo.results.step,
@@ -1772,7 +1891,7 @@ topo.results.step <- bind_rows(
 for (var in topo.vars) {
   
   model.formula <- as.formula(
-    paste0('sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(', var, ', k = 20)')
+    paste0('sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(', var, ', k = 20)')
   )
   
   model <- bam(model.formula,
@@ -1826,11 +1945,13 @@ topo.vars <- c(
 topo.results.step <- data.frame()
 
 # new baseline
-base <- bam(sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(tpi1200, k = 20),
+base <- bam(sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(tpi1200, k = 20),
             data = df.500,
             method = 'fREML',
             discrete = TRUE
 )
+
+base.3.model <- base
 
 topo.results.step <- bind_rows(
   topo.results.step,
@@ -1847,7 +1968,7 @@ topo.results.step <- bind_rows(
 for (var in topo.vars) {
   
   model.formula <- as.formula(
-    paste0('sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(tpi1200, k = 20) + s(', var, ', k = 20)')
+    paste0('sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(tpi1200, k = 20) + s(', var, ', k = 20)')
   )
   
   model <- bam(model.formula,
@@ -1895,11 +2016,13 @@ topo.vars <- c(
 topo.results.step <- data.frame()
 
 # new baseline
-base <- bam(sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(tpi1200, k = 20) + s(aspect_sin, k = 20),
+base <- bam(sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(tpi1200, k = 20) + s(aspect_sin, k = 20),
             data = df.500,
             method = 'fREML',
             discrete = TRUE
 )
+
+base.4.model <- base
 
 topo.results.step <- bind_rows(
   topo.results.step,
@@ -1916,7 +2039,7 @@ topo.results.step <- bind_rows(
 for (var in topo.vars) {
   
   model.formula <- as.formula(
-    paste0('sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(tpi1200, k = 20) + s(aspect_sin, k = 20) + s(', var, ', k = 20)')
+    paste0('sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(tpi1200, k = 20) + s(aspect_sin, k = 20) + s(', var, ', k = 20)')
   )
   
   model <- bam(model.formula,
@@ -1963,11 +2086,13 @@ topo.vars <- c(
 topo.results.step <- data.frame()
 
 # new baseline
-base <- bam(sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 20),
+base <- bam(sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 20),
             data = df.500,
             method = 'fREML',
             discrete = TRUE
 )
+
+base.5.model <- base
 
 topo.results.step <- bind_rows(
   topo.results.step,
@@ -1984,7 +2109,7 @@ topo.results.step <- bind_rows(
 for (var in topo.vars) {
   
   model.formula <- as.formula(
-    paste0('sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 20) + s(', var, ', k = 20)')
+    paste0('sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 20) + s(', var, ', k = 20)')
   )
   
   model <- bam(model.formula,
@@ -2033,11 +2158,13 @@ topo.vars <- c(
 topo.results.step <- data.frame()
 
 # new baseline
-base <- bam(sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(aspect_cos, k = 20) + s(tpi2010, k = 20),
+base <- bam(sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(aspect_cos, k = 20) + s(tpi2010, k = 20),
             data = df.500,
             method = 'fREML',
             discrete = TRUE
 )
+
+base.6.model <- base
 
 topo.results.step <- bind_rows(
   topo.results.step,
@@ -2054,7 +2181,7 @@ topo.results.step <- bind_rows(
 for (var in topo.vars) {
   
   model.formula <- as.formula(
-    paste0('sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(tpi150, k = 20) + s(tpi2010, k = 20) + s(', var, ', k = 20)')
+    paste0('sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 20) + s(slope, k = 20) + s(aspect_sin, k = 20) + s(tpi150, k = 20) + s(tpi2010, k = 20) + s(', var, ', k = 20)')
   )
   
   model <- bam(model.formula,
@@ -2160,6 +2287,71 @@ ggplot(
   theme_bw()
 
 
+# ----- cv results for each step -----
+
+topo.step.models <- list(
+  `1` = base.1.model,
+  `2` = base.2.model,
+  `3` = base.3.model,
+  `4` = base.4.model,
+  `5` = base.5.model,
+  `6` = base.6.model
+)
+
+topo.cv.fold.results <- imap_dfr(
+  topo.step.models,
+  function(model, step) {
+    
+    cv <- cv_bam(
+      formula = formula(model),
+      data = df.500,
+      k_folds = 5
+    )
+    
+    cv$fold.results %>%
+      mutate(
+        step = as.integer(step)
+      )
+  }
+)
+
+topo.cv.summary <- topo.cv.fold.results %>%
+  group_by(step) %>%
+  summarise(
+    mean_RMSE = mean(RMSE),
+    sd_RMSE = sd(RMSE),
+    mean_R2 = mean(R2),
+    sd_R2 = sd(R2),
+    .groups = 'drop'
+  )
+
+topo.cv.summary
+
+ggplot(
+  topo.cv.summary,
+  aes(
+    x = step,
+    y = mean_R2
+  )
+) +
+  geom_line() +
+  geom_point(size = 2) +
+  geom_errorbar(
+    aes(
+      ymin = mean_R2 - sd_R2,
+      ymax = mean_R2 + sd_R2
+    ),
+    width = 0.15
+  ) +
+  scale_x_continuous(
+    breaks = 1:7
+  ) +
+  labs(
+    x = 'topo stepwise selection step',
+    y = expression(CV~R^2),
+    title = 'Cross-validated model performance'
+  ) +
+  theme_bw()
 # ---------- Topo k-value Selection ----------
 topo <- bam(sdd ~ wy + fire + s(elevation, k = 10) + s(rad_dtm_accum, k = 10) + s(tpi1200, k = 10) + s(aspect_sin, k = 10),
             data = df.500,
@@ -2187,12 +2379,14 @@ canopy.vars <- c(
 canopy.results.step <- data.frame()
 
 # baseline
-base.formula <- 'sdd ~ wy + fire + s(elevation, k = 10) + s(rad_dtm_accum, k = 10) + s(aspect_sin, k = 10) + s(tpi1200, k = 10)'
+base.formula <- 'sdd ~ wy * fire + s(elevation, by = wy, k = 10) + s(rad_dtm_accum, k = 10) + s(aspect_sin, k = 10) + s(tpi1200, k = 10)'
 
 base <- bam(as.formula(base.formula),
             data = df.500,
             method = 'fREML',
             discrete = TRUE)
+
+base.1.model <- base
 
 canopy.results.step <- bind_rows(
   canopy.results.step,
@@ -2248,6 +2442,8 @@ canopy.results.step.1 <- canopy.results.step
 
 # ----- stepwise 2 -----
 
+new.var.1 <- 'ht_zmax'
+
 # updated vars
 canopy.vars <- c(
   'ht_zpcum6',
@@ -2264,12 +2460,14 @@ canopy.vars <- c(
 canopy.results.step <- data.frame()
 
 # new baseline formula
-new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20)')
+new.base.formula <- paste0(base.formula, ' + s(', new.var.1, ', k = 20)')
 # new baseline model
 base <- bam(as.formula(new.base.formula),
              data = df.500,
              method = 'fREML',
              discrete = TRUE)
+
+base.2.model <- base
 
 canopy.results.step <- bind_rows(
   canopy.results.step,
@@ -2327,6 +2525,8 @@ canopy.results.step.2 <- canopy.results.step
 
 # ----- stepwise 3 -----
 
+new.var.2 <- 'gap_dist_to_canopy_mean'
+
 # updated vars
 canopy.vars <- c(
   'ht_zpcum6',
@@ -2342,12 +2542,14 @@ canopy.vars <- c(
 canopy.results.step <- data.frame()
 
 # new baseline formula
-new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_dist_to_canopy_mean, k = 20)')
+new.base.formula <- paste0(base.formula, ' + s(', new.var.1, ', k = 20) + s(', new.var.2, ', k = 20)')
 # new baseline model
 base <- bam(as.formula(new.base.formula),
              data = df.500,
              method = 'fREML',
              discrete = TRUE)
+
+base.3.model <- base
 
 canopy.results.step <- bind_rows(
   canopy.results.step,
@@ -2402,6 +2604,7 @@ canopy.results.step %>%
 canopy.results.step.3 <- canopy.results.step
 
 # ----- stepwise 4 -----
+new.var.3 <- 'gap_percent'
 
 # updated vars
 canopy.vars <- c(
@@ -2417,12 +2620,14 @@ canopy.vars <- c(
 canopy.results.step <- data.frame()
 
 # new baseline formula
-new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_percent, k = 20) + s(gap_dist_to_canopy_mean, k = 20)')
+new.base.formula <- paste0(base.formula, ' + s(', new.var.1, ', k = 20) + s(', new.var.2, ', k = 20) + s(', new.var.3, ', k = 20)')
 # new baseline model
 base <- bam(as.formula(new.base.formula),
              data = df.500,
              method = 'fREML',
              discrete = TRUE)
+
+base.4.model <- base
 
 canopy.results.step <- bind_rows(
   canopy.results.step,
@@ -2477,13 +2682,14 @@ canopy.results.step %>%
 canopy.results.step.4 <- canopy.results.step
 
 # ----- stepwise 5 -----
+new.var.4 <- 'ht_zpcum6'
 
 # updated vars
 canopy.vars <- c(
-  'ht_zpcum6',
   'ht_zpcum9',
   'ht_zpcum1',
   'ht_zpcum2',
+  'ht_zskew',
   'ht_zkurt'
 )
 
@@ -2491,12 +2697,14 @@ canopy.vars <- c(
 canopy.results.step <- data.frame()
 
 # new baseline formula
-new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_percent, k = 20) + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20)')
+new.base.formula <- paste0(base.formula, ' + s(', new.var.1, ', k = 20) + s(', new.var.2, ', k = 20) + s(', new.var.3, ', k = 20) + s(', new.var.4, ', k = 20)')
 # new baseline model
 base <- bam(as.formula(new.base.formula),
               data = df.500,
               method = 'fREML',
               discrete = TRUE)
+
+base.5.model <- base
 
 canopy.results.step <- bind_rows(
   canopy.results.step,
@@ -2552,11 +2760,13 @@ canopy.results.step.5 <- canopy.results.step
 
 # ----- stepwise 6 -----
 
+new.var.5 <- 'ht_zpcum1'
+
 # updated vars
 canopy.vars <- c(
-  'ht_zpcum6',
   'ht_zpcum9',
-  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
   'ht_zkurt'
 )
 
@@ -2564,13 +2774,14 @@ canopy.vars <- c(
 canopy.results.step <- data.frame()
 
 # new baseline formula
-new.base.formula <- paste0(base.formula, ' + s(ht_zmax, k = 20) + s(gap_percent, k = 20)', 
-                           ' + s(gap_dist_to_canopy_mean, k = 20) + s(ht_zskew, k = 20) + s(ht_zpcum2, k = 20)')
+new.base.formula <- paste0(base.formula, ' + s(', new.var.1, ', k = 20) + s(', new.var.2, ', k = 20) + s(', new.var.3, ', k = 20) + s(', new.var.4, ', k = 20) + s(', new.var.5, ', k = 20)')
 # new baseline model
 base <- bam(as.formula(new.base.formula),
               data = df.500,
               method = 'fREML',
               discrete = TRUE)
+
+base.6.model <- base
 
 canopy.results.step <- bind_rows(
   canopy.results.step,
@@ -2624,6 +2835,115 @@ canopy.results.step %>%
 
 canopy.results.step.6 <- canopy.results.step
 
+# ----- stepwise 7 -----
+
+new.var.6 <- 'ht_zskew'
+
+canopy.results.step <- data.frame()
+
+# new baseline formula
+new.base.formula <- paste0(base.formula, ' + s(', new.var.1, ', k = 20) + s(', new.var.2, ', k = 20) + s(', new.var.3, ', k = 20) + s(', new.var.4, ', k = 20) + s(', new.var.5, ', k = 20) + s(', new.var.6, ', k = 20)')
+# new baseline model
+base <- bam(as.formula(new.base.formula),
+            data = df.500,
+            method = 'fREML',
+            discrete = TRUE)
+
+base.7.model <- base
+
+canopy.results.step <- bind_rows(
+  canopy.results.step,
+  get.metrics.combined(
+    fitted.model = base,
+    model.name = 'base'
+  ) %>%
+    mutate(
+      added_var = NA_character_
+    )
+)
+
+canopy.results.step <- canopy.results.step %>%
+  mutate(
+    BIC.base = BIC[is.na(added_var)],
+    delta.BIC = BIC - BIC.base,
+    delta.r.squared =
+      r.squared -
+      r.squared[is.na(added_var)]
+  )
+
+
+canopy.results.step %>%
+  arrange(BIC)
+
+canopy.results.step.7 <- canopy.results.step
+
+# ----- cv results for each step -----
+
+canopy.step.models <- list(
+  `1` = base.1.model,
+  `2` = base.2.model,
+  `3` = base.3.model,
+  `4` = base.4.model,
+  `5` = base.5.model,
+  `6` = base.6.model,
+  `7` = base.7.model
+)
+
+canopy.cv.fold.results <- imap_dfr(
+  canopy.step.models,
+  function(model, step) {
+    
+    cv <- cv_bam(
+      formula = formula(model),
+      data = df.500,
+      k_folds = 5
+    )
+    
+    cv$fold.results %>%
+      mutate(
+        step = as.integer(step)
+      )
+  }
+)
+
+canopy.cv.summary <- canopy.cv.fold.results %>%
+  group_by(step) %>%
+  summarise(
+    mean_RMSE = mean(RMSE),
+    sd_RMSE = sd(RMSE),
+    mean_R2 = mean(R2),
+    sd_R2 = sd(R2),
+    .groups = 'drop'
+  )
+
+canopy.cv.summary
+
+ggplot(
+  canopy.cv.summary,
+  aes(
+    x = step,
+    y = mean_R2
+  )
+) +
+  geom_line() +
+  geom_point(size = 2) +
+  geom_errorbar(
+    aes(
+      ymin = mean_R2 - sd_R2,
+      ymax = mean_R2 + sd_R2
+    ),
+    width = 0.15
+  ) +
+  scale_x_continuous(
+    breaks = 1:7
+  ) +
+  labs(
+    x = 'Canopy stepwise selection step',
+    y = expression(CV~R^2),
+    title = 'Cross-validated model performance'
+  ) +
+  theme_bw()
+
 # ----- plot BIC -----
 
 # saved stepwise tables in order
@@ -2633,8 +2953,8 @@ step.results <- list(
   `3` = canopy.results.step.3,
   `4` = canopy.results.step.4,
   `5` = canopy.results.step.5,
-  `6` = canopy.results.step.6
-  # `7` = canopy.results.step.7
+  `6` = canopy.results.step.6,
+  `7` = canopy.results.step.7
 )
 
 # extract baseline model from each step
@@ -2666,25 +2986,6 @@ imap_dfr(
   )
 )
 
-# best candidate from final step
-final.selected <- step.results[[length(step.results)]] %>%
-  filter(!is.na(added_var)) %>%
-  slice_min(
-    BIC,
-    n = 1,
-    with_ties = FALSE
-  ) %>%
-  mutate(
-    step = length(step.results) + 1,
-    predictor_n = length(step.results) + 1
-  )
-
-# add final candidate to model path
-model.path <- bind_rows(
-  model.path,
-  final.selected
-)
-
 # plot
 ggplot(
   model.path,
@@ -2710,47 +3011,53 @@ ggplot(
   ) +
   theme_bw()
 
-
-
-
-
-
-
-
-
-# ---- plot BIC improvements through whole stepwise -----
-# saved stepwise tables in order
-step.models <- list(
-  `1` = base,
-  `2` = base2,
-  `3` = base3,
-  `4` = base4,
-  `5` = base5,
-  `6` = base.topo,
-  `7` = base7,
-  `8` = base8,
-  `9` = base9,
-  `10` = base10,
-  `11` = base11,
-  `12` = canopy
+# ----- plot BIC improvements through whole stepwise -----
+# topographic baseline models
+topo.steps <- list(
+  topo.results.step.1,
+  topo.results.step.2,
+  topo.results.step.3,
+  topo.results.step.4
 )
 
-# extract metrics from each fitted model
-model.path <- imap_dfr(
-  step.models,
-  function(model, step.number) {
-    
-    get.metrics.combined(
-      fitted.model = model,
-      model.name = paste0('model_', step.number)
-    ) %>%
-      mutate(
-        predictor_n = as.integer(step.number),
-        stage = if_else(predictor_n <= 6,
-                        'Topography',
-                        'Canopy')
-      )
-  }
+topo.path <- map_dfr(
+  topo.steps,
+  ~ .x %>%
+    filter(is.na(added_var))
+) %>%
+  mutate(
+    predictor_n = 1:4,
+    family = 'Topography'
+  )
+
+
+# canopy baseline models
+# exclude canopy step 1 because its baseline
+# is already represented by final topo model
+canopy.steps <- list(
+  canopy.results.step.2,
+  canopy.results.step.3,
+  canopy.results.step.4,
+  canopy.results.step.5,
+  canopy.results.step.6,
+  canopy.results.step.7
+)
+
+canopy.path <- map_dfr(
+  canopy.steps,
+  ~ .x %>%
+    filter(is.na(added_var))
+) %>%
+  mutate(
+    predictor_n = 5:10,
+    family = 'Canopy'
+  )
+
+
+# combine
+model.path <- bind_rows(
+  topo.path,
+  canopy.path
 )
 
 ggplot(
@@ -2758,94 +3065,72 @@ ggplot(
   aes(
     x = predictor_n,
     y = BIC,
-    color = stage
+    group = 1
   )
 ) +
-  geom_line(
-    aes(group = 1),
-    color = 'grey50'
-  ) +
-  geom_point(size = 3) +
+  geom_line() +
+  geom_point(size = 2) +
   geom_vline(
-    xintercept = 6.5,
+    xintercept = 4.5,
     linetype = 'dashed'
   ) +
   scale_x_continuous(
-    breaks = seq(
-      1,
-      max(model.path$predictor_n),
-      by = 1
-    )
+    breaks = 1:12
   ) +
   labs(
-    x = 'Model Step',
+    x = 'Number of selected predictors',
     y = 'BIC',
-    color = 'Predictor group',
-    title = 'BIC during combined-model variable selection'
+    title = 'BIC through forward stepwise selection'
   ) +
   theme_bw()
 
-# --- Delta BIC ---
-model.path <- model.path %>%
-  arrange(predictor_n) %>%
-  mutate(
-    delta.BIC.previous = BIC - lag(BIC)
-  )
-
-ggplot(
-  model.path %>% filter(!is.na(delta.BIC.previous)),
-  aes(
-    x = predictor_n,
-    y = delta.BIC.previous,
-    fill = stage
-  )
-) +
-  geom_col() +
-  geom_hline(yintercept = 0) +
-  scale_x_continuous(
-    breaks = 2:max(model.path$predictor_n)
-  ) +
-  labs(
-    x = 'Model step',
-    y = expression(Delta*'BIC from previous model'),
-    fill = 'Predictor group',
-    title = 'Change in BIC during combined-model variable selection'
-  ) +
-  theme_bw()
-
-# quantify
-model.path %>%
-  arrange(predictor_n) %>%
-  mutate(
-    delta.BIC.previous = BIC - lag(BIC),
-    delta.r2.previous = r.squared - lag(r.squared),
-    delta.dev.previous = dev.expl - lag(dev.expl)
-  ) %>%
-  dplyr::select(
-    predictor_n,
-    stage,
-    BIC,
-    delta.BIC.previous,
-    r.squared,
-    delta.r2.previous,
-    dev.expl,
-    delta.dev.previous
-  )
 
 # ---------- Canopy k-value Selection ----------
-canopy <- bam(sdd ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10)
-              + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, k = 10) + s(gap_percent, k = 10) + s(gap_dist_to_canopy_mean, k = 20)
-              + s(ht_zskew, k = 20),
+
+# add in by = fire
+model.sdd <- bam(sdd ~ wy * fire + s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) + s(ht_zmax, by = fire, k = 20) + s(gap_percent, by = fire, k = 20),
               data = df.500,
               method = 'fREML',
               discrete = TRUE)
 
-k.check(canopy, subsample = 10000, n.rep = 10000)
-plot(canopy, pages = 3)
+k.check(model.sdd, subsample = 10000, n.rep = 400)
+plot(model.sdd, pages = 3)
+
+# -------- Model Diagnostics -----------
+
+# --- concurvity ---
+concurvity(model.sdd, full = TRUE) 
+conc <- concurvity(model.sdd, full = FALSE)
+round(conc$estimate, 2)
 
 
+# --- Residuals check ---
+set.seed(61)
 
+resid.df <- tibble(
+  fitted = fitted(model.sdd),
+  residual = residuals(model.sdd, type = 'deviance')
+) %>%
+  slice_sample(n = 20000)
 
+ggplot(
+  resid.df,
+  aes(
+    x = fitted,
+    y = residual
+  )
+) +
+  geom_point(alpha = 0.15) +
+  geom_hline(yintercept = 0) +
+  geom_smooth(
+    method = 'loess',
+    se = FALSE
+  ) +
+  labs(
+    x = 'Fitted values',
+    y = 'Deviance residuals'
+  ) +
+  theme_bw()
 
 
 

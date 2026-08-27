@@ -1,4 +1,4 @@
-packages <- c('tidymodels', 'dplyr', 'tidyr', 'lme4', 'lmtest', 'ranger', 'tictoc', 'mgcv', 'ggplot2', 'pdp')
+packages <- c('dplyr', 'ranger', 'mgcv', 'ggplot2', 'pdp')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
@@ -35,10 +35,11 @@ df.50 <- df.50.raw %>%
 
 df.50.balanced.0 <- readRDS(file.path(dir, 'df_50m_raw_balanced.rds'))
 df.50.balanced <- df.50.balanced.0 %>%
+  filter(fire != 'dixie') %>%
   mutate(
     fire = factor(
       fire,
-      levels = c('caldor', 'castle', 'creek'),
+      levels = c('caldor', 'Castle', 'creek'),
       labels = c('Caldor', 'Castle', 'Creek') # capitalize
     )) %>%
   droplevels()
@@ -55,9 +56,8 @@ burn.cols <- c(
 )
  
 rm(df.50.raw)
-# ==============================================================================
-#  Results DF and helper functions creation
-# ==============================================================================
+
+# ----- helper functions -----
 
 # individual fires
 get.metrics <- function(fitted.model, model.name, fire.name) {
@@ -90,7 +90,157 @@ get.metrics.combined <- function(fitted.model, model.name) {
   )
 }
 
+cv_bam <- function(formula, data, k_folds = 5) {
+  
+  # empty dataframes to store results
+  cv.results <- data.frame()
+  cv.fire.results <- data.frame()
+  
+  # loop through each spatial fold
+  for (fold in 1:k_folds) {
+    
+    # use all other folds to train the model
+    train <- data %>%
+      filter(fold_id != fold)
+    
+    # hold out the current fold for model evaluation
+    test <- data %>%
+      filter(fold_id == fold)
+    
+    # fit GAM to training data
+    model <- bam(
+      formula,
+      data = train,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    # predict response for held-out fold
+    pred <- predict(
+      model,
+      newdata = test,
+      type = 'response'
+    )
+    
+    # get observed response exactly as specified on the left side of the model formula
+    obs <- eval(
+      formula[[2]],
+      envir = test
+    )
+    
+    # ----- overall fold metrics -----
+    
+    rmse <- sqrt(
+      mean(
+        (obs - pred)^2,
+        na.rm = TRUE
+      )
+    )
+    
+    r2 <- cor(
+      obs,
+      pred,
+      use = 'complete.obs'
+    )^2
+    
+    cv.results <- bind_rows(
+      cv.results,
+      data.frame(
+        fold = fold,
+        RMSE = rmse,
+        R2 = r2
+      )
+    )
+    
+    # ----- fire-specific metrics -----
+    
+    fire.results <- test %>%
+      mutate(
+        obs = obs,
+        pred = pred
+      ) %>%
+      group_by(fire) %>%
+      summarize(
+        n = n(),
+        RMSE = sqrt(
+          mean(
+            (obs - pred)^2,
+            na.rm = TRUE
+          )
+        ),
+        R2 = cor(
+          obs,
+          pred,
+          use = 'complete.obs'
+        )^2,
+        .groups = 'drop'
+      ) %>%
+      mutate(
+        fold = fold
+      )
+    
+    cv.fire.results <- bind_rows(
+      cv.fire.results,
+      fire.results
+    )
+  }
+  
+  # summarize overall performance across folds
+  cv.summary <- cv.results %>%
+    summarize(
+      RMSE_mean = mean(RMSE),
+      RMSE_sd = sd(RMSE),
+      R2_mean = mean(R2),
+      R2_sd = sd(R2)
+    )
+  
+  # return all results
+  list(
+    fold.results = cv.results,
+    fire.results = cv.fire.results,
+    summary = cv.summary
+  )
+}
 
+# ----- correlation matrix -----
+all.vars <- c(
+  'ht_zpcum6',
+  'ht_zpcum9',
+  'ht_zpcum1',
+  'ht_zpcum2',
+  'ht_zskew',
+  'ht_zkurt',
+  'ht_zmax',
+  'gap_dist_to_canopy_mean',
+  'gap_percent',
+  'slope',
+  'rad_dtm_accum',
+  'tpi150',
+  'tpi510',
+  'tpi1200',
+  'tpi2010',
+  'aspect_sin',
+  'aspect_cos'
+)
+
+df.50.matrix <- df.50 %>%
+  select(all_of(all.vars))
+
+cor.matrix <- cor(df.50.matrix, use = 'pairwise.complete.obs', method = 'pearson')
+
+library(corrplot)
+
+corrplot(
+  cor.matrix,
+  method = 'color',
+  type = 'upper',
+  order = 'hclust',
+  addCoef.col = 'black',
+  number.cex = 0.6,
+  tl.cex = 0.8,
+  tl.col = 'black',
+  diag = FALSE
+)
 # ==============================================================================
 # Stage 1 Modeling - Single family predictors
 # ==============================================================================
@@ -1660,21 +1810,6 @@ saveRDS(stage.one.results, paste0(dir, 'stage_one_results_swe_k20.rds'))
 # ==============================================================================
 # Stage 2 Modeling - Combined Model
 # ==============================================================================
-# years common to all fires
-common.years <- df.50.raw %>%
-  filter(fire != 'dixie') %>%
-  distinct(fire, wy) %>%
-  count(wy) %>%
-  filter(n == 3) %>%   # 3 remaining fires
-  pull(wy)
-
-# remove dixie fire and non-common years
-df.50 <- df.50.raw %>%
-  filter(
-    fire != 'dixie',
-    wy %in% common.years) %>%
-  droplevels()
-
 # --------------- Random Forest to explore interactions ---------------
 # ----- create reduced dataset for RF run -----
 # create a unique spatial frame
@@ -2180,7 +2315,7 @@ base2 <- bam(sqrt(swe_peak) ~ wy + fire + s(elevation, k = 20) + s(rad_dtm_accum
 topo.results.step <- bind_rows(
     topo.results.step,
     get.metrics.combined(
-      fitted.model = base,
+      fitted.model = base2,
       model.name = 'topo.elev.rad'
     ) %>%
       mutate(
@@ -2624,6 +2759,7 @@ k.check(topo, subsample = 10000, n.rep = 400)
 plot(topo, pages = 1)
 
 # --------------- Canopy Stepwise Selection ---------------
+# problem here where my I keep making new base{#} models but keep getting metrics for original base
 # ----- Stepwise 1 -----
 canopy.vars <- c(
   'ht_zpcum6',
@@ -3578,123 +3714,13 @@ interaction.results
 
 
 # -------------------- Model Evaluation ------------------------
-# ----- 5-fold spatial cross-validation function -----
-
-cv_bam <- function(formula, data, k_folds = 5) {
-  
-  # empty dataframes to store results
-  cv.results <- data.frame()
-  cv.fire.results <- data.frame()
-  
-  # loop through each spatial fold
-  for (fold in 1:k_folds) {
-    
-    # use all other folds to train the model
-    train <- data %>%
-      filter(fold_id != fold)
-    
-    # hold out the current fold for model evaluation
-    test <- data %>%
-      filter(fold_id == fold)
-    
-    # fit the GAM to the training data
-    model <- bam(
-      formula,
-      data = train,
-      method = 'fREML',
-      discrete = TRUE
-    )
-    
-    # predict sqrt(SWE) for observations in the held-out fold
-    pred <- predict(
-      model,
-      newdata = test
-    )
-    
-    # observed response on the same sqrt scale as the model
-    obs <- sqrt(test$swe_peak)
-    
-    # ----- overall fold metrics -----
-    
-    rmse <- sqrt(
-      mean(
-        (obs - pred)^2,
-        na.rm = TRUE
-      )
-    )
-    
-    r2 <- cor(
-      obs,
-      pred,
-      use = 'complete.obs'
-    )^2
-    
-    cv.results <- bind_rows(
-      cv.results,
-      data.frame(
-        fold = fold,
-        RMSE = rmse,
-        R2 = r2
-      )
-    )
-    
-    # ----- fire-specific metrics -----
-    
-    fire.results <- test %>%
-      mutate(
-        obs = sqrt(swe_peak),
-        pred = pred
-      ) %>%
-      group_by(fire) %>%
-      summarize(
-        n = n(),
-        RMSE = sqrt(
-          mean(
-            (obs - pred)^2,
-            na.rm = TRUE
-          )
-        ),
-        R2 = cor(
-          obs,
-          pred,
-          use = 'complete.obs'
-        )^2,
-        .groups = 'drop'
-      ) %>%
-      mutate(
-        fold = fold
-      )
-    
-    # save fire-specific fold results
-    cv.fire.results <- bind_rows(
-      cv.fire.results,
-      fire.results
-    )
-  }
-  
-  # summarize overall performance across folds
-  cv.summary <- cv.results %>%
-    summarize(
-      RMSE_mean = mean(RMSE),
-      RMSE_sd = sd(RMSE),
-      R2_mean = mean(R2),
-      R2_sd = sd(R2)
-    )
-  
-  # return all results
-  list(
-    fold.results = cv.results,
-    fire.results = cv.fire.results,
-    summary = cv.summary
-  )
-}
-
 # ----- model formulas to test -----
 formula.A <- as.formula('sqrt(swe_peak) ~ wy * fire + s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) + s(ht_zskew, by = fire, k = 20)')
 
-formula.B <- as.formula('sqrt(swe_peak) ~ wy * fire + s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, k = 10) + s(ht_zskew, by = fire, k = 20)')
+formula.B <- as.formula('sqrt(swe_peak) ~ wy * fire + s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) + s(ht_zskew, k = 20)')
 
 formula.C <- as.formula('sqrt(swe_peak) ~ wy * fire + s(elevation, by = fire, k = 20) + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) + s(ht_zskew, by = fire, k = 20)')
+
 
 
 # run 
@@ -3865,8 +3891,8 @@ df.50 %>%
     )
   )
 
-# ----------------------- burn interactions ----------------------------
-
+# ----------------------- ** ADDING BURN STATUS AND SEVERITY ** ----------------------------
+# ----- models -----
 model.swe <- bam(sqrt(swe_peak) ~ wy * fire
                  + s(elevation, by = wy, k = 20)
                  + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
@@ -3885,7 +3911,7 @@ model.swe.burned <- bam(sqrt(swe_peak) ~ wy * fire + burned
                  method = 'fREML',
                  discrete = TRUE)
 
-model.swe.cbi <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc)
+model.swe.cbi <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc, k = 10)
                         + s(elevation, by = wy, k = 20)
                         + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
                         + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
@@ -3901,10 +3927,61 @@ model.topo <- bam(sqrt(swe_peak) ~ wy * fire
                  method = 'fREML',
                  discrete = TRUE)
 
+
+model.swe.burned.fire <- bam(sqrt(swe_peak) ~ wy * fire + burned * fire
+                        + s(elevation, by = wy, k = 20)
+                        + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                        + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
+                        + s(ht_zskew, by = fire, k = 20),
+                        data = df.50,
+                        method = 'fREML',
+                        discrete = TRUE)
+
+model.swe.cbi.fire <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc, by = fire)
+                     + s(elevation, by = wy, k = 20)
+                     + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                     + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
+                     + s(ht_zskew, by = fire, k = 20),
+                     data = df.50,
+                     method = 'fREML',
+                     discrete = TRUE)
+
+model.swe.cbi.fire.nocanopy <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc, by = fire)
+                          + s(elevation, by = wy, k = 20)
+                          + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10),
+                          data = df.50,
+                          method = 'fREML',
+                          discrete = TRUE)
+
+model.swe.cbi.nocanopy <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc)
+                                   + s(elevation, by = wy, k = 20)
+                                   + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10),
+                                   data = df.50,
+                                   method = 'fREML',
+                                   discrete = TRUE)
+
+model.swe.no.tpi2010 <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10)
+                 + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
+                 + s(ht_zskew, by = fire, k = 20),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
+
+cv.no.tpi2010 <- cv_bam(
+  formula = model.swe.no.tpi2010$formula,
+  data = df.50
+)
+cv.no.tpi2010
+
+# ----- run cv -----
+
 cv.canopy <- cv_bam(
   formula = model.swe$formula,
   data = df.50
 )
+cv.canopy
 
 cv.canopy.burned <- cv_bam(
   formula = model.swe.burned$formula,
@@ -3921,100 +3998,139 @@ cv.topo <- cv_bam(
   data = df.50
 )
 
-cv.A 
-cv.B 
-cv.C
-cv.D
-
-cv.results <- bind_rows(
-  
-  cv.D$fold.results %>%
-    mutate(model = 'Topography'),
-  
-  cv.A$fold.results %>%
-    mutate(model = 'Topography + Canopy'),
-  
-  cv.B$fold.results %>%
-    mutate(model = 'Topography + Canopy + Burned'),
-  
-  cv.C$fold.results %>%
-    mutate(model = 'Topography + Canopy + CBI')
+cv.swe.burned.fire <- cv_bam(
+  formula = model.swe.burned.fire$formula,
+  data = df.50
 )
 
-cv.results
+cv.swe.cbi.fire <- cv_bam(
+  formula = model.swe.cbi.fire$formula,
+  data = df.50)
+  
+cv.cbi <- cv_bam(
+    formula = model.swe.cbi.nocanopy$formula,
+    data = df.50
+)
 
-# ----- plot model results -----
-library(dplyr)
-library(ggplot2)
+cv.cbi.fire <- cv_bam(
+  formula = model.swe.cbi.fire.nocanopy$formula,
+  data = df.50
+)
 
-# set model order
-cv.results <- cv.results %>%
-  mutate(
-    model = factor(
-      model,
-      levels = c(
-        'Topography',
-        'Topography + Canopy',
-        'Topography + Canopy + Burned',
-        'Topography + Canopy + CBI'
-      )
-    )
-  )
+# ----- results -----
+cv.results <- bind_rows(
+  
+  cv.topo$fold.results %>%
+    mutate(model = 'Topography'),
+  
+  cv.canopy$fold.results %>%
+    mutate(model = 'Topography + Canopy'),
+  
+  cv.canopy.burned$fold.results %>%
+    mutate(model = 'Topography + Canopy + Burned'),
+  
+  cv.swe.burned.fire$fold.results %>%
+    mutate(model = 'Topography + Canopy + Burned * Fire'),
+  
+  cv.canopy.cbi$fold.results %>%
+    mutate(model = 'Topography + Canopy + CBI'),
+  
+  cv.swe.cbi.fire$fold.results %>%
+    mutate(model = 'Topography + Canopy + CBI by Fire'),
+  
+  cv.cbi$fold.results %>%
+    mutate(model = 'Topography + CBI'),
+  
+  cv.cbi.fire$fold.results %>%
+    mutate(model = ('Topograpy + CBI by Fire'))
+)
 
 cv.summary <- cv.results %>%
   group_by(model) %>%
   summarize(
-    R2_mean = mean(R2),
-    R2_sd = sd(R2),
+    mean_RMSE = mean(RMSE),
+    mean_R2 = mean(R2),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(mean_R2))
+
+cv.summary
+
+# ----- burned forests only -----
+df.50.burned <- df.50 %>%
+  filter(burned == 'burned') %>%
+  droplevels()
+
+nrow(df.50)
+nrow(df.50.burned)
+
+table(df.50$burned)
+table(df.50.burned$burned)
+
+model.swe.cbi.burned <- bam(
+  sqrt(swe_peak) ~ wy * fire
+  + s(cbibc, k = 10)
+  + s(elevation, by = wy, k = 20)
+  + s(rad_dtm_accum, k = 10)
+  + s(slope, k = 10)
+  + s(aspect_sin, k = 10)
+  + s(tpi150, k = 10)
+  + s(tpi2010, k = 10)
+  + s(ht_zmax, by = fire, k = 10)
+  + s(gap_percent, by = fire, k = 10)
+  + s(ht_zskew, by = fire, k = 20),
+  data = df.50.burned,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+model.swe.burnedonly <- bam(
+  sqrt(swe_peak) ~ wy * fire
+  + s(elevation, by = wy, k = 20)
+  + s(rad_dtm_accum, k = 10)
+  + s(slope, k = 10)
+  + s(aspect_sin, k = 10)
+  + s(tpi150, k = 10)
+  + s(tpi2010, k = 10)
+  + s(ht_zmax, by = fire, k = 10)
+  + s(gap_percent, by = fire, k = 10)
+  + s(ht_zskew, by = fire, k = 20),
+  data = df.50.burned,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+summary(model.swe.cbi.burned)
+plot(model.swe.cbi.burned, select = 1, scheme = 1, scale = 0)
+
+cv.burned.only.cbi <- cv_bam(
+  formula = model.swe.cbi.burned$formula,
+  data = df.50.burned
+)
+
+cv.burned.only <- cv_bam(
+  formula = model.swe.burnedonly$formula,
+  data = df.50.burned
+)
+
+cv.burned.only
+cv.burned.only.cbi
+
+cv.results.burnedonly <- bind_rows(
+  
+  cv.burned.only.cbi$fold.results %>%
+    mutate(model = 'Topography + Canopy + CBI'),
+  
+  cv.burned.only$fold.results %>%
+    mutate(model = 'Topography + Canopy'))
+
+
+cv.summary.burned <- cv.results.burnedonly %>%
+  group_by(model) %>%
+  summarize(
+    mean_RMSE = mean(RMSE),
+    mean_R2 = mean(R2),
     .groups = 'drop'
   )
 
-ggplot(cv.results, aes(x = model, y = R2)) +
-  
-  # individual folds
-  geom_jitter(
-    width = 0.06,
-    size = 2,
-    alpha = 0.55
-  ) +
-  
-  # mean
-  geom_point(
-    data = cv.summary,
-    aes(
-      x = model,
-      y = R2_mean
-    ),
-    inherit.aes = FALSE,
-    size = 3.5
-  ) +
-  
-  # mean +/- SD
-  geom_errorbar(
-    data = cv.summary,
-    aes(
-      x = model,
-      ymin = R2_mean - R2_sd,
-      ymax = R2_mean + R2_sd
-    ),
-    inherit.aes = FALSE,
-    width = 0.12,
-    linewidth = 0.7
-  ) +
-  
-  labs(
-    x = NULL,
-    y = expression('Cross-validated ' * R^2)
-  ) +
-  
-  theme_classic() +
-  
-  theme(
-    axis.text.x = element_text(
-      angle = 30,
-      hjust = 1
-    )
-  )
-
-
-
+cv.summary.burned

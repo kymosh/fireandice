@@ -3465,3 +3465,39 @@ model.swe.burned <- model.swe <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc)
                                      data = df.50,
                                      method = 'fREML',
                                      discrete = TRUE)
+
+# ==============================================================================
+# Observed Plots
+# ==============================================================================
+# SWE vs Canopy Gap for each fire, by burned status
+# needs refining- takes too long to plot
+ggplot(
+  df.50,
+  aes(
+    x = gap_percent,
+    y = swe_peak,
+    color = burned
+  )
+) +
+  geom_point(
+    alpha = 0.03
+  ) +
+  geom_smooth(
+    method = 'gam',
+    formula = y ~ s(x, k = 10),
+    se = TRUE
+  ) +
+  facet_wrap(
+    ~ fire,
+    nrow = 1
+  ) +
+  scale_color_manual(
+    values = burn.cols
+  ) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Peak SWE',
+    color = 'Burn status'
+  ) +
+  theme_classic()
+
