@@ -393,7 +393,7 @@ saveRDS(df.raw, paste0('G:/Fire_Snow_Dynamics_backup/data/processed/processed/rd
 set.seed(61)
 
 rds.dir <- 'data/processed/processed/rds/'
-res <- '500m'
+res <- '50m'
 df.raw.file <- paste0(rds.dir, 'df_', res, '_raw.rds')
 
 df.raw <- readRDS(df.raw.file)
