@@ -180,7 +180,33 @@ cv_bam <- function(formula, data, k_folds = 5) {
     summary = cv.summary
   )
 }
-
+get.metrics <- function(fitted.model, model.name, fire.name) {
+  
+  s <- summary(fitted.model)
+  
+  data.frame(
+    fire = fire.name,
+    model_name = model.name,
+    r.squared = s$r.sq,
+    dev.expl = s$dev.expl,
+    AIC = AIC(fitted.model),
+    BIC = BIC(fitted.model),
+    edf = sum(s$edf)
+  )
+}
+get.metrics.combined <- function(fitted.model, model.name) {
+  
+  s <- summary(fitted.model)
+  
+  data.frame(
+    model_name = model.name,
+    r.squared = s$r.sq,
+    dev.expl = s$dev.expl,
+    AIC = AIC(fitted.model),
+    BIC = BIC(fitted.model),
+    edf = sum(s$edf)
+  )
+}
 # ==============================================================================
 # Generate Predictions - All fires combined
 # ==============================================================================
@@ -3457,7 +3483,7 @@ model.swe <- bam(sqrt(swe_peak) ~ wy * fire
                  method = 'fREML',
                  discrete = TRUE)
 
-model.swe.burned <- model.swe <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc)
+model.swe.burned <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc)
                                      + s(elevation, by = wy, k = 20)
                                      + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
                                      + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
@@ -3465,6 +3491,529 @@ model.swe.burned <- model.swe <- bam(sqrt(swe_peak) ~ wy * fire + s(cbibc)
                                      data = df.50,
                                      method = 'fREML',
                                      discrete = TRUE)
+
+model.swe.burned.simple <- bam(sqrt(swe_peak) ~ wy * fire + burned * fire
+                                     + s(elevation, by = wy, k = 20)
+                                     + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                                     + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
+                                     + s(ht_zskew, by = fire, k = 20),
+                                     data = df.50,
+                                     method = 'fREML',
+                                     discrete = TRUE)
+
+
+
+# ---------- Predicted SDD across realistic canopy structure --------------
+# ----- Burned vs unburned within each fire -----
+
+# Find shared gap range within each fire
+gap.range <- df.50 %>%
+  group_by(fire, burned) %>%
+  summarise(
+    gap.min = quantile(gap_percent, 0.01, na.rm = TRUE),
+    gap.max = quantile(gap_percent, 0.99, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  group_by(fire) %>%
+  summarise(
+    gap.min = max(gap.min),
+    gap.max = min(gap.max),
+    .groups = 'drop'
+  )
+
+# Get realistic height associated with gap percent
+ht.lookup <- df.50 %>%
+  group_by(fire, burned) %>%
+  mutate(
+    gap.bin = ntile(gap_percent, 100)
+  ) %>%
+  group_by(fire, burned, gap.bin) %>%
+  summarise(
+    gap_lookup = mean(gap_percent, na.rm = TRUE),
+    ht_lookup = mean(ht_zmax, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  )
+
+
+# Build prediction grid
+pred.gap <- gap.range %>%
+  rowwise() %>%
+  mutate(
+    gap_percent = list(
+      seq(gap.min, gap.max, length.out = 100)
+    )
+  ) %>%
+  tidyr::unnest(gap_percent) %>%
+  select(fire, gap_percent) %>%
+  tidyr::crossing(
+    burned = levels(df.50$burned)
+  ) %>%
+  mutate(
+    fire = factor(
+      fire,
+      levels = levels(df.50$fire)
+    ),
+    burned = factor(
+      burned,
+      levels = levels(df.50$burned)
+    )
+  )
+
+# Assign realistic height for each fire x burn-status trajectory
+pred.gap <- pred.gap %>%
+  group_by(fire, burned) %>%
+  group_modify(~ {
+    
+    lookup <- ht.lookup %>%
+      filter(
+        fire == .y$fire,
+        burned == .y$burned
+      ) %>%
+      arrange(gap_lookup)
+    
+    .x %>%
+      mutate(
+        ht_zmax = approx(
+          x = lookup$gap_lookup,
+          y = lookup$ht_lookup,
+          xout = gap_percent,
+          rule = 2
+        )$y
+      )
+    
+  }) %>%
+  ungroup()
+
+# sanity check
+ggplot(
+  pred.gap,
+  aes(
+    x = gap_percent,
+    y = ht_zmax,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~ fire) +
+  scale_color_manual(values = burn.cols) +
+  theme_bw() +
+  labs(
+    x = 'Gap percentage',
+    y = 'Typical maximum canopy height (m)',
+    color = NULL
+  )
+
+# --- population-averaged predictions ---
+
+fire.medians <- df.50 %>%
+  filter(wy == 2023) %>%
+  group_by(fire) %>%
+  summarise(
+    elevation = median(elevation, na.rm = TRUE),
+    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
+    aspect_sin = median(aspect_sin, na.rm = TRUE),
+    tpi1200 = median(tpi1200, na.rm = TRUE),
+    swe_peak = median(swe_peak, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# add those values to prediction dataset
+pred.gap <- pred.gap %>%
+  left_join(
+    fire.medians,
+    by = 'fire'
+  ) %>%
+  mutate(
+    wy = factor(
+      2023,
+      levels = levels(df.50$wy)
+    ),
+    
+    fire_burned = interaction(
+      fire,
+      burned,
+      sep = '_'
+    ),
+    
+    fire_burned = factor(
+      fire_burned,
+      levels = levels(df.50$fire_burned)
+    )
+  )
+
+# predict
+pred <- predict(
+  model.sdd.burned,
+  newdata = pred.gap,
+  se.fit = TRUE
+)
+
+pred.gap <- pred.gap %>%
+  mutate(
+    fit = pred$fit,
+    lwr = pred$fit - 1.96 * pred$se.fit,
+    upr = pred$fit + 1.96 * pred$se.fit
+  )
+
+# plot
+ggplot(
+  pred.gap,
+  aes(
+    x = gap_percent,
+    y = fit,
+    color = burned,
+    fill = burned
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = lwr,
+      ymax = upr
+    ),
+    alpha = 0.2,
+    color = NA
+  ) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(
+    ~ fire,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  scale_fill_manual(values = burn.cols) +
+  theme_bw() +
+  labs(
+    x = 'Gap percentage',
+    y = 'Predicted snow disappearance date',
+    color = NULL,
+    fill = NULL,
+    title = 'Water Year 2023'
+  )
+# ----- gap percent -----
+
+# --- gap bins from observed data ---
+
+height.by.gap <- df.50 %>%
+  filter(
+    !is.na(gap_percent),
+    !is.na(ht_zmax),
+    !is.na(burned),
+    !is.na(fire)
+  ) %>%
+  mutate(
+    gap_bin = cut(
+      gap_percent,
+      breaks = seq(0, 100, by = 5),
+      include.lowest = TRUE
+    )
+  ) %>%
+  group_by(fire, burned, gap_bin) %>%
+  summarise(
+    gap_percent = mean(gap_percent, na.rm = TRUE),
+    ht_zmax = mean(ht_zmax, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  filter(n >= 20)
+
+# --- retain gap bins represented in both burn classes ---
+
+common.gap.bins <- height.by.gap %>%
+  distinct(fire, burned, gap_bin) %>%
+  count(fire, gap_bin) %>%
+  filter(n == 2) %>%
+  select(fire, gap_bin)
+
+height.by.gap <- height.by.gap %>%
+  semi_join(
+    common.gap.bins,
+    by = c('fire', 'gap_bin')
+  )
+
+# --- build prediction data ---
+pred.scenario.gap <- height.by.gap %>%
+  tidyr::crossing(
+    wy = levels(df.50$wy)
+  ) %>%
+  mutate(
+    wy = factor(
+      wy,
+      levels = levels(df.50$wy)
+    ),
+    
+    fire = factor(
+      fire,
+      levels = levels(df.50$fire)
+    ),
+    
+    burned = factor(
+      burned,
+      levels = levels(df.50$burned)
+    )
+  )
+
+# use fire x wy medians for other covariate values
+scenario.values <- df.50 %>%
+  group_by(fire, wy) %>%
+  summarise(
+    elevation = median(elevation, na.rm = TRUE),
+    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
+    aspect_sin = median(aspect_sin, na.rm = TRUE),
+    tpi150 = median(tpi150, na.rm = TRUE),
+    tpi2010 = median(tpi2010, na.rm = TRUE),
+    slope = median(slope, na.rm = TRUE),
+    ht_zskew = median(ht_zskew, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+pred.scenario.gap <- pred.scenario.gap %>%
+  left_join(
+    scenario.values,
+    by = c('fire', 'wy')
+  )
+
+# --- predict ---
+pred.scenario.gap$pred_sqrt_swe <- predict(
+  model.swe.burned.simple,
+  newdata = pred.scenario.gap,
+  type = 'response'
+)
+
+
+# --- back-transform to SWE ---
+
+pred.scenario.gap <- pred.scenario.gap %>%
+  mutate(
+    pred_swe = pred_sqrt_swe^2
+  )
+
+# average across WY
+pred.scenario.gap.mean <- pred.scenario.gap %>%
+  group_by(
+    fire,
+    burned,
+    gap_bin,
+    gap_percent,
+    ht_zmax,
+    n
+  ) %>%
+  summarise(
+    pred_swe = mean(pred_swe),
+    .groups = 'drop'
+  )
+
+# --- restrict to 99th percentile --- 
+gap.limits <- df.50 %>%
+  group_by(fire) %>%
+  summarise(
+    gap.max = quantile(gap_percent, 0.99, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+pred.scenario.gap.mean <- pred.scenario.gap.mean %>%
+  left_join(
+    gap.limits,
+    by = 'fire'
+  ) %>%
+  filter(gap_percent <= gap.max)
+
+gap.limits
+
+# --- plot ---
+ggplot(
+  pred.scenario.gap.mean,
+  aes(
+    x = gap_percent,
+    y = pred_swe,
+    color = burned,
+    group = burned
+  )
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(
+    aes(size = n),
+    alpha = 0.7
+  ) +
+  facet_wrap(
+    ~ fire,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Gap (%)',
+    y = 'Predicted SWE (m)',
+    color = NULL,
+    size = 'n'
+  ) +
+  theme_bw()
+
+
+# ----- zmax -----
+# --- height bins from observed data ---
+
+gap.by.height <- df.50 %>%
+  filter(
+    !is.na(gap_percent),
+    !is.na(ht_zmax),
+    !is.na(burned),
+    !is.na(fire)
+  ) %>%
+  mutate(
+    ht_bin = cut(
+      ht_zmax,
+      breaks = seq(
+        floor(min(ht_zmax, na.rm = TRUE)),
+        ceiling(max(ht_zmax, na.rm = TRUE)),
+        by = 5
+      ),
+      include.lowest = TRUE
+    )
+  ) %>%
+  group_by(fire, burned, ht_bin) %>%
+  summarise(
+    ht_zmax = mean(ht_zmax, na.rm = TRUE),
+    gap_percent = mean(gap_percent, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  filter(n >= 20)
+
+
+# --- retain height bins represented in both burn classes ---
+
+common.ht.bins <- gap.by.height %>%
+  distinct(fire, burned, ht_bin) %>%
+  count(fire, ht_bin) %>%
+  filter(n == 2) %>%
+  select(fire, ht_bin)
+
+gap.by.height <- gap.by.height %>%
+  semi_join(
+    common.ht.bins,
+    by = c('fire', 'ht_bin')
+  )
+
+
+# --- build prediction data ---
+
+pred.scenario.ht <- gap.by.height %>%
+  tidyr::crossing(
+    wy = levels(df.50$wy)
+  ) %>%
+  mutate(
+    wy = factor(
+      wy,
+      levels = levels(df.50$wy)
+    ),
+    
+    fire = factor(
+      fire,
+      levels = levels(df.50$fire)
+    ),
+    
+    burned = factor(
+      burned,
+      levels = levels(df.50$burned)
+    )
+  )
+
+
+# --- fire x WY medians for other covariates ---
+
+scenario.values <- df.50 %>%
+  group_by(fire, wy) %>%
+  summarise(
+    elevation = median(elevation, na.rm = TRUE),
+    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
+    aspect_sin = median(aspect_sin, na.rm = TRUE),
+    tpi150 = median(tpi150, na.rm = TRUE),
+    tpi2010 = median(tpi2010, na.rm = TRUE),
+    slope = median(slope, na.rm = TRUE),
+    ht_zskew = median(ht_zskew, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+pred.scenario.ht <- pred.scenario.ht %>%
+  left_join(
+    scenario.values,
+    by = c('fire', 'wy')
+  )
+
+
+# --- predict ---
+pred.scenario.ht$pred_sqrt_swe <- predict(
+  model.swe.burned.simple,
+  newdata = pred.scenario.ht,
+  type = 'response'
+)
+
+
+# --- back-transform to SWE ---
+
+pred.scenario.ht <- pred.scenario.ht %>%
+  mutate(
+    pred_swe = pred_sqrt_swe^2
+  )
+
+# --- average across WY ---
+
+pred.scenario.ht.mean <- pred.scenario.ht %>%
+  group_by(
+    fire,
+    burned,
+    ht_bin,
+    ht_zmax,
+    gap_percent,
+    n
+  ) %>%
+  summarise(
+    pred_swe = mean(pred_swe),
+    .groups = 'drop'
+  )
+
+# --- restrict to 99th percentile --- 
+ht.limits <- df.50 %>%
+  group_by(fire) %>%
+  summarise(
+    ht.max = quantile(ht_zmax, 0.99, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+pred.scenario.ht.mean <- pred.scenario.ht.mean %>%
+  left_join(
+    ht.limits,
+    by = 'fire'
+  ) %>%
+  filter(ht_zmax <= ht.max)
+
+# --- plot ---
+
+ggplot(
+  pred.scenario.ht.mean,
+  aes(
+    x = ht_zmax,
+    y = pred_swe,
+    color = burned,
+    group = burned
+  )
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(
+    aes(size = n),
+    alpha = 0.7
+  ) +
+  facet_wrap(
+    ~ fire,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Maximum canopy height (m)',
+    y = 'Predicted SWE (m)',
+    color = NULL,
+    size = 'n'
+  ) +
+  theme_bw()
 
 # ==============================================================================
 # Observed Plots

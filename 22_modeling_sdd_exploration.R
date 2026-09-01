@@ -3132,5 +3132,37 @@ ggplot(
   ) +
   theme_bw()
 
+# --- Cross-fold Validation ---
+# -- simple model ---
+cv.sdd <- cv_bam(formula = formula(model.sdd),
+                         data = df.500,
+                         k_folds = 5)
 
+cv.sdd.fire.summary <- cv.sdd$fire.results %>%
+  group_by(fire) %>%
+  summarise(
+    RMSE_mean = mean(RMSE),
+    RMSE_sd = sd(RMSE),
+    R2_mean = mean(R2),
+    R2_sd = sd(R2),
+    .groups = 'drop'
+  )
 
+cv.sdd.fire.summary
+
+# --- burned model ---
+cv.sdd <- cv_bam(formula = formula(model.sdd.burned.simple),
+                 data = df.500,
+                 k_folds = 5)
+
+cv.sdd.fire.summary <- cv.sdd$fire.results %>%
+  group_by(fire) %>%
+  summarise(
+    RMSE_mean = mean(RMSE),
+    RMSE_sd = sd(RMSE),
+    R2_mean = mean(R2),
+    R2_sd = sd(R2),
+    .groups = 'drop'
+  )
+
+cv.sdd.fire.summary

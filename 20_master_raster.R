@@ -9,7 +9,7 @@ lapply(packages, library, character.only = T)
 
 # ----- master-raster 500m -----
 fires <- c('dixie', 'castle', 'caldor')
-
+fires <- 'creek'
 for (fire in fires) {
   res <- '500m'
   dir <- paste0('data/processed/processed/tif/', res, '/', fire, '/')
@@ -748,3 +748,60 @@ names(x)
 
 writeRaster(x, 'data/processed/processed/tif/500m/creek/creek_nasadem_500m2.tif', overwrite = T)
 
+
+
+
+
+# delete
+fire = 'creek'
+res <- '500m'
+dir <- paste0('data/processed/processed/tif/', res, '/', fire, '/')
+
+j <- paste0('J:/Fire_Snow/fireandice/', dir)
+g <- paste0('G:/Fire_Snow_Dynamics_backup/', dir)
+
+
+files <- list.files(dir, full.names = TRUE, pattern = '\\.tif$')
+files <- files[!grepl('master', files)]
+files
+
+# combine
+stack.0 <- rast(files)
+
+names(stack.0) <- sub(
+  '_500m$',
+  '',
+  names(stack.0)
+)
+
+# mask all areas by canopy raster
+mask.template <- stack.0$gap_gap_pct
+
+# mask every layer in the stack
+stack <- mask(stack.0, mask.template)
+
+writeRaster(stack, paste0(dir, fire, '_master_', res, '.tif'), overwrite = T)
+writeRaster(stack, paste0(j, fire, '_master_', res, '.tif'), overwrite = T)
+writeRaster(stack, paste0(g, fire, '_master_', res, '.tif'), overwrite = T)
+
+
+extent.check <- lapply(files, function(f) {
+  
+  r <- rast(f)
+  e <- ext(r)
+  
+  data.frame(
+    file = basename(f),
+    xmin = e$xmin,
+    xmax = e$xmax,
+    ymin = e$ymin,
+    ymax = e$ymax,
+    xres = res(r)[1],
+    yres = res(r)[2],
+    ncol = ncol(r),
+    nrow = nrow(r)
+  )
+}) %>%
+  bind_rows()
+
+extent.check

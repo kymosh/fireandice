@@ -222,13 +222,21 @@ model.sdd.combined <- bam(sdd ~ wy * fire +
                  discrete = TRUE)
 
 model.sdd.burned <- bam(sdd ~ wy * fire + burned * fire +
-    s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) +
-    s(ht_zmax, by = fire_burned, k = 20) + s(gap_percent, by = fire_burned, k = 20) +
-    s(swe_peak, k = 20),
-  data = df.500,
-  method = 'fREML',
-  discrete = TRUE
-)
+                  s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) +
+                  s(ht_zmax, by = fire_burned, k = 20) + s(gap_percent, by = fire_burned, k = 20) +
+                  s(swe_peak, k = 20),
+                data = df.500,
+                method = 'fREML',
+                discrete = TRUE)
+
+model.sdd.burned.simple <- bam(sdd ~ wy * fire + burned * fire +
+                          s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) +
+                          s(ht_zmax, by = fire, k = 20) + s(gap_percent, by = fire, k = 20) +
+                          s(swe_peak, k = 20),
+                        data = df.500,
+                        method = 'fREML',
+                        discrete = TRUE)
+
 
 
 
@@ -686,7 +694,7 @@ canopy.fig.final
 
 # 
 # ----------------------------------- ** BURN EFFECTS ** ------------------------------------
-# ---------- Predicted SDD across realistic canopy structure --------------
+# ---------- ** Predicted SDD across realistic canopy structure ** --------------
 # Burned vs unburned within each fire
 
 # Find shared gap range within each fire
@@ -872,6 +880,741 @@ ggplot(
     fill = NULL,
     title = 'Water Year 2023'
   )
+# ----- gap percent -----
+
+# --- gap bins from observed data ---
+
+height.by.gap <- df.500 %>%
+  filter(
+    !is.na(gap_percent),
+    !is.na(ht_zmax),
+    !is.na(burned),
+    !is.na(fire)
+  ) %>%
+  mutate(
+    gap_bin = cut(
+      gap_percent,
+      breaks = seq(0, 100, by = 5),
+      include.lowest = TRUE
+    )
+  ) %>%
+  group_by(fire, burned, gap_bin) %>%
+  summarise(
+    gap_percent = mean(gap_percent, na.rm = TRUE),
+    ht_zmax = mean(ht_zmax, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  filter(n >= 20)
+
+# --- retain gap bins represented in both burn classes ---
+
+common.gap.bins <- height.by.gap %>%
+  distinct(fire, burned, gap_bin) %>%
+  count(fire, gap_bin) %>%
+  filter(n == 2) %>%
+  select(fire, gap_bin)
+
+height.by.gap <- height.by.gap %>%
+  semi_join(
+    common.gap.bins,
+    by = c('fire', 'gap_bin')
+  )
+
+# --- build prediction data ---
+pred.scenario.gap <- height.by.gap %>%
+  tidyr::crossing(
+    wy = levels(df.500$wy)
+  ) %>%
+  mutate(
+    wy = factor(
+      wy,
+      levels = levels(df.500$wy)
+    ),
+    
+    fire = factor(
+      fire,
+      levels = levels(df.500$fire)
+    ),
+    
+    burned = factor(
+      burned,
+      levels = levels(df.500$burned)
+    ),
+    
+    fire_burned = interaction(
+      fire,
+      burned,
+      sep = '_'
+    ),
+    
+    fire_burned = factor(
+      fire_burned,
+      levels = levels(df.500$fire_burned)
+    )
+  )
+
+# use fire x wy medians for other covariate values
+scenario.values <- df.500 %>%
+  group_by(fire, wy) %>%
+  summarise(
+    elevation = median(elevation, na.rm = TRUE),
+    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
+    aspect_sin = median(aspect_sin, na.rm = TRUE),
+    tpi1200 = median(tpi1200, na.rm = TRUE),
+    swe_peak = median(swe_peak, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+pred.scenario.gap <- pred.scenario.gap %>%
+  left_join(
+    scenario.values,
+    by = c('fire', 'wy')
+  )
+
+# --- predict ---
+pred.scenario.gap$pred_sdd <- predict(
+  model.sdd.burned.simple,
+  newdata = pred.scenario.gap,
+  type = 'response'
+)
+
+# average across WY
+pred.scenario.gap.mean <- pred.scenario.gap %>%
+  group_by(
+    fire,
+    burned,
+    gap_bin,
+    gap_percent,
+    ht_zmax,
+    n
+  ) %>%
+  summarise(
+    pred_sdd = mean(pred_sdd),
+    .groups = 'drop'
+  )
+
+# --- restrict to 99th percentile --- 
+gap.limits <- df.500 %>%
+  group_by(fire) %>%
+  summarise(
+    gap.max = quantile(gap_percent, 0.99, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+pred.scenario.gap.mean <- pred.scenario.gap.mean %>%
+  left_join(
+    gap.limits,
+    by = 'fire'
+  ) %>%
+  filter(gap_percent <= gap.max)
+
+
+# --- plot ---
+ggplot(
+  pred.scenario.gap.mean,
+  aes(
+    x = gap_percent,
+    y = pred_sdd,
+    color = burned,
+    group = burned
+  )
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(
+    aes(size = n),
+    alpha = 0.7
+  ) +
+  facet_wrap(
+    ~ fire,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Gap (%)',
+    y = 'Predicted SDD',
+    color = NULL,
+    size = 'n'
+  ) +
+  theme_bw()
+
+
+# ----- zmax -----
+# --- height bins from observed data ---
+
+gap.by.height <- df.500 %>%
+  filter(
+    !is.na(gap_percent),
+    !is.na(ht_zmax),
+    !is.na(burned),
+    !is.na(fire)
+  ) %>%
+  mutate(
+    ht_bin = cut(
+      ht_zmax,
+      breaks = seq(
+        floor(min(ht_zmax, na.rm = TRUE)),
+        ceiling(max(ht_zmax, na.rm = TRUE)),
+        by = 5
+      ),
+      include.lowest = TRUE
+    )
+  ) %>%
+  group_by(fire, burned, ht_bin) %>%
+  summarise(
+    ht_zmax = mean(ht_zmax, na.rm = TRUE),
+    gap_percent = mean(gap_percent, na.rm = TRUE),
+    n = n(),
+    .groups = 'drop'
+  ) %>%
+  filter(n >= 20)
+
+
+# --- retain height bins represented in both burn classes ---
+
+common.ht.bins <- gap.by.height %>%
+  distinct(fire, burned, ht_bin) %>%
+  count(fire, ht_bin) %>%
+  filter(n == 2) %>%
+  select(fire, ht_bin)
+
+gap.by.height <- gap.by.height %>%
+  semi_join(
+    common.ht.bins,
+    by = c('fire', 'ht_bin')
+  )
+
+
+# --- build prediction data ---
+
+pred.scenario.ht <- gap.by.height %>%
+  tidyr::crossing(
+    wy = levels(df.500$wy)
+  ) %>%
+  mutate(
+    wy = factor(
+      wy,
+      levels = levels(df.500$wy)
+    ),
+    
+    fire = factor(
+      fire,
+      levels = levels(df.500$fire)
+    ),
+    
+    burned = factor(
+      burned,
+      levels = levels(df.500$burned)
+    ),
+    
+    fire_burned = interaction(
+      fire,
+      burned,
+      sep = '_'
+    ),
+    
+    fire_burned = factor(
+      fire_burned,
+      levels = levels(df.500$fire_burned)
+    )
+  )
+
+
+# --- fire x WY medians for other covariates ---
+
+scenario.values <- df.500 %>%
+  group_by(fire, wy) %>%
+  summarise(
+    elevation = median(elevation, na.rm = TRUE),
+    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
+    aspect_sin = median(aspect_sin, na.rm = TRUE),
+    tpi1200 = median(tpi1200, na.rm = TRUE),
+    swe_peak = median(swe_peak, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+pred.scenario.ht <- pred.scenario.ht %>%
+  left_join(
+    scenario.values,
+    by = c('fire', 'wy')
+  )
+
+
+# --- predict ---
+
+pred.scenario.ht$pred_sdd <- predict(
+  model.sdd.burned.simple,
+  newdata = pred.scenario.ht,
+  type = 'response'
+)
+
+
+# --- average across WY ---
+
+pred.scenario.ht.mean <- pred.scenario.ht %>%
+  group_by(
+    fire,
+    burned,
+    ht_bin,
+    ht_zmax,
+    gap_percent,
+    n
+  ) %>%
+  summarise(
+    pred_sdd = mean(pred_sdd),
+    .groups = 'drop'
+  )
+
+# --- restrict to 99th percentile --- 
+ht.limits <- df.500 %>%
+  group_by(fire) %>%
+  summarise(
+    ht.max = quantile(ht_zmax, 0.99, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+pred.scenario.ht.mean <- pred.scenario.ht.mean %>%
+  left_join(
+    ht.limits,
+    by = 'fire'
+  ) %>%
+  filter(ht_zmax <= ht.max)
+
+
+# --- plot ---
+
+ggplot(
+  pred.scenario.ht.mean,
+  aes(
+    x = ht_zmax,
+    y = pred_sdd,
+    color = burned,
+    group = burned
+  )
+) +
+  geom_line(linewidth = 1.2) +
+  geom_point(
+    aes(size = n),
+    alpha = 0.7
+  ) +
+  facet_wrap(
+    ~ fire,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Maximum canopy height (m)',
+    y = 'Predicted SDD',
+    color = NULL,
+    size = 'n'
+  ) +
+  theme_bw()
+# ------------------ Plotting Predicted Burn Differences ---------------
+# --- predict all observations as unburned ---
+
+pred.unburned <- df.500 %>%
+  mutate(
+    burned = factor(
+      'unburned',
+      levels = levels(df.500$burned)
+    )
+  )
+
+pred.unburned$pred_sdd <- predict(
+  model.sdd.burned.simple,
+  newdata = pred.unburned,
+  type = 'response'
+)
+
+
+# --- predict all observations as burned ---
+
+pred.burned <- df.500 %>%
+  mutate(
+    burned = factor(
+      'burned',
+      levels = levels(df.500$burned)
+    )
+  )
+
+pred.burned$pred_sdd <- predict(
+  model.sdd.burned.simple,
+  newdata = pred.burned,
+  type = 'response'
+)
+
+# --- combine prediction scenarios ---
+pred.violin <- bind_rows(
+  pred.unburned %>%
+    transmute(
+      fire,
+      scenario = 'unburned',
+      pred_sdd
+    ),
+  
+  pred.burned %>%
+    transmute(
+      fire,
+      scenario = 'burned',
+      pred_sdd
+    )
+) %>%
+  mutate(
+    scenario = factor(
+      scenario,
+      levels = c('unburned', 'burned')
+    )
+  )
+
+
+# --- plot ---
+
+ggplot(
+  pred.violin,
+  aes(
+    x = scenario,
+    y = pred_sdd,
+    fill = scenario
+  )
+) +
+  geom_violin(
+    trim = FALSE,
+    alpha = 0.6
+  ) +
+  geom_boxplot(
+    width = 0.12,
+    outlier.shape = NA,
+    alpha = 0.8
+  ) +
+  facet_wrap(
+    ~ fire,
+    nrow = 1
+  ) +
+  scale_fill_manual(
+    values = burn.cols,
+    labels = c(
+      'unburned' = 'Unburned',
+      'burned' = 'Burned'
+    )
+  ) +
+  scale_x_discrete(
+    labels = c(
+      'unburned' = 'Unburned',
+      'burned' = 'Burned'
+    )
+  ) +
+  labs(
+    x = NULL,
+    y = 'Predicted SDD',
+    fill = NULL
+  ) +
+  theme_bw()
+# ----------------------------------- ** PREDICTED VS OBSERVED MAPS ** ------------------------------------
+
+df.500$pred_sdd <- predict(model.sdd, newdata = df.500, type = 'response')
+
+# ----- observed vs predicted SDD maps -----
+
+fires <- c('Creek', 'Castle', 'Caldor')
+
+
+# --- Common scales across all fires ---
+# common SDD range
+sdd.limits <- range(
+  c(df.500$sdd, df.500$pred_sdd),
+  na.rm = TRUE
+)
+
+# common difference range, symmetric around zero
+diff.max <- quantile(
+  abs(df.500$pred_sdd - df.500$sdd),
+  0.99,
+  na.rm = TRUE
+)
+
+diff.limits <- c(-diff.max, diff.max)
+
+for (fire.name in fires) {
+  
+  map.sdd <- df.500 %>%
+    filter(fire == fire.name) %>%
+    select(x, y, wy, sdd, pred_sdd) %>%
+    pivot_longer(
+      cols = c(sdd, pred_sdd),
+      names_to = 'type',
+      values_to = 'sdd_value'
+    ) %>%
+    mutate(
+      type = factor(
+        type,
+        levels = c('sdd', 'pred_sdd'),
+        labels = c('Observed', 'Predicted')
+      )
+    )
+  
+  # ----- observed and predicted -----
+  
+  p <- ggplot(
+    map.sdd,
+    aes(
+      x = x,
+      y = y,
+      fill = sdd_value
+    )
+  ) +
+    geom_tile() +
+    facet_grid(
+      type ~ wy
+    ) +
+    coord_equal() +
+    scale_fill_viridis_c(
+      option = 'viridis',
+      limits = sdd.limits
+    ) +
+    labs(
+      title = paste(fire.name, 'Fire'),
+      x = NULL,
+      y = NULL,
+      fill = 'SDD'
+    ) +
+    theme_void() +
+    theme(
+      plot.title = element_text(
+        face = 'bold',
+        size = 14,
+        hjust = 0.5
+      ),
+      strip.text = element_text(
+        face = 'bold',
+        size = 11
+      )
+    )
+  
+  print(p)
+  
+  
+  # ----- predicted - observed difference -----
+  
+  map.diff <- map.sdd %>%
+    pivot_wider(
+      names_from = type,
+      values_from = sdd_value
+    ) %>%
+    mutate(
+      diff = Predicted - Observed
+    )
+  
+  p2 <- ggplot(
+    map.diff,
+    aes(
+      x = x,
+      y = y,
+      fill = diff
+    )
+  ) +
+    geom_tile() +
+    facet_wrap(
+      ~ wy,
+      nrow = 1
+    ) +
+    coord_equal() +
+    scale_fill_gradient2(
+      low = 'blue',
+      mid = 'white',
+      high = 'red',
+      midpoint = 0,
+      limits = diff.limits,
+      oob = scales::squish
+    ) +
+    labs(
+      title = paste(fire.name, 'Fire'),
+      subtitle = 'Predicted − Observed SDD',
+      x = NULL,
+      y = NULL,
+      fill = 'Difference\n(days)'
+    ) +
+    theme_void() +
+    theme(
+      plot.title = element_text(
+        face = 'bold',
+        size = 14,
+        hjust = 0.5
+      ),
+      plot.subtitle = element_text(
+        hjust = 0.5
+      ),
+      strip.text = element_text(
+        face = 'bold',
+        size = 11
+      )
+    )
+  
+  print(p2)
+}
+
+# ----- just predicted -----
+ggplot(
+  df.500 %>%
+    filter(fire == 'Creek'),
+  aes(
+    x = x,
+    y = y,
+    fill = pred_sdd
+  )
+) +
+  geom_tile() +
+  facet_wrap(
+    ~ wy,
+    nrow = 1
+  ) +
+  coord_equal() +
+  scale_fill_viridis_c(
+    option = 'magma'
+  ) +
+  labs(
+    title = 'Creek Fire',
+    x = NULL,
+    y = NULL,
+    fill = 'Predicted\nSDD'
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(
+      face = 'bold',
+      size = 14,
+      hjust = 0.5
+    ),
+    strip.text = element_text(
+      face = 'bold',
+      size = 11
+    )
+  )
+
+# ----- observed - predicted -----
+map.diff <- map.sdd %>%
+  pivot_wider(
+    names_from = type,
+    values_from = sdd_value
+  ) %>%
+  mutate(
+    diff = Predicted - Observed
+  )
+
+ggplot(
+  map.diff,
+  aes(
+    x = x,
+    y = y,
+    fill = diff
+  )
+) +
+  geom_tile() +
+  facet_wrap(
+    ~ wy,
+    nrow = 1
+  ) +
+  coord_equal() +
+  scale_fill_gradient2(
+    low = 'blue',
+    mid = 'white',
+    high = 'red',
+    midpoint = 0
+  ) +
+  labs(
+    title = 'Creek Fire',
+    subtitle = 'Predicted − Observed SDD',
+    x = NULL,
+    y = NULL,
+    fill = 'Difference\n(days)'
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(
+      face = 'bold',
+      size = 14,
+      hjust = 0.5
+    ),
+    plot.subtitle = element_text(
+      hjust = 0.5
+    ),
+    strip.text = element_text(
+      face = 'bold',
+      size = 11
+    )
+  )
+
+df.500 <- df.500 %>%
+  mutate(
+    sdd_resid = pred_sdd - sdd
+  )
+
+ggplot(
+  df.500,
+  aes(
+    x = gap_percent,
+    y = sdd_resid
+  )
+) +
+  geom_point(
+    alpha = 0.1,
+    size = 0.5
+  ) +
+  geom_smooth(
+    method = 'gam',
+    formula = y ~ s(x, k = 10)
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = 'dashed'
+  ) +
+  facet_wrap(
+    ~ fire,
+    nrow = 1
+  ) +
+  labs(
+    x = 'Gap (%)',
+    y = 'Prediction residual (days)\nPredicted − Observed'
+  ) +
+  theme_bw()
+
+ggplot(
+  df.500 %>%
+    filter(fire == 'Creek'),
+  aes(
+    x = x,
+    y = y,
+    fill = gap_percent
+  )
+) +
+  geom_tile() +
+  facet_wrap(
+    ~ wy,
+    nrow = 1
+  ) +
+  coord_equal() +
+  scale_fill_viridis_c() +
+  labs(
+    title = 'Creek Fire',
+    subtitle = 'Gap percentage',
+    x = NULL,
+    y = NULL,
+    fill = 'Gap (%)'
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(
+      face = 'bold',
+      size = 14,
+      hjust = 0.5
+    ),
+    plot.subtitle = element_text(
+      hjust = 0.5
+    ),
+    strip.text = element_text(
+      face = 'bold',
+      size = 11
+    )
+  )
 # ==============================================================================
 # Observed Plots
 # ==============================================================================
@@ -906,5 +1649,10 @@ ggplot(
   ) +
   theme_classic()
 
+
+
+
+
+# troubleshooting
 
 
