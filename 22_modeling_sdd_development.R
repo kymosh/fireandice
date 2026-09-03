@@ -3132,37 +3132,114 @@ ggplot(
   ) +
   theme_bw()
 
-# --- Cross-fold Validation ---
-# -- simple model ---
-cv.sdd <- cv_bam(formula = formula(model.sdd),
-                         data = df.500,
-                         k_folds = 5)
 
-cv.sdd.fire.summary <- cv.sdd$fire.results %>%
-  group_by(fire) %>%
-  summarise(
-    RMSE_mean = mean(RMSE),
-    RMSE_sd = sd(RMSE),
-    R2_mean = mean(R2),
-    R2_sd = sd(R2),
-    .groups = 'drop'
+
+# ==============================================================================
+# Stage 2 Modeling - Explore gap percent relationship
+# ==============================================================================
+# ---------------- elevation bands ----------------
+
+df.elev <- df.500 %>%
+  mutate(
+    elev_band = cut(
+      elevation,
+      breaks = c(-Inf, 1750, 2500, Inf),
+      labels = c(
+        '< 1750 m',
+        '1750–2500 m',
+        '> 2500 m'
+      ),
+      right = FALSE
+    ),
+    elev_band = as.factor(elev_band)
   )
 
-cv.sdd.fire.summary
 
-# --- burned model ---
-cv.sdd <- cv_bam(formula = formula(model.sdd.burned.simple),
-                 data = df.500,
-                 k_folds = 5)
+model.sdd.elev <- bam(sdd ~ wy * fire + elev_band +
+                   s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) + 
+                   s(ht_zmax, by = fire, k = 20) + s(gap_percent, by = elev_band, k = 20),
+                 data = df.elev,
+                 method = 'fREML',
+                 discrete = TRUE)
 
-cv.sdd.fire.summary <- cv.sdd$fire.results %>%
-  group_by(fire) %>%
-  summarise(
-    RMSE_mean = mean(RMSE),
-    RMSE_sd = sd(RMSE),
-    R2_mean = mean(R2),
-    R2_sd = sd(R2),
-    .groups = 'drop'
+
+# ---------------- gap predictions by elevation band ----------------
+
+gap.elev.pred <- map_dfr(levels(df.elev$elev_band), function(band.name) {
+  
+  df.band <- df.elev %>%
+    filter(elev_band == band.name)
+  
+  # observed gap range within elevation band
+  gap.seq <- seq(
+    quantile(df.band$gap_percent, 0.01, na.rm = TRUE),
+    quantile(df.band$gap_percent, 0.99, na.rm = TRUE),
+    length.out = 100
+  )
+  
+  # prediction data
+  newdata <- expand.grid(
+    gap_percent = gap.seq,
+    wy = levels(df.elev$wy)[1],
+    fire = levels(df.elev$fire)[1],
+    elev_band = band.name
+  ) %>%
+    mutate(
+      wy = factor(wy, levels = levels(df.elev$wy)),
+      fire = factor(fire, levels = levels(df.elev$fire)),
+      elev_band = factor(
+        elev_band,
+        levels = levels(df.elev$elev_band)
+      ),
+      elevation = median(df.band$elevation, na.rm = TRUE),
+      rad_dtm_accum = median(df.band$rad_dtm_accum, na.rm = TRUE),
+      aspect_sin = median(df.band$aspect_sin, na.rm = TRUE),
+      tpi1200 = median(df.band$tpi1200, na.rm = TRUE),
+      ht_zmax = median(df.band$ht_zmax, na.rm = TRUE),
+      swe_peak = median(df.band$swe_peak, na.rm = TRUE),
+      ht_zskew = median(df.band$ht_zskew, na.rm = TRUE)
+    )
+  
+  pred <- predict(
+    model.sdd.elev,
+    newdata = newdata,
+    se.fit = TRUE,
+    type = 'response'
+  )
+  
+  newdata %>%
+    mutate(
+      fit = pred$fit,
+      lower = pred$fit - 1.96 * pred$se.fit,
+      upper = pred$fit + 1.96 * pred$se.fit
+    )
+})
+
+ggplot(
+  gap.elev.pred,
+  aes(
+    x = gap_percent,
+    y = fit
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = lower,
+      ymax = upper
+    ),
+    alpha = 0.2
+  ) +
+  geom_line(
+    linewidth = 1
+  ) +
+  facet_wrap(
+    ~ elev_band,
+    scales = 'free_x'
+  ) +
+  theme_classic() +
+  labs(
+    x = 'Gap percent',
+    y = 'Predicted snow disappearance date'
   )
 
-cv.sdd.fire.summary
+summary(model.sdd)
