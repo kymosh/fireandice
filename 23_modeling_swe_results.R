@@ -5,11 +5,14 @@ lapply(packages, library, character.only = T)
 # ==============================================================================
 # Initialize Dataframe
 # ==============================================================================
+# ----- setup -----
 # get dataframe
 set.seed(61)
 dir <- 'data/processed/processed/rds/' 
 
 df.50.raw <- readRDS(file.path(dir, 'df_50m_raw.rds'))
+
+fire.levels <- c('Caldor', 'Creek', 'Castle')
 
 # years common to all fires
 common.years <- df.50.raw %>%
@@ -29,9 +32,24 @@ df.50 <- df.50.raw %>%
       fire,
       'caldor' = 'Caldor',
       'creek' = 'Creek'
+    ),
+    fire = factor(
+      fire,
+      levels = fire.levels
     )
   ) %>%
   droplevels()
+
+
+# make balanced prediction sample
+df.pred <- df.50 %>%
+  group_by(fire, wy, burned) %>%
+  slice_sample(n = 500) %>%
+  mutate(
+    fire = factor(
+      fire,
+      levels = fire.levels)) %>%
+  ungroup()
 
 # df.50.balanced <- readRDS(file.path(dir, 'df_50m_raw_balanced.rds')) 
 
@@ -49,47 +67,47 @@ df.50 <- df.50.raw %>%
 
 
 burn.cols <- c(
-  'unburned' = 'turquoise4',
-  'burned' = 'firebrick2'
+  'unburned' = '#00868B',
+  'burned' = '#EE2C2C'
 )
 
 fire.colors <- c(
-  'Caldor' = '#009E73',
-  'Castle' = '#E69F00',
-  'Creek' = '#CC79A7'
+  'Caldor' = '#3b435c',
+  'Castle' = '#ffa600',
+  'Creek' = '#c55488'
 )
 
 
-model.swe <- bam(sqrt(swe_peak) ~ wy * fire
-                 + s(elevation, by = wy, k = 20)
-                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
-                 + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10) 
-                 + s(ht_zskew, by = fire, k = 20),
-                 data = df.50,
-                 method = 'fREML',
-                 discrete = TRUE)
+elev.colors <- c(
+  'Caldor_< 1750 m' = '#3b435c',
+  'Caldor_1750–2500 m' = '#868eaa',
+  'Caldor_> 2500 m' = '#d8e1ff',
+  
+  'Castle_< 1750 m' = '#ffa600',
+  'Castle_1750–2500 m' = '#ffc171',
+  'Castle_> 2500 m' = '#fbddbe',
+  
+  'Creek_< 1750 m' = '#c55488',
+  'Creek_1750–2500 m' = '#e396b8',
+  'Creek_> 2500 m' = '#ffd5e8'
+)
 
-summary(model.swe)
+
 
 # ----- functions -----
-cv_bam <- function(formula, data, k_folds = 5) {
+cv_bam_swe <- function(formula, data, k_folds = 5) {
   
-  # empty dataframes to store results
   cv.results <- data.frame()
   cv.fire.results <- data.frame()
   
-  # loop through each spatial fold
   for (fold in 1:k_folds) {
     
-    # use all other folds to train the model
     train <- data %>%
       filter(fold_id != fold)
     
-    # hold out the current fold for model evaluation
     test <- data %>%
       filter(fold_id == fold)
     
-    # fit the GAM to the training data
     model <- bam(
       formula,
       data = train,
@@ -97,14 +115,18 @@ cv_bam <- function(formula, data, k_folds = 5) {
       discrete = TRUE
     )
     
-    # predict sqrt(SWE) for observations in the held-out fold
-    pred <- predict(
+    # prediction on sqrt(SWE) scale
+    pred.sqrt <- predict(
       model,
-      newdata = test
+      newdata = test,
+      type = 'response'
     )
     
-    # observed response on the same sqrt scale as the model
-    obs <- sqrt(test$swe_peak)
+    # back-transform to SWE
+    pred <- pred.sqrt^2
+    
+    # observed SWE on original scale
+    obs <- test$swe_peak
     
     # ----- overall fold metrics -----
     
@@ -134,11 +156,11 @@ cv_bam <- function(formula, data, k_folds = 5) {
     
     fire.results <- test %>%
       mutate(
-        obs = sqrt(swe_peak),
+        obs = obs,
         pred = pred
       ) %>%
       group_by(fire) %>%
-      summarize(
+      summarise(
         n = n(),
         RMSE = sqrt(
           mean(
@@ -157,23 +179,20 @@ cv_bam <- function(formula, data, k_folds = 5) {
         fold = fold
       )
     
-    # save fire-specific fold results
     cv.fire.results <- bind_rows(
       cv.fire.results,
       fire.results
     )
   }
   
-  # summarize overall performance across folds
   cv.summary <- cv.results %>%
-    summarize(
+    summarise(
       RMSE_mean = mean(RMSE),
       RMSE_sd = sd(RMSE),
       R2_mean = mean(R2),
       R2_sd = sd(R2)
     )
   
-  # return all results
   list(
     fold.results = cv.results,
     fire.results = cv.fire.results,
@@ -207,8 +226,90 @@ get.metrics.combined <- function(fitted.model, model.name) {
     edf = sum(s$edf)
   )
 }
+# ----- models -----
+model.swe <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                 + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
+
+model.swe.noskew <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                 + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
+
+model.swe.combined <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                 + s(ht_zmax, k = 10) + s(gap_percent, k = 10),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
+
+
+
 # ==============================================================================
-# Generate Predictions - All fires combined
+# Model Evaluation/
+# ==============================================================================
+# ----- Cross-fold Validation -----
+# -- simple model ---
+cv.swe <- cv_bam_swe(formula = formula(model.swe),
+                 data = df.50,
+                 k_folds = 5)
+
+# fire-specific summary
+cv.swe.summary.byfire <- cv.swe$fire.results %>%
+  group_by(fire) %>%
+  summarise(
+    RMSE_mean = mean(RMSE),
+    RMSE_sd = sd(RMSE),
+    R2_mean = mean(R2),
+    R2_sd = sd(R2),
+    .groups = 'drop'
+  )
+
+# overall summary
+cv.swe.summary.overall <- cv.swe$fold.results %>%
+  summarise(
+    fire = 'Overall',
+    RMSE_mean = mean(RMSE),
+    RMSE_sd = sd(RMSE),
+    R2_mean = mean(R2),
+    R2_sd = sd(R2)
+  )
+
+# combine
+cv.swe.summary <- bind_rows(
+  cv.swe.summary.overall,
+  cv.swe.summary.byfire %>%
+    mutate(fire = as.character(fire))
+)
+
+cv.swe.summary
+
+
+
+# explore
+# --- CV without skew ---
+cv.swe.noskew <- cv_bam_swe(
+  formula(model.swe.noskew),
+  df.50
+)
+
+cv.skew.comparison <- bind_rows(
+  'With skew' = cv.swe$summary,
+  'Without skew' = cv.swe.noskew$summary,
+  .id = 'model'
+)
+
+cv.skew.comparison
+# ==============================================================================
+# Generate Predictions - OLD
 # ==============================================================================
 # ------------------------ Prediction for gap percent for * realistic canopy conditions * ---------------------
 # ----- build lookup table * for gap percent * -----
@@ -671,18 +772,8 @@ ggplot(
 # ==============================================================================
 # ----------------------------------- ** MARGINAL EFFECT PLOTS ** ------------------------------------
 # --------------- predictions using by=fire model ---------------
-
-# make balanced prediction sample
-df.pred <- df.50 %>%
-  group_by(fire, wy, burned) %>%
-  slice_sample(n = 500) %>%
-  ungroup()
-
-
 # --------------- gap percent ----------------
-# this version has Confidence intervals
-
-set.seed(61)
+# this version has Confidence interval
 
 # simulate coefficient draws once
 n.sim <- 500
@@ -757,77 +848,7 @@ gap.rug <- df.50 %>%
   slice_sample(n = 3000) %>%
   ungroup()
 
-# ----- calculate effect size -----
-gap.effect.range <- gap.pred %>%
-  group_by(fire) %>%
-  summarise(
-    swe.min = min(swe_peak),
-    swe.max = max(swe_peak),
-    range.m = swe.max - swe.min,
-    range.cm = range.m * 100,
-    percent.range = (range.m / swe.min) * 100
-  )
-
-gap.effect.range
-
-gap.effect.range <- gap.pred %>%
-  group_by(fire) %>%
-  summarise(
-    min.pred.swe = min(swe_peak),
-    gap.at.min = gap_percent[which.min(swe_peak)],
-    max.pred.swe = max(swe_peak),
-    gap.at.max = gap_percent[which.max(swe_peak)],
-    swe.range.cm = (max.pred.swe - min.pred.swe) * 100,
-    relative.range = ((max.pred.swe - min.pred.swe) / min.pred.swe) * 100
-  )
-
-gap.effect.range
-
-# Extract marginal predictions near these values
-group_by(fire) %>%
-  slice_min(abs(gap_percent - 25), n = 1, with_ties = FALSE) %>%
-  mutate(gap.target = 25) %>%
-  bind_rows(
-    gap.pred %>%
-      group_by(fire) %>%
-      slice_min(abs(gap_percent - 50), n = 1, with_ties = FALSE) %>%
-      mutate(gap.target = 50),
-    
-    gap.pred %>%
-      group_by(fire) %>%
-      slice_min(abs(gap_percent - 75), n = 1, with_ties = FALSE) %>%
-      mutate(gap.target = 75)
-  ) %>%
-  arrange(fire, gap.target)
-
-gap.contrasts
-
-gap.values <- c(25, 50, 75)
-# ----- standardized effect size -----
-gap.contrast <- gap.pred %>%
-  group_by(fire) %>%
-  summarise(
-    swe.25 = approx(
-      x = gap_percent,
-      y = swe_peak,
-      xout = 25
-    )$y,
-    
-    swe.75 = approx(
-      x = gap_percent,
-      y = swe_peak,
-      xout = 75
-    )$y
-  ) %>%
-  mutate(
-    change.m = swe.75 - swe.25,
-    change.cm = change.m * 100,
-    change.percent = (change.m / swe.25) * 100
-  )
-
-gap.contrast
-
-# ----- Identify thresholds/optima -----
+# --- Identify thresholds/optima ---
 gap.optimum <- gap.pred %>%
   group_by(fire) %>%
   summarise(
@@ -848,91 +869,7 @@ gap.optimum <- gap.pred %>%
 
 gap.optimum
 
-# plot
-p.gap.opt <- ggplot(
-  gap.pred,
-  aes(
-    x = gap_percent,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
-) +
-  
-  # shade gap range producing >=95% of maximum SWE
-  geom_rect(
-    data = gap.optimum,
-    aes(
-      xmin = gap.95.low,
-      xmax = gap.95.high,
-      ymin = -Inf,
-      ymax = Inf,
-      fill = fire
-    ),
-    inherit.aes = FALSE,
-    alpha = 0.08,
-    color = NA
-  ) +
-  
-  # confidence interval
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  
-  # marginal prediction
-  geom_line(linewidth = 1) +
-  
-  # rug
-  geom_rug(
-    data = gap.rug,
-    aes(x = gap_percent, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  
-  facet_wrap(
-    ~ fire,
-    nrow = 1,
-    labeller = labeller(
-      fire = c(
-        'caldor' = 'Caldor',
-        'castle' = 'Castle',
-        'creek' = 'Creek'
-      )
-    )
-  ) +
-  
-  geom_segment(
-    data = gap.optimum,
-    aes(
-      x = gap.95.low,
-      xend = gap.95.high,
-      y = threshold.95,
-      yend = threshold.95,
-      color = fire
-    ),
-    inherit.aes = FALSE,
-    linetype = 'dashed',
-    linewidth = 0.6
-  ) +
-  
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  
-  guides(color = 'none', fill = 'none') +
-  
-  labs(
-    x = 'Canopy gap (%)',
-    y = 'Predicted peak SWE (m)'
-  ) +
-  
-  theme_classic()
-
-p.gap.opt
-# ----- Combined model -----
+# --- Combined model ---
 gap.pred.combined <- map_dfr(
   levels(df.pred$fire),
   function(fire.name) {
@@ -974,6 +911,115 @@ gap.pred.combined <- map_dfr(
     })
   }
 )
+
+# filter out Castle
+gap.pred.plot <- gap.pred %>%
+  filter(fire != 'Castle')
+gap.optimum.plot <- gap.optimum %>%
+  filter(fire != 'Castle') 
+gap.rug.plot <- gap.rug %>%
+  filter(fire != 'Castle') 
+
+# plot
+p.gap.opt <- ggplot(
+  gap.pred.plot,
+  aes(
+    x = gap_percent,
+    y = swe_peak,
+    color = fire,
+    fill = fire
+  )
+) +
+  
+  geom_rect(
+    data = gap.optimum.plot,
+    aes(
+      xmin = gap.95.low,
+      xmax = gap.95.high,
+      ymin = -Inf,
+      ymax = Inf,
+      fill = fire
+    ),
+    inherit.aes = FALSE,
+    alpha = 0.08,
+    color = NA
+  ) +
+  
+  geom_ribbon(
+    aes(
+      ymin = lower,
+      ymax = upper
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+  
+  geom_line(
+    linewidth = 1
+  ) +
+  
+  geom_line(
+    data = gap.pred.combined %>%
+      filter(fire != 'Castle'),
+    aes(
+      x = gap_percent,
+      y = swe_peak,
+      group = fire
+    ),
+    inherit.aes = FALSE,
+    color = 'grey',
+    linetype = 'solid',
+    linewidth = 0.8
+  ) +
+  
+  geom_rug(
+    data = gap.rug.plot,
+    aes(
+      x = gap_percent,
+      color = fire
+    ),
+    inherit.aes = FALSE,
+    sides = 'b',
+    alpha = 0.08
+  ) +
+  
+  facet_wrap(
+    ~ fire,
+    nrow = 1,
+    drop = FALSE
+  ) +
+  
+  geom_segment(
+    data = gap.optimum.plot,
+    aes(
+      x = gap.95.low,
+      xend = gap.95.high,
+      y = threshold.95,
+      yend = threshold.95,
+      color = fire
+    ),
+    inherit.aes = FALSE,
+    linetype = 'dashed',
+    linewidth = 0.6
+  ) +
+  
+  scale_color_manual(values = fire.colors) +
+  scale_fill_manual(values = fire.colors) +
+  
+  guides(
+    color = 'none',
+    fill = 'none'
+  ) +
+  
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted peak SWE (m)'
+  ) +
+  
+  theme_classic()
+
+p.gap.opt
+
 # ---------------- maximum canopy height ---------------
 
 ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
@@ -1040,106 +1086,7 @@ ht.rug <- df.50 %>%
   slice_sample(n = 3000) %>%
   ungroup()
 
-ggplot(
-  ht.pred,
-  aes(
-    x = ht_zmax,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
-) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_rug(
-    data = ht.rug,
-    aes(x = ht_zmax, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  geom_line(linewidth = 1) +
-  geom_rug(
-    data = ht.rug,
-    aes(x = ht_zmax, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  
-  facet_wrap(
-    ~ fire,
-    nrow = 1
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Maximum canopy height (m)',
-    y = 'Predicted peak SWE (m)'
-  ) +
-  theme_classic()
-
-# ----- overall magnitude -----
-ht.effect.range <- ht.pred %>%
-  group_by(fire) %>%
-  summarise(
-    min.pred.swe = min(swe_peak),
-    ht.at.min = ht_zmax[which.min(swe_peak)],
-    
-    max.pred.swe = max(swe_peak),
-    ht.at.max = ht_zmax[which.max(swe_peak)],
-    
-    swe.range.cm = (max.pred.swe - min.pred.swe) * 100,
-    relative.range = ((max.pred.swe - min.pred.swe) /
-                        min.pred.swe) * 100
-  )
-
-ht.effect.range
-
-# to determine heights to use
-df.50 %>%
-  group_by(fire) %>%
-  summarise(
-    min = min(ht_zmax, na.rm = TRUE),
-    p01 = quantile(ht_zmax, 0.01, na.rm = TRUE),
-    p05 = quantile(ht_zmax, 0.05, na.rm = TRUE),
-    p25 = quantile(ht_zmax, 0.25, na.rm = TRUE),
-    median = median(ht_zmax, na.rm = TRUE),
-    p75 = quantile(ht_zmax, 0.75, na.rm = TRUE),
-    p95 = quantile(ht_zmax, 0.95, na.rm = TRUE),
-    p99 = quantile(ht_zmax, 0.99, na.rm = TRUE),
-    max = max(ht_zmax, na.rm = TRUE)
-  )
-
-ht.contrast <- ht.pred %>%
-  group_by(fire) %>%
-  summarise(
-    swe.20 = approx(
-      x = ht_zmax,
-      y = swe_peak,
-      xout = 20
-    )$y,
-    
-    swe.40 = approx(
-      x = ht_zmax,
-      y = swe_peak,
-      xout = 40
-    )$y
-  ) %>%
-  mutate(
-    change.m = swe.40 - swe.20,
-    change.cm = change.m * 100,
-    change.percent = (change.m / swe.20) * 100
-  )
-
-ht.contrast
-
-# ----- combined model ------
+# --- combined model ---
 ht.pred.combined <- map_dfr(
   levels(df.pred$fire),
   function(fire.name) {
@@ -1186,7 +1133,7 @@ ht.pred.combined <- map_dfr(
     })
   }
 )
-#----- identify thresholds/optima -----
+# --- identify thresholds/optima ---
 
 ht.optimum <- ht.pred %>%
   group_by(fire) %>%
@@ -1206,8 +1153,8 @@ ht.optimum <- ht.pred %>%
     )
   )
 
-ht.optimum
 
+# --- plot ---
 p.ht.opt <- ggplot(
   ht.pred,
   aes(
@@ -1372,10 +1319,7 @@ skew.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
 })
 
 
-# --- rug sample ---
-
-set.seed(61)
-
+# --- rug ---
 skew.rug <- df.50 %>%
   filter(
     ht_zskew >= -1,
@@ -1385,108 +1329,7 @@ skew.rug <- df.50 %>%
   slice_sample(n = 3000) %>%
   ungroup()
 
-
-# --- plot ---
-
-ggplot(
-  skew.pred,
-  aes(
-    x = ht_zskew,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
-) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_rug(
-    data = skew.rug,
-    aes(x = ht_zskew, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  facet_wrap(
-    ~ fire,
-    nrow = 1
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  scale_x_continuous(
-    limits = c(-1, 3),
-    breaks = -1:3
-  ) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Canopy height skewness',
-    y = 'Predicted peak SWE (m)'
-  ) +
-  theme_classic()
-
-
-# ----- overall magnitude -----
-
-skew.effect.range <- skew.pred %>%
-  group_by(fire) %>%
-  summarise(
-    min.pred.swe = min(swe_peak),
-    skew.at.min = ht_zskew[which.min(swe_peak)],
-    
-    max.pred.swe = max(swe_peak),
-    skew.at.max = ht_zskew[which.max(swe_peak)],
-    
-    swe.range.cm = (max.pred.swe - min.pred.swe) * 100,
-    relative.range = ((max.pred.swe - min.pred.swe) /
-                        min.pred.swe) * 100
-  )
-
-skew.effect.range
-
-
-# --- examine distribution to choose standardized contrast ---
-
-df.50 %>%
-  group_by(fire) %>%
-  summarise(
-    min = min(ht_zskew, na.rm = TRUE),
-    p01 = quantile(ht_zskew, 0.01, na.rm = TRUE),
-    p05 = quantile(ht_zskew, 0.05, na.rm = TRUE),
-    p25 = quantile(ht_zskew, 0.25, na.rm = TRUE),
-    median = median(ht_zskew, na.rm = TRUE),
-    p75 = quantile(ht_zskew, 0.75, na.rm = TRUE),
-    p95 = quantile(ht_zskew, 0.95, na.rm = TRUE),
-    p99 = quantile(ht_zskew, 0.99, na.rm = TRUE),
-    max = max(ht_zskew, na.rm = TRUE)
-  )
-
-skew.contrast <- skew.pred %>%
-  group_by(fire) %>%
-  summarise(
-    swe.0 = approx(
-      x = ht_zskew,
-      y = swe_peak,
-      xout = 0
-    )$y,
-    
-    swe.1 = approx(
-      x = ht_zskew,
-      y = swe_peak,
-      xout = 1
-    )$y
-  ) %>%
-  mutate(
-    change.m = swe.1 - swe.0,
-    change.cm = change.m * 100,
-    change.percent = (change.m / swe.0) * 100
-  )
-
-skew.contrast
-
-# ----- combined model -----
+# --- combined model ---
 skew.pred.combined <- map_dfr(levels(df.pred$fire), function(fire.name) {
   
   # prediction sample for fire
@@ -1531,14 +1374,14 @@ skew.pred.combined <- map_dfr(levels(df.pred$fire), function(fire.name) {
   })
 })
 
-# ----- thresholds/optima -----
-skew.pred.stageC <- skew.pred %>%
+# --- thresholds/optima ---
+skew.pred.stage <- skew.pred %>%
   filter(
     ht_zskew >= -1,
     ht_zskew <= 3
   )
 
-skew.optimum <- skew.pred.stageC %>%
+skew.optimum <- skew.pred.stage %>%
   group_by(fire) %>%
   summarise(
     max.swe = max(swe_peak),
@@ -1556,7 +1399,6 @@ skew.optimum <- skew.pred.stageC %>%
     )
   )
 
-skew.optimum
 
 get_high_swe_ranges <- function(data, xvar) {
   
@@ -1580,17 +1422,17 @@ get_high_swe_ranges <- function(data, xvar) {
     )
 }
 
-skew.ranges <- skew.pred.stageC %>%
+skew.ranges <- skew.pred.stage %>%
   group_by(fire) %>%
   group_modify(
     ~ get_high_swe_ranges(.x, 'ht_zskew')
   ) %>%
   ungroup()
 
-skew.ranges
 
-ggplot(
-  skew.pred.stageC,
+
+p.skew.opt <- ggplot(
+  skew.pred.stage,
   aes(
     x = ht_zskew,
     y = swe_peak,
@@ -1676,195 +1518,8 @@ ggplot(
   ) +
   theme_classic()
 
-
+p.skew.opt
 # ------------------ combined plot - without thresholds - ------------------
-# --- gap percent ---
-library(patchwork)
-p.gap <- ggplot(
-  gap.pred,
-  aes(
-    x = gap_percent,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
-) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_rug(
-    data = gap.rug,
-    aes(x = gap_percent, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  facet_wrap(
-    ~ fire,
-    nrow = 1,
-    labeller = labeller(
-      fire = c(
-        'caldor' = 'Caldor',
-        'castle' = 'Castle',
-        'creek' = 'Creek'
-      )
-    )
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Canopy gap (%)',
-    y = 'Predicted peak SWE (m)'
-  ) +
-  theme_classic()
-
-
-# --- maximum canopy height ---
-
-p.ht <- ggplot(
-  ht.pred,
-  aes(
-    x = ht_zmax,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
-) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_rug(
-    data = ht.rug,
-    aes(x = ht_zmax, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  facet_wrap(
-    ~ fire,
-    nrow = 1,
-    labeller = labeller(
-      fire = c(
-        'caldor' = 'Caldor',
-        'castle' = 'Castle',
-        'creek' = 'Creek'
-      )
-    )
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Maximum canopy height (m)',
-    y = 'Predicted peak SWE (m)'
-  ) +
-  theme_classic()
-
-
-# --- distance to canopy ---
-
-p.dist <- ggplot(
-  dist.canopy.pred,
-  aes(
-    x = gap_dist_to_canopy_mean,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
-) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_rug(
-    data = dist.canopy.rug,
-    aes(x = gap_dist_to_canopy_mean, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  facet_wrap(
-    ~ fire,
-    nrow = 1,
-    labeller = labeller(
-      fire = c(
-        'caldor' = 'Caldor',
-        'castle' = 'Castle',
-        'creek' = 'Creek'
-      )
-    )
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  scale_x_continuous(
-    limits = c(1, 10),
-    breaks = seq(2, 10, 2)
-  ) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Mean distance to canopy (m)',
-    y = 'Predicted peak SWE (m)'
-  ) +
-  theme_classic()
-
-
-# --- canopy height skewness ---
-
-p.skew <- ggplot(
-  skew.pred,
-  aes(
-    x = ht_zskew,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
-) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_rug(
-    data = skew.rug,
-    aes(x = ht_zskew, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  facet_wrap(
-    ~ fire,
-    nrow = 1,
-    labeller = labeller(
-      fire = c(
-        'caldor' = 'Caldor',
-        'castle' = 'Castle',
-        'creek' = 'Creek'
-      )
-    )
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  scale_x_continuous(
-    limits = c(-1, 3),
-    breaks = -1:3
-  ) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Canopy height skewness',
-    y = 'Predicted peak SWE (m)'
-  ) +
-  theme_classic()
-
 # -- common theme for combined canopy figure ---
 
 canopy.theme <- theme_classic() +
@@ -1988,250 +1643,21 @@ optimum.theme <- theme_classic() +
     )
   )
 
-
-# --- A. canopy gap ---
-
-p.gap.opt <- ggplot(
-  gap.pred,
-  aes(
-    x = gap_percent,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
+# create spacer for where top castle panel would be
+gap.row <- (
+  p.gap.opt |
+    plot_spacer()
 ) +
-  geom_rect(
-    data = gap.optimum,
-    aes(
-      xmin = gap.95.low,
-      xmax = gap.95.high,
-      ymin = -Inf,
-      ymax = Inf,
-      fill = fire
-    ),
-    inherit.aes = FALSE,
-    alpha = 0.08,
-    color = NA
-  ) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_hline(
-    data = gap.optimum,
-    aes(
-      yintercept = threshold.95,
-      color = fire
-    ),
-    linetype = 'dashed',
-    linewidth = 0.6
-  ) +
-  geom_line(
-    data = gap.pred.combined,
-    aes(
-      x = gap_percent,
-      y = swe_peak
-    ),
-    inherit.aes = FALSE,
-    color = 'grey',
-    linetype = 'solid',
-    linewidth = 0.8
-  ) +
-  geom_rug(
-    data = gap.rug,
-    aes(x = gap_percent, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  facet_wrap(
-    ~ fire,
-    nrow = 1,
-    labeller = labeller(
-      fire = c(
-        'caldor' = 'Caldor',
-        'castle' = 'Castle',
-        'creek' = 'Creek'
-      )
-    )
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Canopy gap (%)',
-    tag = 'A'
-  ) +
-  optimum.theme
-
-
-# --- B. maximum canopy height ---
-
-p.ht.opt <- ggplot(
-  ht.pred,
-  aes(
-    x = ht_zmax,
-    y = swe_peak,
-    color = fire,
-    fill = fire
+  plot_layout(
+    widths = c(2, 1)
   )
-) +
-  geom_rect(
-    data = ht.optimum,
-    aes(
-      xmin = ht.95.low,
-      xmax = ht.95.high,
-      ymin = -Inf,
-      ymax = Inf,
-      fill = fire
-    ),
-    inherit.aes = FALSE,
-    alpha = 0.08,
-    color = NA
-  ) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_hline(
-    data = ht.optimum,
-    aes(
-      yintercept = threshold.95,
-      color = fire
-    ),
-    linetype = 'dashed',
-    linewidth = 0.6
-  ) +
-  geom_line(
-    data = ht.pred.combined,
-    aes(
-      x = ht_zmax,
-      y = swe_peak
-    ),
-    inherit.aes = FALSE,
-    color = 'grey',
-    linetype = 'solid',
-    linewidth = 0.8
-  ) +
-  geom_rug(
-    data = ht.rug,
-    aes(x = ht_zmax, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  facet_wrap(
-    ~ fire,
-    nrow = 1,
-    labeller = labeller(
-      fire = c(
-        'caldor' = 'Caldor',
-        'castle' = 'Castle',
-        'creek' = 'Creek'
-      )
-    )
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Maximum canopy height (m)',
-    tag = 'B'
-  ) +
-  optimum.theme
 
-
-# --- C. canopy height skewness ---
-
-p.skew.opt <- ggplot(
-  skew.pred.stageC,
-  aes(
-    x = ht_zskew,
-    y = swe_peak,
-    color = fire,
-    fill = fire
-  )
-) +
-  geom_rect(
-    data = skew.ranges,
-    aes(
-      xmin = range.low,
-      xmax = range.high,
-      ymin = -Inf,
-      ymax = Inf,
-      fill = fire
-    ),
-    inherit.aes = FALSE,
-    alpha = 0.08,
-    color = NA
-  ) +
-  geom_ribbon(
-    aes(ymin = lower, ymax = upper),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  geom_hline(
-    data = skew.optimum,
-    aes(
-      yintercept = threshold.95,
-      color = fire
-    ),
-    linetype = 'dashed',
-    linewidth = 0.6
-  ) +
-  geom_line(
-    data = skew.pred.combined,
-    aes(
-      x = ht_zskew,
-      y = swe_peak
-    ),
-    inherit.aes = FALSE,
-    color = 'grey',
-    linetype = 'solid',
-    linewidth = 0.8
-  ) +
-  geom_rug(
-    data = skew.rug,
-    aes(x = ht_zskew, color = fire),
-    inherit.aes = FALSE,
-    sides = 'b',
-    alpha = 0.08
-  ) +
-  facet_wrap(
-    ~ fire,
-    nrow = 1,
-    labeller = labeller(
-      fire = c(
-        'caldor' = 'Caldor',
-        'castle' = 'Castle',
-        'creek' = 'Creek'
-      )
-    )
-  ) +
-  scale_color_manual(values = fire.colors) +
-  scale_fill_manual(values = fire.colors) +
-  scale_x_continuous(
-    limits = c(-1, 3),
-    breaks = -1:3
-  ) +
-  guides(color = 'none', fill = 'none') +
-  labs(
-    x = 'Canopy height skewness',
-    tag = 'C'
-  ) +
-  optimum.theme
-
-# --- combine ---
 canopy.optimum.fig <- (
-  p.gap.opt /
+  gap.row /
     p.ht.opt /
     p.skew.opt
 ) &
+  optimum.theme &
   scale_y_continuous(
     limits = c(0.38, 0.82),
     breaks = seq(0.4, 0.8, 0.1)
@@ -2244,22 +1670,7 @@ canopy.optimum.fig <- (
     plot.tag.position = c(0.01, 0.98)
   )
 
-y.title <- wrap_elements(
-  grid::textGrob(
-    'Predicted peak SWE (m)',
-    rot = 90,
-    gp = grid::gpar(fontsize = 11)
-  )
-)
-
-canopy.optimum.fig.final <- y.title + canopy.optimum.fig +
-  plot_layout(
-    widths = c(0.04, 1)
-  )
-
-canopy.optimum.fig.final
-
-
+canopy.optimum.fig
 # ------------------ effect.table ----------------
 effect.table <- bind_rows(
   
@@ -2325,6 +1736,7 @@ effect.table <- bind_rows(
   )
 
 effect.table
+
 
 
 

@@ -118,7 +118,7 @@ get.metrics.combined <- function(fitted.model, model.name) {
   )
 }
 
-cv_bam <- function(formula, data, k_folds = 5) {
+cv_bam_sdd <- function(formula, data, k_folds = 5) {
   
   # empty dataframes to store results
   cv.results <- data.frame()
