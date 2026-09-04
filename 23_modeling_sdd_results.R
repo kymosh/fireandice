@@ -73,6 +73,11 @@ fire.colors <- c(
   'Creek' = '#c55488'
 )
 
+model.colors <- c(
+  'Fire Severity' = '#915984',
+  'Canopy' = '#98ba3c',
+  'Topography' = '#009ec4'
+)
 
 elev.colors <- c(
   'Caldor_< 1750 m' = '#3b435c',
@@ -279,14 +284,14 @@ df.500.balanced <- df.500.balanced.0 %>%
 #                         discrete = TRUE)
 
 # OLD
-model.sdd.gapbyfire <- bam(sdd ~ wy * fire +
-                   s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) +
-                   s(gap_percent, by = fire, k = 20) +
-                   ti(gap_percent, elevation, k = c(10, 10)) +
-                   s(swe_peak, k = 20),
-                 data = df.500,
-                 method = 'fREML',
-                 discrete = TRUE)
+# model.sdd.gapbyfire <- bam(sdd ~ wy * fire +
+#                    s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) +
+#                    s(gap_percent, by = fire, k = 20) +
+#                    ti(gap_percent, elevation, k = c(10, 10)) +
+#                    s(swe_peak, k = 20),
+#                  data = df.500,
+#                  method = 'fREML',
+#                  discrete = TRUE)
 
 # FINAL
 model.sdd <- bam(sdd ~ wy * fire +
@@ -309,15 +314,12 @@ model.sdd.burned <- bam(sdd ~ wy * fire + burned * fire +
 
 
 
-
-
-
 # ==============================================================================
 # Model Evaluation/
 # ==============================================================================
 # ----- Cross-fold Validation -----
 # -- simple model ---
-cv.sdd <- cv_bam(formula = formula(model.sdd),
+cv.sdd <- cv_bam_sdd(formula = formula(model.sdd),
                  data = df.500,
                  k_folds = 5)
 
@@ -352,8 +354,7 @@ cv.sdd.summary <- bind_rows(
 cv.sdd.summary
 
 # --- burned model ---
-# -- simple model ---
-cv.sdd <- cv_bam(formula = formula(model.sdd.burned),
+cv.sdd <- cv_bam_sdd(formula = formula(model.sdd.burned),
                  data = df.500,
                  k_folds = 5)
 
@@ -386,6 +387,7 @@ cv.sdd.summary <- bind_rows(
 )
 
 cv.sdd.summary
+
 
 # ==============================================================================
 # Generate Predictions - Fire-specific

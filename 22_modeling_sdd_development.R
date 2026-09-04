@@ -38,6 +38,13 @@ burn.cols <- c(
   'unburned' = 'turquoise4',
   'burned' = 'firebrick2'
 )
+
+model.colors <- c(
+  'Fire Severity' = '#915984',
+  'Canopy' = '#98ba3c',
+  'Topography' = '#009ec4'
+)
+
 # ----- helper functions -----
 get.metrics <- function(fitted.model, model.name, fire.name) {
   
@@ -233,6 +240,7 @@ all.vars <- c(
   'gap_percent',
   'slope',
   'rad_dtm_accum',
+  'rad_dtm_melt',
   'tpi150',
   'tpi510',
   'tpi1200',
@@ -271,6 +279,7 @@ corrplot(
 topo.vars <- c(
   'slope',
   'rad_dtm_accum',
+  'rad_dtm_melt',
   'tpi150',
   'tpi510',
   'tpi1200',
@@ -293,7 +302,7 @@ for (fire.name in unique(df.500.raw$fire)) {
                       wy +
                       s(elevation, k = 10),
                     data = fire.df,
-                    method = 'ML')
+                    method = 'fREML')
   
   topo.results <- bind_rows(
     topo.results,
@@ -317,7 +326,7 @@ for (fire.name in unique(df.500.raw$fire)) {
     model <- bam(
       model.formula,
       data = fire.df,
-      method = 'ML'
+      method = 'fREML'
     )
     
     topo.results <- bind_rows(
@@ -1773,6 +1782,309 @@ ggplot(
     legend.position = 'top'
   )
 
+# ------------------------- cross-validation -------------------------
+
+cv_bam_sdd_stage1 <- function(formula, data, k_folds = 5) {
+  
+  cv.results <- data.frame()
+  
+  for (fold in 1:k_folds) {
+    
+    train <- data %>%
+      filter(fold_id != fold)
+    
+    test <- data %>%
+      filter(fold_id == fold)
+    
+    model <- bam(
+      formula,
+      data = train,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    # prediction on original SDD scale
+    pred <- predict(
+      model,
+      newdata = test,
+      type = 'response'
+    )
+    
+    obs <- test$sdd
+    
+    # performance metrics
+    rmse <- sqrt(
+      mean(
+        (obs - pred)^2,
+        na.rm = TRUE
+      )
+    )
+    
+    r2 <- cor(
+      obs,
+      pred,
+      use = 'complete.obs'
+    )^2
+    
+    cv.results <- bind_rows(
+      cv.results,
+      data.frame(
+        fold = fold,
+        RMSE = rmse,
+        R2 = r2
+      )
+    )
+  }
+  
+  cv.results
+}
+
+# --- stage 1 cross-validation ---
+fires <- c('Caldor', 'Creek', 'Castle')
+
+df <- df.500.balanced # OR df.500.balanced
+
+stage.one.sdd.cv.0 <- data.frame()
+
+for (fire.name in fires) {
+  
+  fire.df <- df %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  
+  # ---------------- topography ----------------
+  
+  topo.formula <- sdd ~
+    wy +
+    s(elevation) +
+    s(rad_dtm_accum) +
+    s(slope) +
+    s(aspect_sin) +
+    s(tpi1200)
+  
+  
+  # ---------------- canopy ----------------
+  
+  if (fire.name == 'Caldor') {
+    
+    canopy.formula <- sdd ~
+      wy +
+      s(gap_dist_to_canopy_mean) +
+      s(ht_zkurt) +
+      s(ht_zpcum6) +
+      s(ht_zmax) +
+      s(gap_percent)
+    
+  } else if (fire.name == 'Castle') {
+    
+    canopy.formula <- sdd ~
+      wy +
+      s(ht_zkurt) +
+      s(gap_percent) +
+      s(ht_zmax) +
+      s(ht_zskew) +
+      s(ht_zpcum2)
+    
+  } else if (fire.name == 'Creek') {
+    
+    canopy.formula <- sdd ~
+      wy +
+      s(ht_zpcum2) +
+      s(ht_zmax) +
+      s(gap_percent) +
+      s(ht_zpcum6)
+  }
+  
+  
+  # ---------------- fire severity ----------------
+  
+  cbi.formula <- sdd ~
+    wy +
+    s(cbibc)
+  
+  
+  # ---------------- run CV ----------------
+  
+  topo.cv <- cv_bam_sdd_stage1(
+    formula = topo.formula,
+    data = fire.df
+  ) %>%
+    mutate(
+      fire = fire.name,
+      model = 'Topography'
+    )
+  
+  
+  canopy.cv <- cv_bam_sdd_stage1(
+    formula = canopy.formula,
+    data = fire.df
+  ) %>%
+    mutate(
+      fire = fire.name,
+      model = 'Canopy'
+    )
+  
+  
+  cbi.cv <- cv_bam_sdd_stage1(
+    formula = cbi.formula,
+    data = fire.df
+  ) %>%
+    mutate(
+      fire = fire.name,
+      model = 'Fire Severity'
+    )
+  
+  
+  stage.one.sdd.cv.0 <- bind_rows(
+    stage.one.sdd.cv.0,
+    topo.cv,
+    canopy.cv,
+    cbi.cv
+  )
+}
+
+stage.one.sdd.cv <- stage.one.sdd.cv.0 %>%
+  mutate(
+    fire = factor(
+      fire,
+      levels = fires
+    ),
+    model = factor(
+      model,
+      levels = c(
+        'Topography',
+        'Canopy',
+        'Fire Severity'
+      )
+    )
+  )
+
+
+stage.one.sdd.cv.summary <- stage.one.sdd.cv %>%
+  group_by(fire, model) %>%
+  summarise(
+    RMSE_mean = mean(RMSE),
+    RMSE_sd = sd(RMSE),
+    R2_mean = mean(R2),
+    R2_sd = sd(R2),
+    .groups = 'drop'
+  ) %>%
+  arrange(fire, desc(R2_mean))
+
+stage.one.sdd.cv.summary
+
+# ----- point + error bar plot -----
+
+p.stage1.sdd.r2 <- ggplot() +
+  geom_point(
+    data = stage.one.sdd.cv,
+    aes(
+      x = model,
+      y = R2,
+      color = model
+    ),
+    position = position_jitter(width = 0.08),
+    alpha = 0.35,
+    size = 1.8
+  ) +
+  geom_errorbar(
+    data = stage.one.sdd.cv.summary,
+    aes(
+      x = model,
+      ymin = R2_mean - R2_sd,
+      ymax = R2_mean + R2_sd,
+      color = model
+    ),
+    width = 0.12,
+    linewidth = 0.6
+  ) +
+  geom_point(
+    data = stage.one.sdd.cv.summary,
+    aes(
+      x = model,
+      y = R2_mean,
+      color = model
+    ),
+    size = 3
+  ) +
+  scale_color_manual(
+    values = model.colors
+  ) +
+  facet_wrap(~ fire) +
+  labs(
+    x = NULL,
+    y = expression('Cross-validated R'^2)
+  ) +
+  theme_classic() +
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(
+      face = 'bold',
+      size = 11
+    ),
+    axis.text.x = element_text(
+      angle = 25,
+      hjust = 1
+    ),
+    legend.position = 'none'
+  )
+
+p.stage1.sdd.r2
+
+# ----- grouped bar plot -----
+
+p.stage1.sdd.presentation <- ggplot(
+  stage.one.sdd.cv.summary,
+  aes(
+    x = fire,
+    y = R2_mean,
+    fill = model
+  )
+) +
+  geom_col(
+    position = position_dodge(width = 0.8),
+    width = 0.7
+  ) +
+  geom_errorbar(
+    aes(
+      ymin = R2_mean - R2_sd,
+      ymax = R2_mean + R2_sd
+    ),
+    position = position_dodge(width = 0.8),
+    width = 0.18,
+    linewidth = 0.7
+  ) +
+  scale_fill_manual(
+    values = model.colors
+  ) +
+  labs(
+    x = NULL,
+    y = expression('Cross-validated R'^2),
+    fill = NULL
+  ) +
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(
+      size = 13
+    ),
+    axis.text = element_text(
+      size = 11
+    ),
+    axis.text.x = element_text(
+      face = 'bold'
+    ),
+    legend.position = 'top',
+    legend.text = element_text(
+      size = 11
+    ),
+    legend.key.size = unit(
+      0.6,
+      'cm'
+    )
+  )
+
+p.stage1.sdd.presentation
 # ==============================================================================
 # Stage 2 Modeling - Combined Model
 # ==============================================================================
@@ -1781,6 +2093,7 @@ ggplot(
 topo.vars <- c(
   'slope',
   'rad_dtm_accum',
+  'rad_dtm_melt',
   'tpi150',
   'tpi510',
   'tpi1200',

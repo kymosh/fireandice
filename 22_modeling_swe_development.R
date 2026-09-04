@@ -2,9 +2,9 @@ packages <- c('dplyr', 'ranger', 'mgcv', 'ggplot2', 'pdp')
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
-# ==============================================================================
-# Initialize Dataframe
-# ==============================================================================
+
+# ============= Initialize Dataframe =============
+
 # get dataframe
 set.seed(61)
 dir <- 'data/processed/processed/rds/' 
@@ -55,6 +55,13 @@ burn.cols <- c(
   'burned' = 'firebrick2'
 )
  
+
+model.colors <- c(
+  'Fire Severity' = '#915984',
+  'Canopy' = '#98ba3c',
+  'Topography' = '#009ec4'
+)
+
 rm(df.50.raw)
 
 # ----- helper functions -----
@@ -90,24 +97,19 @@ get.metrics.combined <- function(fitted.model, model.name) {
   )
 }
 
-cv_bam <- function(formula, data, k_folds = 5) {
+cv_bam_swe <- function(formula, data, k_folds = 5) {
   
-  # empty dataframes to store results
   cv.results <- data.frame()
   cv.fire.results <- data.frame()
   
-  # loop through each spatial fold
   for (fold in 1:k_folds) {
     
-    # use all other folds to train the model
     train <- data %>%
       filter(fold_id != fold)
     
-    # hold out the current fold for model evaluation
     test <- data %>%
       filter(fold_id == fold)
     
-    # fit GAM to training data
     model <- bam(
       formula,
       data = train,
@@ -115,18 +117,18 @@ cv_bam <- function(formula, data, k_folds = 5) {
       discrete = TRUE
     )
     
-    # predict response for held-out fold
-    pred <- predict(
+    # prediction on sqrt(SWE) scale
+    pred.sqrt <- predict(
       model,
       newdata = test,
       type = 'response'
     )
     
-    # get observed response exactly as specified on the left side of the model formula
-    obs <- eval(
-      formula[[2]],
-      envir = test
-    )
+    # back-transform to SWE
+    pred <- pred.sqrt^2
+    
+    # observed SWE on original scale
+    obs <- test$swe_peak
     
     # ----- overall fold metrics -----
     
@@ -160,7 +162,7 @@ cv_bam <- function(formula, data, k_folds = 5) {
         pred = pred
       ) %>%
       group_by(fire) %>%
-      summarize(
+      summarise(
         n = n(),
         RMSE = sqrt(
           mean(
@@ -185,16 +187,14 @@ cv_bam <- function(formula, data, k_folds = 5) {
     )
   }
   
-  # summarize overall performance across folds
   cv.summary <- cv.results %>%
-    summarize(
+    summarise(
       RMSE_mean = mean(RMSE),
       RMSE_sd = sd(RMSE),
       R2_mean = mean(R2),
       R2_sd = sd(R2)
     )
   
-  # return all results
   list(
     fold.results = cv.results,
     fire.results = cv.fire.results,
@@ -241,9 +241,9 @@ corrplot(
   tl.col = 'black',
   diag = FALSE
 )
-# ==============================================================================
-# Stage 1 Modeling - Single family predictors
-# ==============================================================================
+
+# ============= Stage 1 Modeling - Single family predictors =============
+
 
 # ----- plot peak swe for all fires -----
 plot.df <- df.50.raw %>%
@@ -1695,7 +1695,7 @@ stage.one.results <- data.frame()
 # that have the same fixed effects
 fires <- c('Castle', 'Caldor', 'Creek')
 
-df <- df.50 # df.50 OR df.50.balanced
+df <- df.50.balanced # df.50 OR df.50.balanced
 stage.one.results <- data.frame()
 
 for (fire.name in fires) {
@@ -1796,20 +1796,315 @@ ggplot(
     legend.position = 'top'
   )
 
-old.stage.one.results <- readRDS('data/processed/processed/rds/stage_one_results_swe_k20_balancedelev.rds')
-saveRDS(stage.one.results, paste0(dir, 'stage_one_results_swe_k20.rds'))
+#saveRDS(stage.one.results, paste0(dir, 'stage_one_results_swe_k20.rds'))
 
+# ----- cross-validation function for stage 1 SWE models -----
 
+cv_bam_swe_stage1 <- function(formula, data, k_folds = 5) {
+  
+  cv.results <- data.frame()
+  
+  for (fold in 1:k_folds) {
+    
+    train <- data %>%
+      filter(fold_id != fold)
+    
+    test <- data %>%
+      filter(fold_id == fold)
+    
+    model <- bam(
+      formula,
+      data = train,
+      method = 'fREML',
+      discrete = TRUE
+    )
+    
+    # prediction on sqrt(SWE) scale
+    pred.sqrt <- predict(
+      model,
+      newdata = test,
+      type = 'response'
+    )
+    
+    # back-transform to original SWE scale
+    pred <- pred.sqrt^2
+    
+    obs <- test$swe_peak
+    
+    # performance metrics
+    rmse <- sqrt(
+      mean(
+        (obs - pred)^2,
+        na.rm = TRUE
+      )
+    )
+    
+    r2 <- cor(
+      obs,
+      pred,
+      use = 'complete.obs'
+    )^2
+    
+    cv.results <- bind_rows(
+      cv.results,
+      data.frame(
+        fold = fold,
+        RMSE = rmse,
+        R2 = r2
+      )
+    )
+  }
+  
+  cv.results
+}
 
+# ----- stage 1 cross-validation -----
 
+fires <- c('Caldor', 'Creek', 'Castle')
 
+df <- df.50.balanced 
 
+stage.one.cv.0 <- data.frame()
 
+for (fire.name in fires) {
+  
+  fire.df <- df %>%
+    filter(fire == fire.name) %>%
+    droplevels()
+  
+  
+  # ---------------- topography ----------------
+  
+  topo.formula <- sqrt(swe_peak) ~
+    wy +
+    s(elevation, k = 20) +
+    s(rad_dtm_accum, k = 20) +
+    s(slope, k = 20) +
+    s(aspect_sin, k = 20)
+  
+  
+  # ---------------- canopy ----------------
+  
+  if (fire.name == 'Caldor') {
+    
+    canopy.formula <- sqrt(swe_peak) ~
+      wy +
+      s(gap_percent, k = 20) +
+      s(ht_zpcum2, k = 20) +
+      s(ht_zmax, k = 20) +
+      s(gap_dist_to_canopy_mean, k = 20) +
+      s(ht_zpcum6, k = 20)
+    
+  } else if (fire.name == 'Castle') {
+    
+    canopy.formula <- sqrt(swe_peak) ~
+      wy +
+      s(ht_zpcum2, k = 20) +
+      s(gap_percent, k = 20) +
+      s(ht_zmax, k = 20) +
+      s(ht_zskew, k = 20)
+    
+  } else if (fire.name == 'Creek') {
+    
+    canopy.formula <- sqrt(swe_peak) ~
+      wy +
+      s(ht_zpcum2, k = 20) +
+      s(ht_zmax, k = 20) +
+      s(ht_zskew, k = 20)
+  }
+  
+  
+  # ---------------- burned severity ----------------
+  
+  cbi.formula <- sqrt(swe_peak) ~
+    wy +
+    s(cbibc, k = 20)
+  
+  
+  # ---------------- run CV ----------------
+  
+  topo.cv <- cv_bam_swe_stage1(
+    formula = topo.formula,
+    data = fire.df
+  ) %>%
+    mutate(
+      fire = fire.name,
+      model = 'Topography'
+    )
+  
+  
+  canopy.cv <- cv_bam_swe_stage1(
+    formula = canopy.formula,
+    data = fire.df
+  ) %>%
+    mutate(
+      fire = fire.name,
+      model = 'Canopy'
+    )
+  
+  
+  cbi.cv <- cv_bam_swe_stage1(
+    formula = cbi.formula,
+    data = fire.df
+  ) %>%
+    mutate(
+      fire = fire.name,
+      model = 'Fire Severity'
+    )
+  
+  
+  stage.one.cv.0 <- bind_rows(
+    stage.one.cv.0,
+    topo.cv,
+    canopy.cv,
+    cbi.cv
+  )
+}
 
+stage.one.cv <- stage.one.cv.0 %>%
+  mutate(
+    fire = factor(
+      fire,
+      levels = fires
+    ),
+    model = factor(
+      model,
+      levels = c(
+        'Topography',
+        'Canopy',
+        'Fire Severity'
+      )
+    )
+  )
 
-# ==============================================================================
-# Stage 2 Modeling - Combined Model
-# ==============================================================================
+stage.one.cv.summary <- stage.one.cv %>%
+  group_by(fire, model) %>%
+  summarise(
+    RMSE_mean = mean(RMSE),
+    RMSE_sd = sd(RMSE),
+    R2_mean = mean(R2),
+    R2_sd = sd(R2),
+    .groups = 'drop'
+  ) %>%
+  arrange(fire, desc(R2_mean))
+
+stage.one.cv.summary
+
+# ----- Box Plot -----
+
+p.stage1.r2 <- ggplot() +
+  geom_point(
+    data = stage.one.cv,
+    aes(
+      x = model,
+      y = R2,
+      color = model
+    ),
+    position = position_jitter(width = 0.08),
+    alpha = 0.35,
+    size = 1.8
+  ) +
+  geom_errorbar(
+    data = stage.one.cv.summary,
+    aes(
+      x = model,
+      ymin = R2_mean - R2_sd,
+      ymax = R2_mean + R2_sd,
+      color = model
+    ),
+    width = 0.12,
+    linewidth = 0.6
+  ) +
+  geom_point(
+    data = stage.one.cv.summary,
+    aes(
+      x = model,
+      y = R2_mean,
+      color = model
+    ),
+    size = 3
+  ) +
+  scale_color_manual(
+    values = model.colors
+  ) +
+  facet_wrap(~ fire) +
+  labs(
+    x = NULL,
+    y = expression('Cross-validated R'^2)
+  ) +
+  theme_classic() +
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(
+      face = 'bold',
+      size = 11
+    ),
+    axis.text.x = element_text(
+      angle = 25,
+      hjust = 1
+    ),
+    legend.position = 'none'
+  )
+
+p.stage1.r2
+
+# ----- bar plot -----
+p.stage1.presentation <- ggplot(
+  stage.one.cv.summary,
+  aes(
+    x = fire,
+    y = R2_mean,
+    fill = model
+  )
+) +
+  geom_col(
+    position = position_dodge(width = 0.8),
+    width = 0.7
+  ) +
+  geom_errorbar(
+    aes(
+      ymin = R2_mean - R2_sd,
+      ymax = R2_mean + R2_sd
+    ),
+    position = position_dodge(width = 0.8),
+    width = 0.18,
+    linewidth = 0.7
+  ) +
+  scale_y_continuous(
+    limits = c(0, 0.9),
+    breaks = seq(0, 0.9, 0.1),
+    expand = expansion(mult = c(0, 0.02))
+  ) +
+  labs(
+    x = NULL,
+    y = expression('Cross-validated R'^2),
+    fill = NULL
+  ) +
+  scale_fill_manual(values = model.colors) +
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(
+      size = 13
+    ),
+    axis.text = element_text(
+      size = 11
+    ),
+    axis.text.x = element_text(
+      face = 'bold'
+    ),
+    legend.position = 'top',
+    legend.text = element_text(
+      size = 11
+    ),
+    legend.key.size = unit(
+      0.6,
+      'cm'
+    )
+  )
+
+p.stage1.presentation
+# ============= Stage 2 Modeling - Combined Model =============
+
 # --------------- Random Forest to explore interactions ---------------
 # ----- create reduced dataset for RF run -----
 # create a unique spatial frame
