@@ -2080,6 +2080,15 @@ p.stage1.presentation <- ggplot(
     y = expression('Cross-validated R'^2),
     fill = NULL
   ) +
+  geom_text(
+    aes(
+      y = R2_mean + R2_sd,
+      label = sprintf('%.2f', R2_mean)
+    ),
+    position = position_dodge(width = 0.8),
+    vjust = -0.5,
+    size = 4
+  ) +
   scale_fill_manual(values = model.colors) +
   theme_classic() +
   theme(

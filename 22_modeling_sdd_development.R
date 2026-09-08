@@ -2063,6 +2063,16 @@ p.stage1.sdd.presentation <- ggplot(
     y = expression('Cross-validated R'^2),
     fill = NULL
   ) +
+  geom_text(
+    aes(
+      y = R2_mean + R2_sd,
+      label = sprintf('%.2f', R2_mean)
+    ),
+    position = position_dodge(width = 0.8),
+    vjust = -0.5,
+    size = 4
+  ) +
+  
   theme_classic() +
   theme(
     axis.title.y = element_text(
