@@ -1427,3 +1427,463 @@ ggplot(
 
 
 cor(df.raw$cbibc, df.raw$ht_zmax)
+
+
+# ==============================================================================
+# Generate Predictions - OLD
+# ==============================================================================
+# ------------------------ Prediction for gap percent for * realistic canopy conditions * ---------------------
+# ----- build lookup table * for gap percent * -----
+
+# Create a lookup table describing the typical canopy structure associated with different levels of canopy gap within each fire.
+# This is used later to avoid predicting SWE for unrealistic combinations of correlated canopy variables.
+
+canopy.lookup <- df.50 %>%
+  
+  # Calculate gap bins separately within each fire so that the relationships
+  # between gap and the other canopy metrics can differ among fires.
+  group_by(fire) %>%
+  
+  # Divide observations within each fire into 100 approximately equal-sized
+  # groups based on gap_percent.
+  mutate(
+    gap.bin = ntile(gap_percent, 100)
+  ) %>%
+  
+  # Summarize canopy conditions within each gap bin and fire.
+  group_by(fire, gap.bin) %>%
+  summarize(
+    
+    # Mean gap percentage represented by each bin.
+    gap_lookup = mean(gap_percent, na.rm = TRUE),
+    
+    # Typical maximum canopy height associated with that amount of gap.
+    ht_lookup = mean(ht_zmax, na.rm = TRUE),
+    
+    # Typical distance to canopy associated with that amount of gap.
+    dist_lookup = mean(
+      gap_dist_to_canopy_mean,
+      na.rm = TRUE
+    ),
+    
+    .groups = 'drop'
+  )
+
+
+# ----- prediction grid for gap percent -----
+
+# Create all combinations of fire, water year, and burn status at which predictions will be generated. Gap percentage varies from 0 to 100%.
+# This creates: 3 fires x 3 water years x 2 burn classes x 101 gap values = 1818 rows.
+
+pred.gap.real <- expand.grid(
+  fire = levels(df.50$fire),
+  wy = levels(df.50$wy),
+  burned = levels(df.50$burned),
+  gap_percent = seq(0, 100, length.out = 101)
+) %>%
+  as_tibble()
+
+
+# static variables - representative value within each fire
+
+# Calculate representative values for predictors that are effectively static landscape/canopy characteristics.
+# Fire-specific medians are used so predictions represent typical conditions within each study area rather than one global condition.
+
+ref.fire.real <- df.50 %>%
+  group_by(fire) %>%
+  summarize(
+    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
+    slope = median(slope, na.rm = TRUE),
+    aspect_sin = median(aspect_sin, na.rm = TRUE),
+    tpi150 = median(tpi150, na.rm = TRUE),
+    tpi2010 = median(tpi2010, na.rm = TRUE),
+    ht_zskew = median(ht_zskew, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+
+# elevation can differ by fire and water year
+
+# Calculate representative elevation separately for each fire and water year. This allows predictions to reflect differences 
+# in the elevation distribution among fire-year combinations, including differences caused by annual snowline filtering.
+
+ref.elev.real <- df.50 %>%
+  group_by(fire, wy) %>%
+  summarize(
+    elevation = median(elevation, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+
+# Add the representative fire-specific and fire-by-year covariate values to every row of the prediction grid.
+
+pred.gap.real <- pred.gap.real %>%
+  left_join(ref.fire.real, by = 'fire') %>%
+  left_join(ref.elev.real, by = c('fire', 'wy'))
+
+
+# Assign realistic values of the canopy variables that are correlated with gap_percent. Rather than holding ht_zmax and 
+# gap_dist_to_canopy_mean atfixed values while gap changes, allow them to vary according to their observed relationship with 
+# gap within each fire.
+
+pred.gap.real <- pred.gap.real %>%
+  group_by(fire) %>%
+  group_modify(~ {
+    
+    # Select the lookup values corresponding to the current fire and arrange them from lowest to highest gap percentage.
+    lookup.fire <- canopy.lookup %>%
+      filter(fire == .y$fire) %>%
+      arrange(gap_lookup)
+    
+    .x %>%
+      mutate(
+        
+        # Interpolate the typical maximum canopy height corresponding to each gap percentage in the prediction grid.
+        ht_zmax = approx(
+          x = lookup.fire$gap_lookup,
+          y = lookup.fire$ht_lookup,
+          xout = gap_percent,
+          rule = 2
+        )$y,
+        
+        # Interpolate the typical mean distance to canopy corresponding to each gap percentage in the prediction grid.
+        gap_dist_to_canopy_mean = approx(
+          x = lookup.fire$gap_lookup,
+          y = lookup.fire$dist_lookup,
+          xout = gap_percent,
+          rule = 2
+        )$y
+        
+      )
+  }) %>%
+  ungroup()
+
+
+# ----- generate model predictions -----
+
+# Predict peak SWE for every row of the prediction grid.
+# Because the response in model.swe is sqrt(swe_peak), these predictions and their standard errors are initially on the square-root SWE scale.
+
+p <- predict(
+  model.swe,
+  newdata = pred.gap.real,
+  type = 'response',
+  se.fit = TRUE
+)
+
+
+# Extract the estimated residual variance from the fitted GAM.
+# This can be used to approximately correct the mean prediction when transforming predictions from sqrt(SWE) back to the original SWE scale.
+
+sigma2 <- summary(model.swe)$scale
+
+
+# Add fitted values, confidence limits, and back-transformed SWE predictions to the prediction dataset.
+
+pred.gap.real <- pred.gap.real %>%
+  mutate(
+    
+    # Predicted value and standard error on the sqrt(SWE) scale.
+    fit.sqrt = p$fit,
+    se.sqrt = p$se.fit,
+    
+    # Approximate 95% confidence interval on the sqrt(SWE) scale.
+    lower.sqrt = fit.sqrt - 1.96 * se.sqrt,
+    upper.sqrt = fit.sqrt + 1.96 * se.sqrt,
+    
+    # direct back-transformation
+    fit.swe = fit.sqrt^2,
+    
+    # approximate expected SWE on original scale
+    # Adds the residual variance to account for bias introduced when squaring predictions from a square-root-transformed response.
+    fit.swe.mean = fit.sqrt^2 + sigma2,
+    
+    # Back-transform the confidence limits.
+    # pmax() prevents a negative lower sqrt(SWE) bound from becoming positive again when squared.
+    lower.swe = pmax(0, lower.sqrt)^2,
+    upper.swe = pmax(0, upper.sqrt)^2
+  )
+
+
+# ----- plot predicted SWE across canopy gap -----
+
+# Plot predicted peak SWE across the realistic canopy-gap gradient.
+# Burned and unburned predictions are generated using identical canopy configurations, so separation between the two curves represents the
+# remaining modeled effect of burn status after accounting for canopy structure and the other model predictors.
+
+# -- all years --
+ggplot(
+  pred.gap.real,
+  aes(
+    x = gap_percent,
+    y = fit.swe,
+    color = burned,
+    fill = burned
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = lower.swe,
+      ymax = upper.swe
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1) +
+  facet_grid(wy ~ fire) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted peak SWE',
+    color = 'Burn status',
+    fill = 'Burn status'
+  ) +
+  theme_bw()
+
+# -- 2023 --
+ggplot(
+  pred.gap.real %>%
+    filter(wy == '2023'),
+  aes(
+    x = gap_percent,
+    y = fit.swe,
+    color = burned,
+    fill = burned
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = lower.swe,
+      ymax = upper.swe
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~fire) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted peak SWE',
+    color = 'Burn status',
+    fill = 'Burn status'
+  ) +
+  theme_bw()
+
+
+# average across years
+pred.gap.real.avg <- pred.gap.real %>%
+  group_by(
+    fire,
+    burned,
+    gap_percent
+  ) %>%
+  summarize(
+    fit.swe = mean(fit.swe),
+    .groups = 'drop'
+  )
+
+ggplot(
+  pred.gap.real.avg,
+  aes(
+    x = gap_percent,
+    y = fit.swe,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~fire) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Mean predicted peak SWE',
+    color = 'Burn status'
+  ) +
+  theme_bw()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ------------------------- Prediction for gap percent * regular pdp * --------------------------
+# ----- prediction grid for gap percent -----
+
+# Create prediction grid across the full range of gap percent for each fire, water year, and burn status
+pred.gap <- expand.grid(
+  fire = levels(df.50$fire),
+  wy = levels(df.50$wy),
+  burned = levels(df.50$burned),
+  gap_percent = seq(0, 100, length.out = 101)
+) %>%
+  as_tibble()
+
+
+# ----- representative values for static predictors -----
+
+# Hold all other static predictors at their median value within each fire
+ref.fire <- df.50 %>%
+  group_by(fire) %>%
+  summarize(
+    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
+    slope = median(slope, na.rm = TRUE),
+    aspect_sin = median(aspect_sin, na.rm = TRUE),
+    tpi150 = median(tpi150, na.rm = TRUE),
+    tpi2010 = median(tpi2010, na.rm = TRUE),
+    ht_zmax = median(ht_zmax, na.rm = TRUE),
+    gap_dist_to_canopy_mean = median(
+      gap_dist_to_canopy_mean,
+      na.rm = TRUE
+    ),
+    ht_zskew = median(ht_zskew, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+
+# ----- representative elevation -----
+
+# Use median elevation within each fire and water year
+ref.elev <- df.50 %>%
+  group_by(fire, wy) %>%
+  summarize(
+    elevation = median(elevation, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+
+# ----- add representative values to prediction dataset -----
+
+pred.gap <- pred.gap %>%
+  left_join(ref.fire, by = 'fire') %>%
+  left_join(ref.elev, by = c('fire', 'wy'))
+
+
+# ----- generate predictions -----
+
+# Predictions are initially on the sqrt(SWE) scale
+p <- predict(
+  model.swe.burned,
+  newdata = pred.gap,
+  type = 'response',
+  se.fit = TRUE
+)
+
+# residual variance for approximate bias correction
+sigma2 <- summary(model.swe.burned)$scale
+
+
+# ----- back-transform predictions to SWE -----
+
+pred.gap <- pred.gap %>%
+  mutate(
+    fit.sqrt = p$fit,
+    se.sqrt = p$se.fit,
+    
+    lower.sqrt = fit.sqrt - 1.96 * se.sqrt,
+    upper.sqrt = fit.sqrt + 1.96 * se.sqrt,
+    
+    # direct back-transformation
+    fit.swe = fit.sqrt^2,
+    
+    # approximate expected SWE after back-transformation
+    fit.swe.mean = fit.sqrt^2 + sigma2,
+    
+    lower.swe = pmax(0, lower.sqrt)^2,
+    upper.swe = pmax(0, upper.sqrt)^2
+  )
+
+# ----- plot -----
+# -- all years --
+ggplot(
+  pred.gap,
+  aes(
+    x = gap_percent,
+    y = fit.swe,
+    color = burned,
+    fill = burned
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = lower.swe,
+      ymax = upper.swe
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1) +
+  facet_grid(wy ~ fire) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted peak SWE',
+    color = 'Burn status',
+    fill = 'Burn status'
+  ) +
+  theme_bw()
+
+# -- 2023 --
+ggplot(
+  pred.gap %>%
+    filter(wy == '2023'),
+  aes(
+    x = gap_percent,
+    y = fit.swe,
+    color = burned,
+    fill = burned
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = lower.swe,
+      ymax = upper.swe
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~fire) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted peak SWE',
+    color = 'Burn status',
+    fill = 'Burn status'
+  ) +
+  theme_bw()
+
+
+# --- average across years ---
+pred.gap.avg <- pred.gap %>%
+  group_by(
+    fire,
+    burned,
+    gap_percent
+  ) %>%
+  summarize(
+    fit.swe = mean(fit.swe),
+    .groups = 'drop'
+  )
+
+ggplot(
+  pred.gap.avg,
+  aes(
+    x = gap_percent,
+    y = fit.swe,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~fire) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Mean predicted peak SWE',
+    color = 'Burn status'
+  ) +
+  theme_bw()
+
+
+

@@ -44,10 +44,10 @@ df.50.balanced <- df.50.balanced.0 %>%
     )) %>%
   droplevels()
 
-df.50.raw.test <- df.50 %>%
-  group_by(fire) %>%
-  slice_sample(n = 10000) %>%
-  ungroup()
+# df.50.raw.test <- df.50 %>%
+#   group_by(fire) %>%
+#   slice_sample(n = 10000) %>%
+#   ungroup()
 
 
 burn.cols <- c(

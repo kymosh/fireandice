@@ -7,7 +7,6 @@ lapply(packages, library, character.only = TRUE)
 
 # Read in shapefiles
 castle.0 <- st_read('data/raw/fire_info/shp/castle_fire_perimeter.shp')
-dixie.0  <- st_read('data/raw/fire_info/shp/dixie_fire_perimeter.shp')
 caldor.0 <- st_read('data/raw/fire_info/shp/caldor_fire_perimeter.shp')
 creek.0  <- st_read('data/raw/fire_info/shp/creek_fire_perimeter.shp')
 
@@ -15,7 +14,6 @@ huc.0 <- st_read('data/raw/background_variables/shp/HUC12_ca.shp')
 
 fires <- list(
   castle = castle.0,
-  dixie  = dixie.0,
   caldor = caldor.0,
   creek  = creek.0
 )
@@ -23,7 +21,6 @@ fires <- list(
 # EPSG code for each fire
 fire.epsg <- c(
   castle = 32611,
-  dixie  = 32610,
   caldor = 32610,
   creek  = 32611
 )

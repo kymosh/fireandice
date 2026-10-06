@@ -247,7 +247,14 @@ model.swe.burned <- bam(sqrt(swe_peak) ~ wy * fire + burned * fire
                  data = df.50,
                  method = 'fREML',
                  discrete = TRUE)
-
+# TEST
+model.swe <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                 + s(ht_zmean, by = fire, k = 10) + s(gap_percent, by = fire, k = 10),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
 # model.swe.combined <- bam(sqrt(swe_peak) ~ wy * fire
 #                  + s(elevation, by = wy, k = 20)
 #                  + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
@@ -335,19 +342,27 @@ cv.swe.burned.summary
 
 
 # explore
-# --- CV without skew ---
-cv.swe.noskew <- cv_bam_swe(
-  formula(model.swe.noskew),
+# --- CV with mean not max ht ---
+model.swe.test <- bam(sqrt(swe_peak) ~ wy * fire
+                 + s(elevation, by = wy, k = 20)
+                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
+                 + s(ht_zmean, by = fire, k = 10) + s(gap_percent, by = fire, k = 10),
+                 data = df.50,
+                 method = 'fREML',
+                 discrete = TRUE)
+
+cv.swe.test <- cv_bam_swe(
+  formula(model.swe.test),
   df.50
 )
 
-cv.skew.comparison <- bind_rows(
-  'With skew' = cv.swe$summary,
-  'Without skew' = cv.swe.noskew$summary,
+cv.test.comparison <- bind_rows(
+  'With zmax' = cv.swe$summary,
+  'With zmean' = cv.swe.test$summary,
   .id = 'model'
 )
 
-cv.skew.comparison
+cv.test.comparison
 
 # --- CV burned ---
 cv.swe.noskew <- cv_bam_swe(
@@ -362,472 +377,12 @@ cv.skew.comparison <- bind_rows(
 )
 
 cv.skew.comparison
-# ==============================================================================
-# Generate Predictions - OLD
-# ==============================================================================
-# ------------------------ Prediction for gap percent for * realistic canopy conditions * ---------------------
-# ----- build lookup table * for gap percent * -----
-
-# Create a lookup table describing the typical canopy structure associated with different levels of canopy gap within each fire.
-# This is used later to avoid predicting SWE for unrealistic combinations of correlated canopy variables.
-
-canopy.lookup <- df.50 %>%
-  
-  # Calculate gap bins separately within each fire so that the relationships
-  # between gap and the other canopy metrics can differ among fires.
-  group_by(fire) %>%
-  
-  # Divide observations within each fire into 100 approximately equal-sized
-  # groups based on gap_percent.
-  mutate(
-    gap.bin = ntile(gap_percent, 100)
-  ) %>%
-  
-  # Summarize canopy conditions within each gap bin and fire.
-  group_by(fire, gap.bin) %>%
-  summarize(
-    
-    # Mean gap percentage represented by each bin.
-    gap_lookup = mean(gap_percent, na.rm = TRUE),
-    
-    # Typical maximum canopy height associated with that amount of gap.
-    ht_lookup = mean(ht_zmax, na.rm = TRUE),
-    
-    # Typical distance to canopy associated with that amount of gap.
-    dist_lookup = mean(
-      gap_dist_to_canopy_mean,
-      na.rm = TRUE
-    ),
-    
-    .groups = 'drop'
-  )
-
-
-# ----- prediction grid for gap percent -----
-
-# Create all combinations of fire, water year, and burn status at which predictions will be generated. Gap percentage varies from 0 to 100%.
-# This creates: 3 fires x 3 water years x 2 burn classes x 101 gap values = 1818 rows.
-
-pred.gap.real <- expand.grid(
-  fire = levels(df.50$fire),
-  wy = levels(df.50$wy),
-  burned = levels(df.50$burned),
-  gap_percent = seq(0, 100, length.out = 101)
-) %>%
-  as_tibble()
-
-
-# static variables - representative value within each fire
-
-# Calculate representative values for predictors that are effectively static landscape/canopy characteristics.
-# Fire-specific medians are used so predictions represent typical conditions within each study area rather than one global condition.
-
-ref.fire.real <- df.50 %>%
-  group_by(fire) %>%
-  summarize(
-    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
-    slope = median(slope, na.rm = TRUE),
-    aspect_sin = median(aspect_sin, na.rm = TRUE),
-    tpi150 = median(tpi150, na.rm = TRUE),
-    tpi2010 = median(tpi2010, na.rm = TRUE),
-    ht_zskew = median(ht_zskew, na.rm = TRUE),
-    .groups = 'drop'
-  )
-
-
-# elevation can differ by fire and water year
-
-# Calculate representative elevation separately for each fire and water year. This allows predictions to reflect differences 
-# in the elevation distribution among fire-year combinations, including differences caused by annual snowline filtering.
-
-ref.elev.real <- df.50 %>%
-  group_by(fire, wy) %>%
-  summarize(
-    elevation = median(elevation, na.rm = TRUE),
-    .groups = 'drop'
-  )
-
-
-# Add the representative fire-specific and fire-by-year covariate values to every row of the prediction grid.
-
-pred.gap.real <- pred.gap.real %>%
-  left_join(ref.fire.real, by = 'fire') %>%
-  left_join(ref.elev.real, by = c('fire', 'wy'))
-
-
-# Assign realistic values of the canopy variables that are correlated with gap_percent. Rather than holding ht_zmax and 
-# gap_dist_to_canopy_mean atfixed values while gap changes, allow them to vary according to their observed relationship with 
-# gap within each fire.
-
-pred.gap.real <- pred.gap.real %>%
-  group_by(fire) %>%
-  group_modify(~ {
-    
-    # Select the lookup values corresponding to the current fire and arrange them from lowest to highest gap percentage.
-    lookup.fire <- canopy.lookup %>%
-      filter(fire == .y$fire) %>%
-      arrange(gap_lookup)
-    
-    .x %>%
-      mutate(
-        
-        # Interpolate the typical maximum canopy height corresponding to each gap percentage in the prediction grid.
-        ht_zmax = approx(
-          x = lookup.fire$gap_lookup,
-          y = lookup.fire$ht_lookup,
-          xout = gap_percent,
-          rule = 2
-        )$y,
-        
-        # Interpolate the typical mean distance to canopy corresponding to each gap percentage in the prediction grid.
-        gap_dist_to_canopy_mean = approx(
-          x = lookup.fire$gap_lookup,
-          y = lookup.fire$dist_lookup,
-          xout = gap_percent,
-          rule = 2
-        )$y
-        
-      )
-  }) %>%
-  ungroup()
-
-
-# ----- generate model predictions -----
-
-# Predict peak SWE for every row of the prediction grid.
-# Because the response in model.swe is sqrt(swe_peak), these predictions and their standard errors are initially on the square-root SWE scale.
-
-p <- predict(
-  model.swe,
-  newdata = pred.gap.real,
-  type = 'response',
-  se.fit = TRUE
-)
-
-
-# Extract the estimated residual variance from the fitted GAM.
-# This can be used to approximately correct the mean prediction when transforming predictions from sqrt(SWE) back to the original SWE scale.
-
-sigma2 <- summary(model.swe)$scale
-
-
-# Add fitted values, confidence limits, and back-transformed SWE predictions to the prediction dataset.
-
-pred.gap.real <- pred.gap.real %>%
-  mutate(
-    
-    # Predicted value and standard error on the sqrt(SWE) scale.
-    fit.sqrt = p$fit,
-    se.sqrt = p$se.fit,
-    
-    # Approximate 95% confidence interval on the sqrt(SWE) scale.
-    lower.sqrt = fit.sqrt - 1.96 * se.sqrt,
-    upper.sqrt = fit.sqrt + 1.96 * se.sqrt,
-    
-    # direct back-transformation
-    fit.swe = fit.sqrt^2,
-    
-    # approximate expected SWE on original scale
-    # Adds the residual variance to account for bias introduced when squaring predictions from a square-root-transformed response.
-    fit.swe.mean = fit.sqrt^2 + sigma2,
-    
-    # Back-transform the confidence limits.
-    # pmax() prevents a negative lower sqrt(SWE) bound from becoming positive again when squared.
-    lower.swe = pmax(0, lower.sqrt)^2,
-    upper.swe = pmax(0, upper.sqrt)^2
-  )
-
-
-# ----- plot predicted SWE across canopy gap -----
-
-# Plot predicted peak SWE across the realistic canopy-gap gradient.
-# Burned and unburned predictions are generated using identical canopy configurations, so separation between the two curves represents the
-# remaining modeled effect of burn status after accounting for canopy structure and the other model predictors.
-
-# -- all years --
-ggplot(
-  pred.gap.real,
-  aes(
-    x = gap_percent,
-    y = fit.swe,
-    color = burned,
-    fill = burned
-  )
-) +
-  geom_ribbon(
-    aes(
-      ymin = lower.swe,
-      ymax = upper.swe
-    ),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  facet_grid(wy ~ fire) +
-  labs(
-    x = 'Canopy gap (%)',
-    y = 'Predicted peak SWE',
-    color = 'Burn status',
-    fill = 'Burn status'
-  ) +
-  theme_bw()
-
-# -- 2023 --
-ggplot(
-  pred.gap.real %>%
-    filter(wy == '2023'),
-  aes(
-    x = gap_percent,
-    y = fit.swe,
-    color = burned,
-    fill = burned
-  )
-) +
-  geom_ribbon(
-    aes(
-      ymin = lower.swe,
-      ymax = upper.swe
-    ),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  facet_wrap(~fire) +
-  labs(
-    x = 'Canopy gap (%)',
-    y = 'Predicted peak SWE',
-    color = 'Burn status',
-    fill = 'Burn status'
-  ) +
-  theme_bw()
-
-
-# average across years
-pred.gap.real.avg <- pred.gap.real %>%
-  group_by(
-    fire,
-    burned,
-    gap_percent
-  ) %>%
-  summarize(
-    fit.swe = mean(fit.swe),
-    .groups = 'drop'
-  )
-
-ggplot(
-  pred.gap.real.avg,
-  aes(
-    x = gap_percent,
-    y = fit.swe,
-    color = burned
-  )
-) +
-  geom_line(linewidth = 1) +
-  facet_wrap(~fire) +
-  labs(
-    x = 'Canopy gap (%)',
-    y = 'Mean predicted peak SWE',
-    color = 'Burn status'
-  ) +
-  theme_bw()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ------------------------- Prediction for gap percent * regular pdp * --------------------------
-# ----- prediction grid for gap percent -----
-
-# Create prediction grid across the full range of gap percent for each fire, water year, and burn status
-pred.gap <- expand.grid(
-  fire = levels(df.50$fire),
-  wy = levels(df.50$wy),
-  burned = levels(df.50$burned),
-  gap_percent = seq(0, 100, length.out = 101)
-) %>%
-  as_tibble()
-
-
-# ----- representative values for static predictors -----
-
-# Hold all other static predictors at their median value within each fire
-ref.fire <- df.50 %>%
-  group_by(fire) %>%
-  summarize(
-    rad_dtm_accum = median(rad_dtm_accum, na.rm = TRUE),
-    slope = median(slope, na.rm = TRUE),
-    aspect_sin = median(aspect_sin, na.rm = TRUE),
-    tpi150 = median(tpi150, na.rm = TRUE),
-    tpi2010 = median(tpi2010, na.rm = TRUE),
-    ht_zmax = median(ht_zmax, na.rm = TRUE),
-    gap_dist_to_canopy_mean = median(
-      gap_dist_to_canopy_mean,
-      na.rm = TRUE
-    ),
-    ht_zskew = median(ht_zskew, na.rm = TRUE),
-    .groups = 'drop'
-  )
-
-
-# ----- representative elevation -----
-
-# Use median elevation within each fire and water year
-ref.elev <- df.50 %>%
-  group_by(fire, wy) %>%
-  summarize(
-    elevation = median(elevation, na.rm = TRUE),
-    .groups = 'drop'
-  )
-
-
-# ----- add representative values to prediction dataset -----
-
-pred.gap <- pred.gap %>%
-  left_join(ref.fire, by = 'fire') %>%
-  left_join(ref.elev, by = c('fire', 'wy'))
-
-
-# ----- generate predictions -----
-
-# Predictions are initially on the sqrt(SWE) scale
-p <- predict(
-  model.swe.burned,
-  newdata = pred.gap,
-  type = 'response',
-  se.fit = TRUE
-)
-
-# residual variance for approximate bias correction
-sigma2 <- summary(model.swe.burned)$scale
-
-
-# ----- back-transform predictions to SWE -----
-
-pred.gap <- pred.gap %>%
-  mutate(
-    fit.sqrt = p$fit,
-    se.sqrt = p$se.fit,
-    
-    lower.sqrt = fit.sqrt - 1.96 * se.sqrt,
-    upper.sqrt = fit.sqrt + 1.96 * se.sqrt,
-    
-    # direct back-transformation
-    fit.swe = fit.sqrt^2,
-    
-    # approximate expected SWE after back-transformation
-    fit.swe.mean = fit.sqrt^2 + sigma2,
-    
-    lower.swe = pmax(0, lower.sqrt)^2,
-    upper.swe = pmax(0, upper.sqrt)^2
-  )
-
-# ----- plot -----
-# -- all years --
-ggplot(
-  pred.gap,
-  aes(
-    x = gap_percent,
-    y = fit.swe,
-    color = burned,
-    fill = burned
-  )
-) +
-  geom_ribbon(
-    aes(
-      ymin = lower.swe,
-      ymax = upper.swe
-    ),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  facet_grid(wy ~ fire) +
-  labs(
-    x = 'Canopy gap (%)',
-    y = 'Predicted peak SWE',
-    color = 'Burn status',
-    fill = 'Burn status'
-  ) +
-  theme_bw()
-
-# -- 2023 --
-ggplot(
-  pred.gap %>%
-    filter(wy == '2023'),
-  aes(
-    x = gap_percent,
-    y = fit.swe,
-    color = burned,
-    fill = burned
-  )
-) +
-  geom_ribbon(
-    aes(
-      ymin = lower.swe,
-      ymax = upper.swe
-    ),
-    alpha = 0.15,
-    color = NA
-  ) +
-  geom_line(linewidth = 1) +
-  facet_wrap(~fire) +
-  labs(
-    x = 'Canopy gap (%)',
-    y = 'Predicted peak SWE',
-    color = 'Burn status',
-    fill = 'Burn status'
-  ) +
-  theme_bw()
-
-
-# --- average across years ---
-pred.gap.avg <- pred.gap %>%
-  group_by(
-    fire,
-    burned,
-    gap_percent
-  ) %>%
-  summarize(
-    fit.swe = mean(fit.swe),
-    .groups = 'drop'
-  )
-
-ggplot(
-  pred.gap.avg,
-  aes(
-    x = gap_percent,
-    y = fit.swe,
-    color = burned
-  )
-) +
-  geom_line(linewidth = 1) +
-  facet_wrap(~fire) +
-  labs(
-    x = 'Canopy gap (%)',
-    y = 'Mean predicted peak SWE',
-    color = 'Burn status'
-  ) +
-  theme_bw()
-
-
-
 
 # ==============================================================================
 # Generate Predictions - Fire-specific
 # ==============================================================================
 # ----------------------------------- ** MARGINAL EFFECT PLOTS ** ------------------------------------
-# --------------- gap percent ----------------
-
-# --- simulate coefficients for CI interval ---
+# ----- simulate coefficients for CI interval -----
 #  simulate 500 plausible sets of model coefficients based on the fitted coefficients and their uncertainty; used to calculate 95% confidence intervals
 set.seed(61)
 n.sim <- 500
@@ -837,6 +392,9 @@ beta.sim <- MASS::mvrnorm(
   mu = coef(model.swe),
   Sigma = vcov(model.swe)
 )
+# --------------- gap percent ----------------
+
+
 
 # --- predict ---
 gap.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
@@ -1016,8 +574,6 @@ gap.pred.plot <- gap.pred %>%
   filter(fire != 'Castle')
 gap.optimum.plot <- gap.optimum %>%
   filter(fire != 'Castle') 
-gap.rug.plot <- gap.rug %>%
-  filter(fire != 'Castle') 
 
 # ----- plot -----
 p.gap.opt <- ggplot(
@@ -1193,7 +749,7 @@ gap.summary <- gap.pred %>%
 
 print(gap.summary, width = Inf)
 # ---------------- maximum canopy height ---------------
-
+### NOTE I changed zmax to zmean temporarily for exploration
 ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
   
   # prediction sample for fire
@@ -1204,12 +760,12 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
   # fire-specific prediction range
   ht.seq <- seq(
     quantile(
-      df.50$ht_zmax[df.50$fire == fire.name],
+      df.50$ht_zmean[df.50$fire == fire.name],
       0.01,
       na.rm = TRUE
     ),
     quantile(
-      df.50$ht_zmax[df.50$fire == fire.name],
+      df.50$ht_zmean[df.50$fire == fire.name],
       0.99,
       na.rm = TRUE
     ),
@@ -1219,7 +775,7 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
   map_dfr(ht.seq, function(ht.value) {
     
     newdata <- df.fire %>%
-      mutate(ht_zmax = ht.value)
+      mutate(ht_zmean = ht.value)
     
     # central prediction
     pred <- predict(
@@ -1245,7 +801,7 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
     
     tibble(
       fire = fire.name,
-      ht_zmax = ht.value,
+      ht_zmean = ht.value,
       swe_peak = fit,
       lower = quantile(sim.swe, 0.025),
       upper = quantile(sim.swe, 0.975)
@@ -1260,12 +816,12 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
 
 ht.density <- df.50 %>%
   filter(
-    !is.na(ht_zmax),
+    !is.na(ht_zmean),
     !is.na(fire)
   ) %>%
   mutate(
     ht_bin = cut(
-      ht_zmax,
+      ht_zmean,
       breaks = seq(0, 100, by = 3),
       include.lowest = TRUE
     )
@@ -1275,20 +831,20 @@ ht.density <- df.50 %>%
     ht_bin
   ) %>%
   summarise(
-    ht_zmax = mean(ht_zmax, na.rm = TRUE),
+    ht_zmean = mean(ht_zmean, na.rm = TRUE),
     n = n(),
     .groups = 'drop'
   ) %>%
   group_by(fire) %>%
   mutate(
     swe_peak = approx(
-      x = ht.pred$ht_zmax[
+      x = ht.pred$ht_zmean[
         ht.pred$fire == first(fire)
       ],
       y = ht.pred$swe_peak[
         ht.pred$fire == first(fire)
       ],
-      xout = ht_zmax,
+      xout = ht_zmean,
       rule = 1
     )$y
   ) %>%
@@ -1305,15 +861,15 @@ ht.density <- df.50 %>%
 #       filter(fire == fire.name) %>%
 #       droplevels()
 #     
-#     # fire-specific range of ht_zmax
+#     # fire-specific range of ht_zmean
 #     ht.seq <- seq(
 #       quantile(
-#         df.50$ht_zmax[df.50$fire == fire.name],
+#         df.50$ht_zmean[df.50$fire == fire.name],
 #         0.01,
 #         na.rm = TRUE
 #       ),
 #       quantile(
-#         df.50$ht_zmax[df.50$fire == fire.name],
+#         df.50$ht_zmean[df.50$fire == fire.name],
 #         0.99,
 #         na.rm = TRUE
 #       ),
@@ -1324,7 +880,7 @@ ht.density <- df.50 %>%
 #       
 #       newdata <- df.fire %>%
 #         mutate(
-#           ht_zmax = ht.value
+#           ht_zmean = ht.value
 #         )
 #       
 #       # predictions on sqrt(SWE) scale
@@ -1336,7 +892,7 @@ ht.density <- df.50 %>%
 #       
 #       tibble(
 #         fire = fire.name,
-#         ht_zmax = ht.value,
+#         ht_zmean = ht.value,
 #         swe_peak = mean(pred^2, na.rm = TRUE)
 #       )
 #     })
@@ -1349,16 +905,16 @@ ht.optimum <- ht.pred %>%
   summarise(
     max.swe = max(swe_peak),
     
-    ht.at.max = ht_zmax[which.max(swe_peak)],
+    ht.at.max = ht_zmean[which.max(swe_peak)],
     
     threshold.95 = 0.95 * max.swe,
     
     ht.95.low = min(
-      ht_zmax[swe_peak >= threshold.95]
+      ht_zmean[swe_peak >= threshold.95]
     ),
     
     ht.95.high = max(
-      ht_zmax[swe_peak >= threshold.95]
+      ht_zmean[swe_peak >= threshold.95]
     )
   )
 
@@ -1381,7 +937,7 @@ ht.optimum <- ht.optimum %>%
 p.ht.opt <- ggplot(
   ht.pred,
   aes(
-    x = ht_zmax,
+    x = ht_zmean,
     y = swe_peak,
     color = fire,
     fill = fire
@@ -1430,7 +986,7 @@ p.ht.opt <- ggplot(
   # geom_line(
   #   data = ht.pred.combined,
   #   aes(
-  #     x = ht_zmax,
+  #     x = ht_zmean,
   #     y = swe_peak
   #   ),
   #   inherit.aes = FALSE,
@@ -1442,7 +998,7 @@ p.ht.opt <- ggplot(
   # # observed data support
   # geom_rug(
   #   data = ht.rug,
-  #   aes(x = ht_zmax, color = fire),
+  #   aes(x = ht_zmean, color = fire),
   #   inherit.aes = FALSE,
   #   sides = 'b',
   #   alpha = 0.08
@@ -1451,7 +1007,7 @@ p.ht.opt <- ggplot(
   geom_point(
     data = ht.density,
     aes(
-      x = ht_zmax,
+      x = ht_zmean,
       y = swe_peak,
       size = n,
       color = fire
@@ -1468,22 +1024,32 @@ p.ht.opt <- ggplot(
   scale_color_manual(values = fire.colors) +
   scale_fill_manual(values = fire.colors) +
   
+  # used this for zmax
+  # scale_size_continuous(
+  #   name = 'Observations',
+  #   limits = c(0, 250000),
+  #   breaks = c(
+  #     50000,
+  #     100000,
+  #     150000,
+  #     250000
+  #   ),
+  #   labels = scales::comma,
+  #   range = c(1.5, 5)
+  # ) +
+  
+  # scale_x_continuous(
+  #   limits = c(0, 65),
+  #   breaks = seq(0, 60, by = 20)) +
+  
+  # used this for zmean
   scale_size_continuous(
-    name = 'Observations',
-    limits = c(0, 250000),
-    breaks = c(
-      50000,
-      100000,
-      150000,
-      250000
-    ),
-    labels = scales::comma,
     range = c(1.5, 5)
   ) +
   
   scale_x_continuous(
     limits = c(0, 65),
-    breaks = seq(0, 60, by = 20)) +
+    breaks = seq(0, 35, by = 10)) +
   
   scale_y_continuous(
     limits = c(0.38, 0.82),
@@ -1513,14 +1079,14 @@ p.ht.opt
 ht.summary <- ht.pred %>%
   group_by(fire) %>%
   summarise(
-    ht_min = min(ht_zmax),
-    ht_max = max(ht_zmax),
+    ht_min = min(ht_zmean),
+    ht_max = max(ht_zmean),
     
-    swe_at_ht_min = swe_peak[which.min(ht_zmax)],
-    swe_at_ht_max = swe_peak[which.max(ht_zmax)],
+    swe_at_ht_min = swe_peak[which.min(ht_zmean)],
+    swe_at_ht_max = swe_peak[which.max(ht_zmean)],
     
     max_swe = max(swe_peak),
-    ht_at_max = ht_zmax[which.max(swe_peak)],
+    ht_at_max = ht_zmean[which.max(swe_peak)],
     
     increase_to_max = max_swe - swe_at_ht_min,
     
@@ -1537,11 +1103,11 @@ ht.summary <- ht.pred %>%
     threshold_95 = 0.95 * max_swe,
     
     ht_95_low = min(
-      ht_zmax[swe_peak >= threshold_95]
+      ht_zmean[swe_peak >= threshold_95]
     ),
     
     ht_95_high = max(
-      ht_zmax[swe_peak >= threshold_95]
+      ht_zmean[swe_peak >= threshold_95]
     ),
     
     .groups = 'drop'

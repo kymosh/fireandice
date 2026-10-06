@@ -1,3 +1,7 @@
+packages <- c('mgcv', 'ggplot2', 'pdp', 'dplyr', 'tidyr', 'purrr')
+install.packages(setdiff(packages, rownames(installed.packages())))
+lapply(packages, library, character.only = T)
+
 # ==============================================================================
 # Setup
 # ==============================================================================
@@ -305,7 +309,7 @@ model.sdd <- bam(sdd ~ wy * fire +
 
 model.sdd.burned <- bam(sdd ~ wy * fire + burned * fire +
                    s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) + 
-                   + s(gap_percent, by = burned, k = 20) +
+                   + s(gap_percent, k = 20) +
                    ti(gap_percent, elevation, k = c(10, 10)) +
                    s(swe_peak, k = 20),
                  data = df.500,
@@ -2105,6 +2109,487 @@ ggplot(
     size = 'Observations'
   ) +
   theme_classic()
+# ------------------ Adding in SWE interaction -------------------------
+
+# representative SWE values
+swe.values <- df.500 %>%
+  summarise(
+    low = quantile(swe_peak, 0.25, na.rm = TRUE),
+    mid = quantile(swe_peak, 0.50, na.rm = TRUE),
+    high = quantile(swe_peak, 0.75, na.rm = TRUE)
+  ) %>%
+  pivot_longer(
+    everything(),
+    names_to = 'swe_level',
+    values_to = 'swe_peak'
+  ) %>%
+  mutate(
+    swe_level = factor(
+      swe_level,
+      levels = c('low', 'mid', 'high'),
+      labels = c('Low SWE', 'Mid SWE', 'High SWE')
+    )
+  )
+
+
+# new model
+model.sdd.burned.swe <- bam(
+  sdd ~ wy * fire + burned * fire +
+    s(elevation, by = wy, k = 20) +
+    s(rad_dtm_accum, k = 20) +
+    s(aspect_sin, k = 20) +
+    s(tpi1200, k = 10) +
+    s(gap_percent, k = 20) +
+    ti(gap_percent, elevation, k = c(10, 10)) +
+    s(swe_peak, k = 20) +
+    ti(gap_percent, swe_peak, k = c(10, 10)),
+  data = df.500,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+
+# predictions
+# ----- predictions across elevation x SWE -----
+
+burn.levels <- levels(df.500$burned)
+
+gap.elev.swe.pred <- map_dfr(
+  seq_len(nrow(elev.values)),
+  function(i) {
+    
+    elev.value <- elev.values$elevation[i]
+    band.name <- elev.values$elev_band[i]
+    
+    # supported gap range for this elevation band
+    gap.range <- gap.ranges.common %>%
+      filter(elev_band == band.name)
+    
+    gap.seq <- seq(
+      gap.range$gap.low,
+      gap.range$gap.high,
+      length.out = 100
+    )
+    
+    map_dfr(
+      seq_len(nrow(swe.values)),
+      function(j) {
+        
+        swe.value <- swe.values$swe_peak[j]
+        swe.name <- swe.values$swe_level[j]
+        
+        map_dfr(
+          burn.levels,
+          function(burn.value) {
+            
+            map_dfr(
+              gap.seq,
+              function(gap.value) {
+                
+                newdata <- df.pred %>%
+                  mutate(
+                    gap_percent = gap.value,
+                    elevation = elev.value,
+                    swe_peak = swe.value,
+                    burned = factor(
+                      burn.value,
+                      levels = levels(df.500$burned)
+                    )
+                  )
+                
+                pred <- predict(
+                  model.sdd.burned.swe,
+                  newdata = newdata,
+                  type = 'response'
+                )
+                
+                tibble(
+                  elev_band = band.name,
+                  elevation = elev.value,
+                  swe_level = swe.name,
+                  swe_peak = swe.value,
+                  burned = burn.value,
+                  gap_percent = gap.value,
+                  sdd = mean(pred, na.rm = TRUE)
+                )
+              }
+            )
+          }
+        )
+      }
+    )
+  }
+)
+
+ggplot(
+  gap.elev.swe.pred,
+  aes(
+    x = gap_percent,
+    y = sdd,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1) +
+  facet_grid(
+    rows = vars(swe_level),
+    cols = vars(elev_band)
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted snow disappearance date (DOY)',
+    color = NULL
+  ) +
+  theme_classic()
+
+# ----- now test 3-way interaction -----
+model.sdd.burned.swe3 <- bam(
+  sdd ~ wy * fire + burned * fire +
+    s(elevation, by = wy, k = 20) +
+    s(rad_dtm_accum, k = 20) +
+    s(aspect_sin, k = 20) +
+    s(tpi1200, k = 10) +
+    s(gap_percent, k = 20) +
+    s(swe_peak, k = 20) +
+    ti(gap_percent, elevation, k = c(10, 10)) +
+    ti(gap_percent, swe_peak, k = c(10, 10)) +
+    ti(elevation, swe_peak, k = c(10, 10)) +
+    ti(gap_percent, elevation, swe_peak, k = c(10, 10, 10)),
+  data = df.500,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+gap.elev.swe.pred3 <- map_dfr(
+  seq_len(nrow(elev.values)),
+  function(i) {
+    
+    elev.value <- elev.values$elevation[i]
+    band.name <- elev.values$elev_band[i]
+    
+    # supported gap range for this elevation band
+    gap.range <- gap.ranges.common %>%
+      filter(elev_band == band.name)
+    
+    gap.seq <- seq(
+      gap.range$gap.low,
+      gap.range$gap.high,
+      length.out = 100
+    )
+    
+    map_dfr(
+      seq_len(nrow(swe.values)),
+      function(j) {
+        
+        swe.value <- swe.values$swe_peak[j]
+        swe.name <- swe.values$swe_level[j]
+        
+        map_dfr(
+          burn.levels,
+          function(burn.value) {
+            
+            map_dfr(
+              gap.seq,
+              function(gap.value) {
+                
+                newdata <- df.pred %>%
+                  mutate(
+                    gap_percent = gap.value,
+                    elevation = elev.value,
+                    swe_peak = swe.value,
+                    burned = factor(
+                      burn.value,
+                      levels = levels(df.500$burned)
+                    )
+                  )
+                
+                pred <- predict(
+                  model.sdd.burned.swe3,
+                  newdata = newdata,
+                  type = 'response'
+                )
+                
+                tibble(
+                  elev_band = band.name,
+                  elevation = elev.value,
+                  swe_level = swe.name,
+                  swe_peak = swe.value,
+                  burned = burn.value,
+                  gap_percent = gap.value,
+                  sdd = mean(pred, na.rm = TRUE)
+                )
+              }
+            )
+          }
+        )
+      }
+    )
+  }
+)
+
+ggplot(
+  gap.elev.swe.pred3,
+  aes(
+    x = gap_percent,
+    y = sdd,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1) +
+  facet_grid(
+    rows = vars(swe_level),
+    cols = vars(elev_band)
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted snow disappearance date (DOY)',
+    color = NULL
+  ) +
+  theme_classic()
+
+cv.sdd.burned <- cv_bam_sdd(
+formula(model.sdd.burned), df.500)
+
+cv.sdd.burned.swe3 <- cv_bam_sdd(
+  formula(model.sdd.burned.swe3), df.500)
+
+cv.sdd.burned
+cv.sdd.burned.swe3
+
+summary(model.sdd.burned.swe3)
+
+gam.check(model.sdd.burned.swe3)
+concurvity(model.sdd.burned.swe3, full = TRUE)
+
+AIC(
+  model.sdd.burned,
+  model.sdd.burned.swe,
+  model.sdd.burned.swe3
+)
+
+# ----- decrease k -----
+model.sdd.burned.swe3.k5 <- bam(
+  sdd ~ wy * fire + burned * fire +
+    s(elevation, by = wy, k = 20) +
+    s(rad_dtm_accum, k = 20) +
+    s(aspect_sin, k = 20) +
+    s(tpi1200, k = 10) +
+    s(gap_percent, k = 20) +
+    s(swe_peak, k = 20) +
+    ti(gap_percent, elevation, k = c(10, 10)) +
+    ti(gap_percent, swe_peak, k = c(10, 10)) +
+    ti(elevation, swe_peak, k = c(10, 10)) +
+    ti(
+      gap_percent,
+      elevation,
+      swe_peak,
+      k = c(5, 5, 5)
+    ),
+  data = df.500,
+  method = 'fREML',
+  discrete = TRUE
+)
+
+gap.elev.swe.pred3.k5 <- map_dfr(
+  seq_len(nrow(elev.values)),
+  function(i) {
+    
+    elev.value <- elev.values$elevation[i]
+    band.name <- elev.values$elev_band[i]
+    
+    # supported gap range for this elevation band
+    gap.range <- gap.ranges.common %>%
+      filter(elev_band == band.name)
+    
+    gap.seq <- seq(
+      gap.range$gap.low,
+      gap.range$gap.high,
+      length.out = 100
+    )
+    
+    map_dfr(
+      seq_len(nrow(swe.values)),
+      function(j) {
+        
+        swe.value <- swe.values$swe_peak[j]
+        swe.name <- swe.values$swe_level[j]
+        
+        map_dfr(
+          burn.levels,
+          function(burn.value) {
+            
+            map_dfr(
+              gap.seq,
+              function(gap.value) {
+                
+                newdata <- df.pred %>%
+                  mutate(
+                    gap_percent = gap.value,
+                    elevation = elev.value,
+                    swe_peak = swe.value,
+                    burned = factor(
+                      burn.value,
+                      levels = levels(df.500$burned)
+                    )
+                  )
+                
+                pred <- predict(
+                  model.sdd.burned.swe3.k5,
+                  newdata = newdata,
+                  type = 'response'
+                )
+                
+                tibble(
+                  elev_band = band.name,
+                  elevation = elev.value,
+                  swe_level = swe.name,
+                  swe_peak = swe.value,
+                  burned = burn.value,
+                  gap_percent = gap.value,
+                  sdd = mean(pred, na.rm = TRUE)
+                )
+              }
+            )
+          }
+        )
+      }
+    )
+  }
+)
+
+ggplot(
+  gap.elev.swe.pred3.k5,
+  aes(
+    x = gap_percent,
+    y = sdd,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1) +
+  facet_grid(
+    rows = vars(swe_level),
+    cols = vars(elev_band)
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted snow disappearance date (DOY)',
+    color = NULL
+  ) +
+  theme_classic()
+
+
+
+cv.sdd.burned.swe3.k5 <- cv_bam_sdd(
+  formula(model.sdd.burned.swe3.k5), df.500)
+
+cv.sdd.burned
+cv.sdd.burned.swe3
+cv.sdd.burned.swe3.k5
+
+summary(model.sdd.burned.swe3.k5)
+
+gam.check(model.sdd.burned.swe3.k5)
+concurvity(model.sdd.burned.swe3.k5, full = TRUE)
+
+AIC(
+  model.sdd.burned,
+  model.sdd.burned.swe,
+  model.sdd.burned.swe3,
+  model.sdd.burned.swe3.k5
+)
+
+# plot option 1
+ggplot(
+  gap.elev.swe.pred3.k5,
+  aes(
+    x = gap_percent,
+    y = sdd,
+    color = burned
+  )
+) +
+  geom_line(linewidth = 1) +
+  facet_grid(
+    rows = vars(swe_level),
+    cols = vars(elev_band),
+    scales = 'free_y'
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted snow disappearance date (DOY)',
+    color = NULL
+  ) +
+  theme_classic()
+
+# plot option 2
+gap.elev.swe.pred3.k5 %>%
+  filter(swe_level == 'Low SWE') %>%
+  ggplot(
+    aes(
+      x = gap_percent,
+      y = sdd,
+      color = burned
+    )
+  ) +
+  geom_line(linewidth = 1) +
+  facet_wrap(
+    ~ elev_band,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted snow disappearance date (DOY)',
+    color = NULL
+  ) +
+  theme_classic()
+
+gap.elev.swe.pred3.k5 %>%
+  filter(swe_level == 'Mid SWE') %>%
+  ggplot(
+    aes(
+      x = gap_percent,
+      y = sdd,
+      color = burned
+    )
+  ) +
+  geom_line(linewidth = 1) +
+  facet_wrap(
+    ~ elev_band,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted snow disappearance date (DOY)',
+    color = NULL
+  ) +
+  theme_classic()
+
+gap.elev.swe.pred3.k5 %>%
+  filter(swe_level == 'High SWE') %>%
+  ggplot(
+    aes(
+      x = gap_percent,
+      y = sdd,
+      color = burned
+    )
+  ) +
+  geom_line(linewidth = 1) +
+  facet_wrap(
+    ~ elev_band,
+    nrow = 1
+  ) +
+  scale_color_manual(values = burn.cols) +
+  labs(
+    x = 'Canopy gap (%)',
+    y = 'Predicted snow disappearance date (DOY)',
+    color = NULL
+  ) +
+  theme_classic()
+
 # ------------------ Plotting Predicted Burn Differences ---------------
 # --- predict all observations as unburned ---
 

@@ -2095,6 +2095,39 @@ p.stage1.sdd.presentation <- ggplot(
   )
 
 p.stage1.sdd.presentation
+
+# ----- plot combing SWE and SDD results -----
+library(patchwork)
+
+
+p.stage1.combined <-
+  (p.stage1.r2 +
+     labs(title = 'A) Peak SWE') +
+     coord_cartesian(ylim = c(0, 0.9))) /
+  plot_spacer() /
+  (p.stage1.sdd.r2 +
+     labs(title = 'B) Snow disappearance date') +
+     coord_cartesian(ylim = c(0, 0.9))) +
+  plot_layout(heights = c(1, 0.12, 1)) &
+  theme(
+    plot.title = element_text(
+      face = 'bold',
+      size = 11,
+      hjust = 0
+    )
+  )
+
+p.stage1.combined
+
+ggsave(
+  'figures/stage1_results_boxplots.png',
+  p.stage1.combined,
+  width = 10,
+  height = 7.5,
+  dpi = 300
+)
+
+
 # ==============================================================================
 # Stage 2 Modeling - Combined Model
 # ==============================================================================
