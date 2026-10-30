@@ -551,48 +551,6 @@ gap.optimum <- gap.pred %>%
 
 gap.optimum
 
-# # --- Combined model ---
-# gap.pred.combined <- map_dfr(
-#   levels(df.pred$fire),
-#   function(fire.name) {
-#     
-#     df.fire <- df.pred %>%
-#       filter(fire == fire.name) %>%
-#       droplevels()
-#     
-#     gap.seq <- seq(
-#       quantile(
-#         df.50$gap_percent[df.50$fire == fire.name],
-#         0.01,
-#         na.rm = TRUE
-#       ),
-#       quantile(
-#         df.50$gap_percent[df.50$fire == fire.name],
-#         0.99,
-#         na.rm = TRUE
-#       ),
-#       length.out = 100
-#     )
-#     
-#     map_dfr(gap.seq, function(gap.value) {
-#       
-#       newdata <- df.fire %>%
-#         mutate(gap_percent = gap.value)
-#       
-#       pred <- predict(
-#         model.swe.combined,
-#         newdata = newdata,
-#         type = 'response'
-#       )
-#       
-#       tibble(
-#         fire = fire.name,
-#         gap_percent = gap.value,
-#         swe_peak = mean(pred^2, na.rm = TRUE)
-#       )
-#     })
-#   }
-# )
 
 # filter out Castle
 gap.pred.plot <- gap.pred %>%
@@ -600,7 +558,11 @@ gap.pred.plot <- gap.pred %>%
 gap.optimum.plot <- gap.optimum %>%
   filter(fire != 'Castle') 
 
+
+
 # ----- plot -----
+
+
 p.gap.opt <- ggplot(
   gap.pred.plot,
   aes(
@@ -609,20 +571,6 @@ p.gap.opt <- ggplot(
     color = fire,
     fill = fire
   )
-# ) +
-#   
-#   geom_rect(
-#     data = gap.optimum.plot,
-#     aes(
-#       xmin = gap.95.low,
-#       xmax = gap.95.high,
-#       ymin = -Inf,
-#       ymax = Inf,
-#       fill = fire
-#     ),
-#     inherit.aes = FALSE,
-#     alpha = 0.08,
-#     color = NA
    ) +
   
   geom_ribbon(
@@ -637,31 +585,6 @@ p.gap.opt <- ggplot(
   geom_line(
     linewidth = 1
   ) +
-  
-  # geom_line(
-  #   data = gap.pred.combined %>%
-  #     filter(fire != 'Castle'),
-  #   aes(
-  #     x = gap_percent,
-  #     y = swe_peak,
-  #     group = fire
-  #   ),
-  #   inherit.aes = FALSE,
-  #   color = 'grey',
-  #   linetype = 'solid',
-  #   linewidth = 0.8
-  # ) +
-  
-  # geom_rug(
-  #   data = gap.rug.plot,
-  #   aes(
-  #     x = gap_percent,
-  #     color = fire
-  #   ),
-  #   inherit.aes = FALSE,
-  #   sides = 'b',
-  #   alpha = 0.08
-  # ) +
   
   geom_point(
     data = gap.density,
@@ -685,20 +608,6 @@ p.gap.opt <- ggplot(
     nrow = 1,
     drop = FALSE
   ) +
-  
-  # geom_segment(
-  #   data = gap.optimum.plot,
-  #   aes(
-  #     x = gap.95.low,
-  #     xend = gap.95.high,
-  #     y = threshold.95,
-  #     yend = threshold.95,
-  #     color = fire
-  #   ),
-  #   inherit.aes = FALSE,
-  #   linetype = 'dashed',
-  #   linewidth = 0.6
-  # ) +
   
   scale_color_manual(values = fire.colors) +
   scale_fill_manual(values = fire.colors) +
@@ -834,11 +743,6 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
   })
 })
 
-# ht.rug <- df.50 %>%
-#   group_by(fire) %>%
-#   slice_sample(n = 3000) %>%
-#   ungroup()
-
 ht.density <- df.50 %>%
   filter(
     !is.na(ht_zmax),
@@ -876,53 +780,7 @@ ht.density <- df.50 %>%
   ungroup() %>%
   filter(!is.na(swe_peak))
 
-# # --- combined model ---
-# ht.pred.combined <- map_dfr(
-#   levels(df.pred$fire),
-#   function(fire.name) {
-#     
-#     # prediction sample for this fire
-#     df.fire <- df.pred %>%
-#       filter(fire == fire.name) %>%
-#       droplevels()
-#     
-#     # fire-specific range of ht_zmax
-#     ht.seq <- seq(
-#       quantile(
-#         df.50$ht_zmax[df.50$fire == fire.name],
-#         0.01,
-#         na.rm = TRUE
-#       ),
-#       quantile(
-#         df.50$ht_zmax[df.50$fire == fire.name],
-#         0.99,
-#         na.rm = TRUE
-#       ),
-#       length.out = 100
-#     )
-#     
-#     map_dfr(ht.seq, function(ht.value) {
-#       
-#       newdata <- df.fire %>%
-#         mutate(
-#           ht_zmax = ht.value
-#         )
-#       
-#       # predictions on sqrt(SWE) scale
-#       pred <- predict(
-#         model.swe.combined,
-#         newdata = newdata,
-#         type = 'response'
-#       )
-#       
-#       tibble(
-#         fire = fire.name,
-#         ht_zmax = ht.value,
-#         swe_peak = mean(pred^2, na.rm = TRUE)
-#       )
-#     })
-#   }
-# )
+
 # --- identify thresholds/optima ---
 
 ht.optimum <- ht.pred %>%
@@ -953,10 +811,8 @@ ht.optimum <- ht.optimum %>%
   mutate(
     fire = factor(fire, levels = fire.levels)
   )
-# ht.rug <- ht.rug %>%
-#   mutate(
-#     fire = factor(fire, levels = fire.levels)
-#   )
+ 
+
 
 # ----- plot -----
 p.ht.opt <- ggplot(
@@ -969,21 +825,6 @@ p.ht.opt <- ggplot(
   )
 ) +
   
-  # # range producing >=95% of maximum predicted SWE
-  # geom_rect(
-  #   data = ht.optimum,
-  #   aes(
-  #     xmin = ht.95.low,
-  #     xmax = ht.95.high,
-  #     ymin = -Inf,
-  #     ymax = Inf,
-  #     fill = fire
-  #   ),
-  #   inherit.aes = FALSE,
-  #   alpha = 0.08,
-  #   color = NA
-  # ) +
-  
   # 95% CI
   geom_ribbon(
     aes(ymin = lower, ymax = upper),
@@ -993,41 +834,6 @@ p.ht.opt <- ggplot(
   
   # marginal prediction
   geom_line(linewidth = 1) +
-  
-  # # 95% of maximum threshold
-  # geom_segment(
-  #   data = ht.optimum,
-  #   aes(
-  #     x = ht.95.low,
-  #     xend = ht.95.high,
-  #     y = threshold.95,
-  #     yend = threshold.95,
-  #     color = fire
-  #   ),
-  #   inherit.aes = FALSE,
-  #   linetype = 'dashed',
-  #   linewidth = 0.6
-  # ) +
-  # geom_line(
-  #   data = ht.pred.combined,
-  #   aes(
-  #     x = ht_zmax,
-  #     y = swe_peak
-  #   ),
-  #   inherit.aes = FALSE,
-  #   color = 'grey',
-  #   linetype = 'solid',
-  #   linewidth = 0.8
-  # ) +
-  
-  # # observed data support
-  # geom_rug(
-  #   data = ht.rug,
-  #   aes(x = ht_zmax, color = fire),
-  #   inherit.aes = FALSE,
-  #   sides = 'b',
-  #   alpha = 0.08
-  # ) +
   
   geom_point(
     data = ht.density,
@@ -1049,23 +855,6 @@ p.ht.opt <- ggplot(
   scale_color_manual(values = fire.colors) +
   scale_fill_manual(values = fire.colors) +
   
-  # used this for zmax
-  # scale_size_continuous(
-  #   name = 'Observations',
-  #   limits = c(0, 250000),
-  #   breaks = c(
-  #     50000,
-  #     100000,
-  #     150000,
-  #     250000
-  #   ),
-  #   labels = scales::comma,
-  #   range = c(1.5, 5)
-  # ) +
-  
-  # scale_x_continuous(
-  #   limits = c(0, 65),
-  #   breaks = seq(0, 60, by = 20)) +
   
   # used this for zmax
   scale_size_continuous(
@@ -1139,6 +928,16 @@ ht.summary <- ht.pred %>%
   )
 
 print(ht.summary, width = Inf)
+
+saveRDS(
+  list(
+    gap.pred = gap.pred,
+    gap.density = gap.density,
+    ht.pred = ht.pred,
+    ht.density = ht.density
+  ),
+  'data/plot_data/swe_marginal_effects.rds'
+)
 # ------------------ combined plot -------------------
 library(patchwork)
 library(grid)
@@ -1199,9 +998,9 @@ canopy.optimum.fig
 ggsave(
   'figures/swe_marginaleffectplots.png',
   plot = canopy.optimum.fig,
-  width = 12,
-  height = 8,
-  units = 'in',
+  width = 180,
+  height = 150,
+  units = 'mm',
   dpi = 300,
   bg = 'white'
 )

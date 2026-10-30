@@ -408,15 +408,6 @@ p.all <- (p.caldor + p.creek + p.castle) +
 
 p.all
 
-# save
-ggsave(
-  'figures/intersecting_huc_maps/all_fires_intersecting_hucs.png',
-  plot = p.all,
-  width = 15,
-  height = 5,
-  dpi = 300
-)
-
 # ------------------------- now same but cropping to elev -----
 
 # Read fire perimeters
@@ -457,6 +448,10 @@ names(final.extents) <- c(
   castle = 'Castle'
 )[names(final.extents)]
 
+# register Times New Roman with Windows graphics
+windowsFonts(
+  'Times New Roman' = windowsFont('TT Times New Roman')
+)
 
 # Function to make one panel
 plot_final_study_area <- function(fire.name, fire.sf, huc.sf, final.sf) {
@@ -489,31 +484,60 @@ plot_final_study_area <- function(fire.name, fire.sf, huc.sf, final.sf) {
       data = final.plot,
       fill = 'lightblue',
       color = '#1f78b4',
-      linewidth = 0.5,
+      linewidth = 0.25,
       alpha = 0.7
     ) +
     geom_sf(
       data = fire.plot,
       fill = NA,
       color = 'red',
-      linewidth = 0.5
+      linewidth = 0.25
     ) +
     coord_sf(
       xlim = c(bb$xmin - xpad, bb$xmax + xpad),
       ylim = c(bb$ymin - ypad, bb$ymax + ypad),
-      expand = FALSE
+      expand = FALSE,
+      label_graticule = 'SW'
+    ) +
+    scale_x_continuous(
+      breaks = scales::breaks_pretty(n = 3)
+    ) +
+    scale_y_continuous(
+      breaks = scales::breaks_pretty(n = 4)
     ) +
     labs(
       title = fire.name,
       x = NULL,
       y = NULL
     ) +
-    theme_minimal(base_size = 11) +
+    theme_minimal(
+      base_size = 10,
+      base_family = 'Times New Roman'
+    ) +
     theme(
-      plot.title = element_text(face = 'bold', hjust = 0.5),
-      panel.grid.major = element_line(color = 'grey80', linewidth = 0.3),
+      plot.title = element_text(
+        family = 'Times New Roman',
+        size = 12,
+        face = 'bold',
+        hjust = 0.5,
+        margin = margin(b = 5)
+      ),
+      axis.text.x = element_text(
+        family = 'Times New Roman',
+        size = 10,
+        color = 'black'
+      ),
+      axis.text.y = element_text(
+        family = 'Times New Roman',
+        size = 10,
+        color = 'black'
+      ),
+      panel.grid.major = element_line(
+        color = 'grey80',
+        linewidth = 0.3
+      ),
       panel.grid.minor = element_blank(),
-      axis.text = element_text(color = 'black')
+      plot.margin = margin(5, 8, 5, 8)
     )
 }
 
@@ -545,25 +569,32 @@ p.castle <- plot_final_study_area(
 p.all <- (p.caldor + p.creek + p.castle) +
   plot_layout(ncol = 3) +
   plot_annotation(
-    title = 'Final Study Areas and Intersecting HUC-12 Watersheds'
-  ) &
-  theme(
-    plot.title = element_text(face = 'bold', hjust = 0.5),
-    plot.caption = element_text(hjust = 0.5)
+    title = 'Final Study Areas and Intersecting HUC-12 Watersheds',
+    theme = theme(
+      plot.title = element_text(
+        family = 'Times New Roman',
+        size = 12,
+        face = 'bold',
+        hjust = 0.5,
+        margin = margin(b = 5)
+      )
+    )
   )
 
 p.all
 
 # save
-dir.create('figures/intersecting_huc_maps', recursive = TRUE, showWarnings = FALSE)
+#dir.create('figures/intersecting_huc_maps', recursive = TRUE, showWarnings = FALSE)
 
 ggsave(
-  'figures/intersecting_huc_maps/all_fires_final_study_areas.png',
+  'figures/intersecting_huc_maps/all_fires_final_study_areas_2.png',
   plot = p.all,
-  width = 15,
-  height = 5,
+  width = 180,
+  height = 85,
+  units = 'mm',
   dpi = 300
 )
+
 
 # ------------------------- Gap Percent Visualization -----------------------------
 fire <- 'caldor'
@@ -573,6 +604,19 @@ gap <- r[[6]]
 names(gap) <- 'gap_percent'
   
 dem <- rast(paste0('data/processed/processed/tif/50m/', fire, '/', fire, '_nasadem_50m.tif'))
+
+# chm
+if (fire == 'caldor') {
+  chm <- rast(paste0('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/', fire, '/', fire, '_chm_1m_32610.tif'))
+  
+} else if (fire == 'castle') {
+  chm_files <- list.files('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/castle/75m/castle_chm_32611', pattern = '\\.tif$', full.names = TRUE)
+  vrt(chm_files, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/castle/75m/castle_chm_32611.vrt', overwrite = TRUE)
+  chm <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/castle/75m/castle_chm_32611.vrt')
+  
+} else if (fire == 'creek') {
+  chm <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek/creek_chm_32611/creek_chm_1m_32611.vrt')}
+
 
 
 # check alignment
@@ -587,60 +631,564 @@ cand <- tibble(
   filter(!is.na(gap_percent), !is.na(elevation)) %>%
   mutate(
     elev_class = case_when(
-      elevation < 1750 ~ "Low elevation",
-      elevation > 2500 ~ "High elevation",
+      elevation < 1750 ~ 'Low elevation',
+      elevation > 2500 ~ 'High elevation',
       TRUE ~ NA_character_
     ),
     gap_class = case_when(
-      between(gap_percent, .22, .28) ~ "25% gap",
-      between(gap_percent, .47, .53) ~ "50% gap",
-      between(gap_percent, .72, .78) ~ "75% gap",
+      between(gap_percent, .22, .28) ~ '25% gap',
+      between(gap_percent, .47, .53) ~ '50% gap',
+      between(gap_percent, .72, .78) ~ '75% gap',
       TRUE ~ NA_character_
     )
   ) %>%
   filter(!is.na(elev_class), !is.na(gap_class))
 
-# pick best candidate (closed to target gap percent)
 set.seed(61)
 
-cand_best <- cand %>%
+cand.sample <- cand %>%
   mutate(
     gap_target = case_when(
-      gap_class == "25% gap" ~ 25,
-      gap_class == "50% gap" ~ 50,
-      gap_class == "75% gap" ~ 75
+      gap_class == "25% gap" ~ 0.25,
+      gap_class == "50% gap" ~ 0.50,
+      gap_class == "75% gap" ~ 0.75
     ),
     dist_to_target = abs(gap_percent - gap_target)
   ) %>%
   group_by(elev_class, gap_class) %>%
-  slice_min(order_by = dist_to_target, n = 1, with_ties = FALSE) %>%
+  slice_min(dist_to_target, n = 30, with_ties = FALSE) %>%
   ungroup()
 
-# get coordinates and make 50m polygons
-xy <- xyFromCell(gap, cand_best$cell)
+library(terra)
+library(dplyr)
+library(purrr)
 
-cand_best <- bind_cols(cand_best, as.data.frame(xy))
+# Make sure the CHM is loaded using your existing fire-specific code
 
-# raster with selected cells only
-sel_rast <- gap
-values(sel_rast) <- NA
-sel_rast[cand_best$cell] <- cand_best$gap_percent
+get_chm_gap <- function(cell_id) {
+  
+  # Create polygon for this exact 50m raster cell
+  xy <- xyFromCell(gap, cell_id)
+  
+  half_res <- res(gap) / 2
+  
+  p <- as.polygons(
+    ext(
+      xy[1, 1] - half_res[1],
+      xy[1, 1] + half_res[1],
+      xy[1, 2] - half_res[2],
+      xy[1, 2] + half_res[2]
+    ),
+    crs = crs(gap)
+  )
+  
+  if (!same.crs(p, chm)) {
+    p <- project(p, crs(chm))
+  }
+  
+  chm.crop <- crop(chm, p, mask = TRUE)
+  
+  vals <- values(chm.crop, na.rm = TRUE)
+  
+  if (length(vals) == 0) {
+    return(NA_real_)
+  }
+  
+  mean(vals < 2) * 100
+}
 
-# convert selected cells to polygons
-sel_polys <- as.polygons(sel_rast, na.rm = TRUE, aggregate = FALSE)
+cand.sample <- cand.sample %>%
+  mutate(
+    chm_gap_pct = map_dbl(cell, get_chm_gap),
+    raster_gap_pct = gap_percent * 100,
+    gap_difference = abs(chm_gap_pct - raster_gap_pct)
+  )
 
-# attach attributes
-sel_polys$cell <- cand_best$cell
-sel_polys$gap_percent <- cand_best$gap_percent
-sel_polys$elevation <- cand_best$elevation
-sel_polys$elev_class <- cand_best$elev_class
-sel_polys$gap_class <- cand_best$gap_class
+# pick candidates where calc gap pct closest matches gap_pct
+cand.best <- cand.sample %>%
+  filter(!is.na(chm_gap_pct)) %>%
+  group_by(elev_class, gap_class) %>%
+  slice_min(gap_difference, n = 1, with_ties = FALSE) %>%
+  ungroup()
 
-# for caldor
-chm <- rast(paste0('data/processed/processed/tif/1m/', fire, '/', fire, '_chm_1m_32610.tif'))
-# this won't work for Creek since that has a vrt instead
+cand.best %>%
+  select(
+    elev_class,
+    gap_class,
+    elevation,
+    raster_gap_pct,
+    chm_gap_pct,
+    gap_difference
+  )
 
-# for castle
-chm_files <- list.files('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/castle/75m/castle_chm_32611', pattern = '\\.tif$', full.names = TRUE)
-vrt(chm_files, 'data/processed/processed/tif/1m/castle/75m', overwrite = TRUE)
-chm <- rast("path/to/chm_tiles.vrt")
+
+# ----- plot -----
+plot.df <- map_dfr(seq_len(nrow(cand.best)), function(i) {
+  
+  cell_id <- cand.best$cell[i]
+  xy <- xyFromCell(gap, cell_id)
+  
+  half_res <- res(gap) / 2
+  
+  p <- as.polygons(
+    ext(
+      xy[1, 1] - half_res[1],
+      xy[1, 1] + half_res[1],
+      xy[1, 2] - half_res[2],
+      xy[1, 2] + half_res[2]
+    ),
+    crs = crs(gap)
+  )
+  
+  if (!same.crs(p, chm)) {
+    p <- project(p, crs(chm))
+  }
+  
+  chm.crop <- crop(chm, p, mask = TRUE)
+  
+  binary <- ifel(chm.crop < 2, 0, 1)
+  
+  df <- as.data.frame(binary, xy = TRUE, na.rm = TRUE)
+  names(df)[3] <- 'canopy_class'
+  
+  df %>%
+    mutate(
+      x = x - xy[1, 1],
+      y = y - xy[1, 2],
+      canopy_class = factor(
+        canopy_class,
+        levels = c(0, 1),
+        labels = c('Gap (<2 m)', 'Canopy (≥2 m)')
+      ),
+      elev_class = cand.best$elev_class[i],
+      gap_class = cand.best$gap_class[i]
+    )
+})
+
+plot.df <- plot.df %>%
+  mutate(
+    elev_class = factor(
+      elev_class,
+      levels = c('Low elevation', 'High elevation')
+    ),
+    gap_class = factor(
+      gap_class,
+      levels = c('25% gap', '50% gap', '75% gap')
+    )
+  )
+
+p <- ggplot(plot.df, aes(x, y, fill = canopy_class)) +
+  geom_raster() +
+  facet_grid(elev_class ~ gap_class) +
+  coord_equal(
+    xlim = c(-25, 25),
+    ylim = c(-25, 25),
+    expand = FALSE
+  ) +
+  scale_fill_manual(
+    values = c(
+      'Gap (<2 m)' = '#efff87',
+      'Canopy (≥2 m)' = '#7aac2a'
+    ),
+    drop = FALSE
+  ) +
+  labs(x = NULL, y = NULL, fill = NULL) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    strip.text = element_text(face = 'bold'),
+    legend.position = 'bottom'
+  )
+
+# save plot
+ggsave(
+  filename = paste0('figures/', fire, '_gap_percent_examples.png'),
+  plot = p,
+  width = 10,
+  height = 7,
+  units = 'in',
+  dpi = 300,
+  bg = 'white'
+)
+
+# ----- now add CHM -----
+
+# prepare CHM dataframe 
+chm.df <- map_dfr(seq_len(nrow(cand.best)), function(i) {
+  
+  cell_id <- cand.best$cell[i]
+  xy <- xyFromCell(gap, cell_id)
+  
+  half_res <- res(gap) / 2
+  
+  p <- as.polygons(
+    ext(
+      xy[1, 1] - half_res[1],
+      xy[1, 1] + half_res[1],
+      xy[1, 2] - half_res[2],
+      xy[1, 2] + half_res[2]
+    ),
+    crs = crs(gap)
+  )
+  
+  if (!same.crs(p, chm)) {
+    p <- project(p, crs(chm))
+  }
+  
+  chm.crop <- crop(chm, p, mask = TRUE)
+  
+  df <- as.data.frame(chm.crop, xy = TRUE, na.rm = TRUE)
+  
+  names(df)[3] <- 'height'
+  
+  df %>%
+    mutate(
+      x = x - xy[1, 1],
+      y = y - xy[1, 2],
+      elev_class = cand.best$elev_class[i],
+      gap_class = cand.best$gap_class[i]
+    )
+})
+
+chm.df <- chm.df %>%
+  mutate(
+    elev_class = factor(
+      elev_class,
+      levels = c('Low elevation', 'High elevation')
+    ),
+    gap_class = factor(
+      gap_class,
+      levels = c('25% gap', '50% gap', '75% gap')
+    )
+  )
+
+# plot CHM 
+
+p.chm <- ggplot(chm.df, aes(x, y, fill = height)) +
+  geom_raster() +
+  facet_grid(elev_class ~ gap_class) +
+  coord_equal(
+    xlim = c(-25, 25),
+    ylim = c(-25, 25),
+    expand = FALSE
+  ) +
+  scale_fill_viridis_c(
+    name = 'Canopy height (m)',
+    option = 'viridis',
+    limits = c(0, max(chm.df$height, na.rm = TRUE))
+  ) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    strip.text = element_text(face = 'bold'),
+    legend.position = 'bottom'
+  )
+
+p.chm
+
+# combine
+library(terra)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(maptiles)
+library(viridisLite)
+
+# figure setup
+
+chm.max <- 50
+chm.colors <- viridisLite::viridis(256)
+
+# helper for continuous CHM colors
+height_to_color <- function(h) {
+  idx <- round(pmin(pmax(h, 0), chm.max) /
+                 chm.max * 255) + 1
+  
+  chm.colors[idx]
+}
+
+# extract imagery and CHM for selected pixels
+
+plot.list <- map(seq_len(nrow(cand.best)), function(i) {
+  
+  cell_id <- cand.best$cell[i]
+  xy <- xyFromCell(gap, cell_id)
+  half_res <- res(gap) / 2
+  
+  # create exact 50m pixel polygon
+  p <- as.polygons(
+    ext(
+      xy[1, 1] - half_res[1],
+      xy[1, 1] + half_res[1],
+      xy[1, 2] - half_res[2],
+      xy[1, 2] + half_res[2]
+    ),
+    crs = crs(gap)
+  )
+  
+  if (!same.crs(p, chm)) {
+    p <- project(p, crs(chm))
+  }
+  
+  center.x <- (xmin(p) + xmax(p)) / 2
+  center.y <- (ymin(p) + ymax(p)) / 2
+  
+  # CHM 
+  chm.crop <- crop(chm, p, mask = TRUE)
+  
+  chm.df <- as.data.frame(
+    chm.crop,
+    xy = TRUE,
+    na.rm = TRUE
+  )
+  
+  names(chm.df)[3] <- 'height'
+  
+  chm.df <- chm.df %>%
+    mutate(
+      color = height_to_color(height),
+      layer = 'CHM'
+    )
+  
+  # binary gap classification 
+  
+  binary.df <- chm.df %>%
+    mutate(
+      color = if_else(
+        height < 2,
+        '#efff87',
+        '#7aac2a'
+      ),
+      layer = 'Binary gap'
+    )
+  
+  # satellite imagery
+  
+  # - 2022 NAIP imagery -
+  
+  sat <- get_naip(p, year = 2022)
+  
+  sat.df <- as.data.frame(
+    sat,
+    xy = TRUE,
+    na.rm = TRUE
+  )
+  
+  # first three bands are RGB
+  rgb.vals <- as.matrix(sat.df[, 3:5])
+  
+  # handle either 0–1 or 0–255 image values
+  if (max(rgb.vals, na.rm = TRUE) > 1) {
+    rgb.vals <- rgb.vals / 255
+  }
+  
+  rgb.vals <- pmin(pmax(rgb.vals, 0), 1)
+  
+  sat.df$color <- grDevices::rgb(
+    rgb.vals[, 1],
+    rgb.vals[, 2],
+    rgb.vals[, 3]
+  )
+  
+  sat.df$layer <- 'Satellite'
+  
+  sat <- crop(sat, p, mask = TRUE)
+  
+  sat.df <- as.data.frame(
+    sat,
+    xy = TRUE,
+    na.rm = TRUE
+  )
+  
+  # first three bands are RGB
+  rgb.vals <- as.matrix(sat.df[, 3:5])
+  
+  rgb.vals <- pmin(pmax(rgb.vals, 0), 255)
+  
+  sat.df$color <- grDevices::rgb(
+    rgb.vals[, 1],
+    rgb.vals[, 2],
+    rgb.vals[, 3],
+    maxColorValue = 255
+  )
+  
+  sat.df$layer <- 'Satellite'
+  
+  #  combine 
+  
+  bind_rows(
+    sat.df %>% select(x, y, color, layer),
+    chm.df %>% select(x, y, color, layer),
+    binary.df %>% select(x, y, color, layer)
+  ) %>%
+    mutate(
+      x = x - center.x,
+      y = y - center.y,
+      elev_class = cand.best$elev_class[i],
+      gap_class = cand.best$gap_class[i]
+    )
+})
+
+plot.df.combined <- bind_rows(plot.list)
+
+# set facet ordering 
+
+plot.df.combined <- plot.df.combined %>%
+  mutate(
+    elev_class = factor(
+      elev_class,
+      levels = c('Low elevation', 'High elevation')
+    ),
+    gap_class = factor(
+      gap_class,
+      levels = c('25% gap', '50% gap', '75% gap')
+    ),
+    layer = factor(
+      layer,
+      levels = c('Satellite', 'CHM', 'Binary gap')
+    ),
+    panel_row = factor(
+      paste(elev_class, layer, sep = ' - '),
+      levels = c(
+        'Low elevation - Satellite',
+        'Low elevation - CHM',
+        'Low elevation - Binary gap',
+        'High elevation - Satellite',
+        'High elevation - CHM',
+        'High elevation - Binary gap'
+      )
+    )
+  )
+
+# plot
+p.combined <- ggplot(
+  plot.df.combined,
+  aes(x = x, y = y, fill = color)
+) +
+  geom_raster() +
+  facet_grid(
+    panel_row ~ gap_class
+  ) +
+  coord_equal(
+    xlim = c(-25, 25),
+    ylim = c(-25, 25),
+    expand = FALSE
+  ) +
+  scale_fill_identity() +
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    strip.text = element_text(
+      size = 10,
+      face = 'bold'
+    ),
+    panel.spacing = grid::unit(0.12, 'in'),
+    plot.margin = margin(10, 10, 10, 10)
+  )
+
+p.combined
+
+library(patchwork)
+
+#  set factor ordering 
+
+plot.df.combined <- plot.df.combined %>%
+  mutate(
+    gap_class = factor(
+      gap_class,
+      levels = c('25% gap', '50% gap', '75% gap')
+    ),
+    layer = factor(
+      layer,
+      levels = c('Satellite', 'CHM', 'Binary gap')
+    )
+  )
+
+#  plotting function 
+
+plot_gap_examples <- function(elev) {
+  
+  df <- plot.df.combined %>%
+    filter(elev_class == elev)
+  
+  ggplot(df, aes(x = x, y = y, fill = color)) +
+    geom_raster() +
+    facet_grid(layer ~ gap_class) +
+    coord_fixed(
+      ratio = 1,
+      xlim = c(-25, 25),
+      ylim = c(-25, 25),
+      expand = FALSE,
+      clip = 'off'
+    ) +
+    scale_fill_identity() +
+    labs(
+      title = elev,
+      x = NULL,
+      y = NULL
+    ) +
+    theme_void() +
+    theme(
+      text = element_text(
+        family = 'Times New Roman',
+        size = 10
+      ),
+      plot.title = element_text(
+        family = 'Times New Roman',
+        size = 12,
+        face = 'bold',
+        hjust = 0.5,
+        margin = margin(t = 5, b = 5)
+      ),
+      strip.text.x = element_text(
+        family = 'Times New Roman',
+        size = 10,
+        face = 'bold',
+        margin = margin(t = 5, b = 10)
+      ),
+      strip.clip = 'off',
+      plot.margin = margin(t = 20, r = 10, b = 10, l = 10),
+      strip.text.y = element_blank(),
+      strip.background = element_blank(),
+      panel.spacing = grid::unit(0.12, 'in'),
+      legend.position = 'none'
+    )
+}
+
+# - create plots -
+
+p.low <- plot_gap_examples('Low elevation')
+p.high <- plot_gap_examples('High elevation')
+
+ggsave(
+  filename = paste0('figures/', fire, '_gap_chm_naip_examples_low_elev.png'),
+  plot = p.low,
+  width = 100,
+  height = 100,
+  units = 'mm',
+  dpi = 300,
+  bg = 'white'
+)
+
+ggsave(
+  filename = paste0('figures/', fire, '_gap_chm_naip_examples_high_elev.png'),
+  plot = p.high,
+  width = 100,
+  height = 100,
+  units = 'mm',
+  dpi = 300,
+  bg = 'white'
+)
+
+
