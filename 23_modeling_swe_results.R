@@ -142,6 +142,11 @@ cv_bam_swe <- function(formula, data, k_folds = 5) {
       )
     )
     
+    mae <- mean(
+      abs(obs - pred),
+      na.rm = TRUE
+    )
+    
     r2 <- cor(
       obs,
       pred,
@@ -153,6 +158,7 @@ cv_bam_swe <- function(formula, data, k_folds = 5) {
       data.frame(
         fold = fold,
         RMSE = rmse,
+        MAE = mae,
         R2 = r2
       )
     )
@@ -173,6 +179,10 @@ cv_bam_swe <- function(formula, data, k_folds = 5) {
             na.rm = TRUE
           )
         ),
+        MAE = mean(
+          abs(obs - pred),
+          na.rm = TRUE
+        ),
         R2 = cor(
           obs,
           pred,
@@ -187,13 +197,14 @@ cv_bam_swe <- function(formula, data, k_folds = 5) {
     cv.fire.results <- bind_rows(
       cv.fire.results,
       fire.results
-    )
-  }
+    ) }
   
   cv.summary <- cv.results %>%
     summarise(
       RMSE_mean = mean(RMSE),
       RMSE_sd = sd(RMSE),
+      MAE_mean = mean(MAE),
+      MAE_sd = sd(MAE),
       R2_mean = mean(R2),
       R2_sd = sd(R2)
     )
@@ -204,6 +215,7 @@ cv_bam_swe <- function(formula, data, k_folds = 5) {
     summary = cv.summary
   )
 }
+
 get.metrics <- function(fitted.model, model.name, fire.name) {
   
   s <- summary(fitted.model)
@@ -218,6 +230,7 @@ get.metrics <- function(fitted.model, model.name, fire.name) {
     edf = sum(s$edf)
   )
 }
+
 get.metrics.combined <- function(fitted.model, model.name) {
   
   s <- summary(fitted.model)
@@ -247,22 +260,6 @@ model.swe.burned <- bam(sqrt(swe_peak) ~ wy * fire + burned * fire
                  data = df.50,
                  method = 'fREML',
                  discrete = TRUE)
-# TEST
-model.swe <- bam(sqrt(swe_peak) ~ wy * fire
-                 + s(elevation, by = wy, k = 20)
-                 + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
-                 + s(ht_zmean, by = fire, k = 10) + s(gap_percent, by = fire, k = 10),
-                 data = df.50,
-                 method = 'fREML',
-                 discrete = TRUE)
-# model.swe.combined <- bam(sqrt(swe_peak) ~ wy * fire
-#                  + s(elevation, by = wy, k = 20)
-#                  + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
-#                  + s(ht_zmax, k = 10) + s(gap_percent, k = 10),
-#                  data = df.50,
-#                  method = 'fREML',
-#                  discrete = TRUE)
-
 
 
 # ==============================================================================
@@ -280,6 +277,8 @@ cv.swe.summary.byfire <- cv.swe$fire.results %>%
   summarise(
     RMSE_mean = mean(RMSE),
     RMSE_sd = sd(RMSE),
+    MAE_mean = mean(MAE),
+    MAE_sd = sd(MAE),
     R2_mean = mean(R2),
     R2_sd = sd(R2),
     .groups = 'drop'
@@ -291,6 +290,8 @@ cv.swe.summary.overall <- cv.swe$fold.results %>%
     fire = 'Overall',
     RMSE_mean = mean(RMSE),
     RMSE_sd = sd(RMSE),
+    MAE_mean = mean(MAE),
+    MAE_sd = sd(MAE),
     R2_mean = mean(R2),
     R2_sd = sd(R2)
   )
@@ -302,7 +303,17 @@ cv.swe.summary <- bind_rows(
     mutate(fire = as.character(fire))
 )
 
-cv.swe.summary
+cv.swe.summary.display <- cv.swe.summary %>%
+  mutate(
+    across(
+      where(is.numeric),
+      ~ round(.x, 2)
+    )
+  )
+
+cv.swe.summary.display
+
+
 
 # -- burned model ---
 cv.swe.burned <- cv_bam_swe(formula = formula(model.swe.burned),
@@ -315,6 +326,8 @@ cv.swe.burned.summary.byfire <- cv.swe.burned$fire.results %>%
   summarise(
     RMSE_mean = mean(RMSE),
     RMSE_sd = sd(RMSE),
+    MAE_mean = mean(MAE),
+    MAE_sd = sd(MAE),
     R2_mean = mean(R2),
     R2_sd = sd(R2),
     .groups = 'drop'
@@ -326,6 +339,8 @@ cv.swe.burned.summary.overall <- cv.swe.burned$fold.results %>%
     fire = 'Overall',
     RMSE_mean = mean(RMSE),
     RMSE_sd = sd(RMSE),
+    MAE_mean = mean(MAE),
+    MAE_sd = sd(MAE),
     R2_mean = mean(R2),
     R2_sd = sd(R2)
   )
@@ -339,6 +354,16 @@ cv.swe.burned.summary <- bind_rows(
 
 cv.swe.burned.summary
 
+cv.swe.burned.summary.display <- cv.swe.burned.summary %>%
+  mutate(
+    across(
+      where(is.numeric),
+      ~ round(.x, 2)
+    )
+  )
+
+cv.swe.burned.summary.display
+
 
 
 # explore
@@ -346,7 +371,7 @@ cv.swe.burned.summary
 model.swe.test <- bam(sqrt(swe_peak) ~ wy * fire
                  + s(elevation, by = wy, k = 20)
                  + s(rad_dtm_accum, k = 10) + s(slope, k = 10) + s(aspect_sin, k = 10) + s(tpi150, k = 10) + s(tpi2010, k = 10) 
-                 + s(ht_zmean, by = fire, k = 10) + s(gap_percent, by = fire, k = 10),
+                 + s(ht_zmax, by = fire, k = 10) + s(gap_percent, by = fire, k = 10),
                  data = df.50,
                  method = 'fREML',
                  discrete = TRUE)
@@ -358,7 +383,7 @@ cv.swe.test <- cv_bam_swe(
 
 cv.test.comparison <- bind_rows(
   'With zmax' = cv.swe$summary,
-  'With zmean' = cv.swe.test$summary,
+  'With zmax' = cv.swe.test$summary,
   .id = 'model'
 )
 
@@ -584,21 +609,21 @@ p.gap.opt <- ggplot(
     color = fire,
     fill = fire
   )
-) +
-  
-  geom_rect(
-    data = gap.optimum.plot,
-    aes(
-      xmin = gap.95.low,
-      xmax = gap.95.high,
-      ymin = -Inf,
-      ymax = Inf,
-      fill = fire
-    ),
-    inherit.aes = FALSE,
-    alpha = 0.08,
-    color = NA
-  ) +
+# ) +
+#   
+#   geom_rect(
+#     data = gap.optimum.plot,
+#     aes(
+#       xmin = gap.95.low,
+#       xmax = gap.95.high,
+#       ymin = -Inf,
+#       ymax = Inf,
+#       fill = fire
+#     ),
+#     inherit.aes = FALSE,
+#     alpha = 0.08,
+#     color = NA
+   ) +
   
   geom_ribbon(
     aes(
@@ -661,19 +686,19 @@ p.gap.opt <- ggplot(
     drop = FALSE
   ) +
   
-  geom_segment(
-    data = gap.optimum.plot,
-    aes(
-      x = gap.95.low,
-      xend = gap.95.high,
-      y = threshold.95,
-      yend = threshold.95,
-      color = fire
-    ),
-    inherit.aes = FALSE,
-    linetype = 'dashed',
-    linewidth = 0.6
-  ) +
+  # geom_segment(
+  #   data = gap.optimum.plot,
+  #   aes(
+  #     x = gap.95.low,
+  #     xend = gap.95.high,
+  #     y = threshold.95,
+  #     yend = threshold.95,
+  #     color = fire
+  #   ),
+  #   inherit.aes = FALSE,
+  #   linetype = 'dashed',
+  #   linewidth = 0.6
+  # ) +
   
   scale_color_manual(values = fire.colors) +
   scale_fill_manual(values = fire.colors) +
@@ -749,7 +774,7 @@ gap.summary <- gap.pred %>%
 
 print(gap.summary, width = Inf)
 # ---------------- maximum canopy height ---------------
-### NOTE I changed zmax to zmean temporarily for exploration
+
 ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
   
   # prediction sample for fire
@@ -760,12 +785,12 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
   # fire-specific prediction range
   ht.seq <- seq(
     quantile(
-      df.50$ht_zmean[df.50$fire == fire.name],
+      df.50$ht_zmax[df.50$fire == fire.name],
       0.01,
       na.rm = TRUE
     ),
     quantile(
-      df.50$ht_zmean[df.50$fire == fire.name],
+      df.50$ht_zmax[df.50$fire == fire.name],
       0.99,
       na.rm = TRUE
     ),
@@ -775,7 +800,7 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
   map_dfr(ht.seq, function(ht.value) {
     
     newdata <- df.fire %>%
-      mutate(ht_zmean = ht.value)
+      mutate(ht_zmax = ht.value)
     
     # central prediction
     pred <- predict(
@@ -801,7 +826,7 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
     
     tibble(
       fire = fire.name,
-      ht_zmean = ht.value,
+      ht_zmax = ht.value,
       swe_peak = fit,
       lower = quantile(sim.swe, 0.025),
       upper = quantile(sim.swe, 0.975)
@@ -816,12 +841,12 @@ ht.pred <- map_dfr(levels(df.pred$fire), function(fire.name) {
 
 ht.density <- df.50 %>%
   filter(
-    !is.na(ht_zmean),
+    !is.na(ht_zmax),
     !is.na(fire)
   ) %>%
   mutate(
     ht_bin = cut(
-      ht_zmean,
+      ht_zmax,
       breaks = seq(0, 100, by = 3),
       include.lowest = TRUE
     )
@@ -831,20 +856,20 @@ ht.density <- df.50 %>%
     ht_bin
   ) %>%
   summarise(
-    ht_zmean = mean(ht_zmean, na.rm = TRUE),
+    ht_zmax = mean(ht_zmax, na.rm = TRUE),
     n = n(),
     .groups = 'drop'
   ) %>%
   group_by(fire) %>%
   mutate(
     swe_peak = approx(
-      x = ht.pred$ht_zmean[
+      x = ht.pred$ht_zmax[
         ht.pred$fire == first(fire)
       ],
       y = ht.pred$swe_peak[
         ht.pred$fire == first(fire)
       ],
-      xout = ht_zmean,
+      xout = ht_zmax,
       rule = 1
     )$y
   ) %>%
@@ -861,15 +886,15 @@ ht.density <- df.50 %>%
 #       filter(fire == fire.name) %>%
 #       droplevels()
 #     
-#     # fire-specific range of ht_zmean
+#     # fire-specific range of ht_zmax
 #     ht.seq <- seq(
 #       quantile(
-#         df.50$ht_zmean[df.50$fire == fire.name],
+#         df.50$ht_zmax[df.50$fire == fire.name],
 #         0.01,
 #         na.rm = TRUE
 #       ),
 #       quantile(
-#         df.50$ht_zmean[df.50$fire == fire.name],
+#         df.50$ht_zmax[df.50$fire == fire.name],
 #         0.99,
 #         na.rm = TRUE
 #       ),
@@ -880,7 +905,7 @@ ht.density <- df.50 %>%
 #       
 #       newdata <- df.fire %>%
 #         mutate(
-#           ht_zmean = ht.value
+#           ht_zmax = ht.value
 #         )
 #       
 #       # predictions on sqrt(SWE) scale
@@ -892,7 +917,7 @@ ht.density <- df.50 %>%
 #       
 #       tibble(
 #         fire = fire.name,
-#         ht_zmean = ht.value,
+#         ht_zmax = ht.value,
 #         swe_peak = mean(pred^2, na.rm = TRUE)
 #       )
 #     })
@@ -905,16 +930,16 @@ ht.optimum <- ht.pred %>%
   summarise(
     max.swe = max(swe_peak),
     
-    ht.at.max = ht_zmean[which.max(swe_peak)],
+    ht.at.max = ht_zmax[which.max(swe_peak)],
     
     threshold.95 = 0.95 * max.swe,
     
     ht.95.low = min(
-      ht_zmean[swe_peak >= threshold.95]
+      ht_zmax[swe_peak >= threshold.95]
     ),
     
     ht.95.high = max(
-      ht_zmean[swe_peak >= threshold.95]
+      ht_zmax[swe_peak >= threshold.95]
     )
   )
 
@@ -937,27 +962,27 @@ ht.optimum <- ht.optimum %>%
 p.ht.opt <- ggplot(
   ht.pred,
   aes(
-    x = ht_zmean,
+    x = ht_zmax,
     y = swe_peak,
     color = fire,
     fill = fire
   )
 ) +
   
-  # range producing >=95% of maximum predicted SWE
-  geom_rect(
-    data = ht.optimum,
-    aes(
-      xmin = ht.95.low,
-      xmax = ht.95.high,
-      ymin = -Inf,
-      ymax = Inf,
-      fill = fire
-    ),
-    inherit.aes = FALSE,
-    alpha = 0.08,
-    color = NA
-  ) +
+  # # range producing >=95% of maximum predicted SWE
+  # geom_rect(
+  #   data = ht.optimum,
+  #   aes(
+  #     xmin = ht.95.low,
+  #     xmax = ht.95.high,
+  #     ymin = -Inf,
+  #     ymax = Inf,
+  #     fill = fire
+  #   ),
+  #   inherit.aes = FALSE,
+  #   alpha = 0.08,
+  #   color = NA
+  # ) +
   
   # 95% CI
   geom_ribbon(
@@ -969,24 +994,24 @@ p.ht.opt <- ggplot(
   # marginal prediction
   geom_line(linewidth = 1) +
   
-  # 95% of maximum threshold
-  geom_segment(
-    data = ht.optimum,
-    aes(
-      x = ht.95.low,
-      xend = ht.95.high,
-      y = threshold.95,
-      yend = threshold.95,
-      color = fire
-    ),
-    inherit.aes = FALSE,
-    linetype = 'dashed',
-    linewidth = 0.6
-  ) +
+  # # 95% of maximum threshold
+  # geom_segment(
+  #   data = ht.optimum,
+  #   aes(
+  #     x = ht.95.low,
+  #     xend = ht.95.high,
+  #     y = threshold.95,
+  #     yend = threshold.95,
+  #     color = fire
+  #   ),
+  #   inherit.aes = FALSE,
+  #   linetype = 'dashed',
+  #   linewidth = 0.6
+  # ) +
   # geom_line(
   #   data = ht.pred.combined,
   #   aes(
-  #     x = ht_zmean,
+  #     x = ht_zmax,
   #     y = swe_peak
   #   ),
   #   inherit.aes = FALSE,
@@ -998,7 +1023,7 @@ p.ht.opt <- ggplot(
   # # observed data support
   # geom_rug(
   #   data = ht.rug,
-  #   aes(x = ht_zmean, color = fire),
+  #   aes(x = ht_zmax, color = fire),
   #   inherit.aes = FALSE,
   #   sides = 'b',
   #   alpha = 0.08
@@ -1007,7 +1032,7 @@ p.ht.opt <- ggplot(
   geom_point(
     data = ht.density,
     aes(
-      x = ht_zmean,
+      x = ht_zmax,
       y = swe_peak,
       size = n,
       color = fire
@@ -1042,14 +1067,14 @@ p.ht.opt <- ggplot(
   #   limits = c(0, 65),
   #   breaks = seq(0, 60, by = 20)) +
   
-  # used this for zmean
+  # used this for zmax
   scale_size_continuous(
     range = c(1.5, 5)
   ) +
   
   scale_x_continuous(
     limits = c(0, 65),
-    breaks = seq(0, 35, by = 10)) +
+    breaks = seq(0, 60, by = 20)) +
   
   scale_y_continuous(
     limits = c(0.38, 0.82),
@@ -1079,14 +1104,14 @@ p.ht.opt
 ht.summary <- ht.pred %>%
   group_by(fire) %>%
   summarise(
-    ht_min = min(ht_zmean),
-    ht_max = max(ht_zmean),
+    ht_min = min(ht_zmax),
+    ht_max = max(ht_zmax),
     
-    swe_at_ht_min = swe_peak[which.min(ht_zmean)],
-    swe_at_ht_max = swe_peak[which.max(ht_zmean)],
+    swe_at_ht_min = swe_peak[which.min(ht_zmax)],
+    swe_at_ht_max = swe_peak[which.max(ht_zmax)],
     
     max_swe = max(swe_peak),
-    ht_at_max = ht_zmean[which.max(swe_peak)],
+    ht_at_max = ht_zmax[which.max(swe_peak)],
     
     increase_to_max = max_swe - swe_at_ht_min,
     
@@ -1103,11 +1128,11 @@ ht.summary <- ht.pred %>%
     threshold_95 = 0.95 * max_swe,
     
     ht_95_low = min(
-      ht_zmean[swe_peak >= threshold_95]
+      ht_zmax[swe_peak >= threshold_95]
     ),
     
     ht_95_high = max(
-      ht_zmean[swe_peak >= threshold_95]
+      ht_zmax[swe_peak >= threshold_95]
     ),
     
     .groups = 'drop'
@@ -1170,6 +1195,16 @@ canopy.optimum.fig <- (
   )
 
 canopy.optimum.fig
+
+ggsave(
+  'figures/swe_marginaleffectplots.png',
+  plot = canopy.optimum.fig,
+  width = 12,
+  height = 8,
+  units = 'in',
+  dpi = 300,
+  bg = 'white'
+)
 
 
 # ----------------------------------- ** OPTIMUM CANOPY CONDITIONS ** ------------------------------------
@@ -1786,588 +1821,6 @@ p.optimum.combined
 
 
 
-# ---------- gap percent x canopy height x zskew ----------
-df.50 %>%
-  group_by(fire) %>%
-  summarise(
-    min = min(ht_zskew, na.rm = TRUE),
-    q01 = quantile(ht_zskew, 0.01, na.rm = TRUE),
-    q25 = quantile(ht_zskew, 0.25, na.rm = TRUE),
-    median = median(ht_zskew, na.rm = TRUE),
-    q75 = quantile(ht_zskew, 0.75, na.rm = TRUE),
-    q99 = quantile(ht_zskew, 0.99, na.rm = TRUE),
-    max = max(ht_zskew, na.rm = TRUE)
-  )
-
-# ----- creek -----
-# --- observed canopy combinations ---
-# bin canopy variables
-df.creek <- df.creek %>%
-  mutate(
-    # 2% gap bins
-    gap_bin = round(gap_percent / 2) * 2,
-    # 2 m height bins
-    ht_bin = round(ht_zmax / 2) * 2,
-    # 0.2 skew bins
-    skew_bin = round(ht_zskew / 0.2) * 0.2
-  )
-
-# because skew doesn't occur at all parts of its range:
-skew.limits <- quantile(
-  df.creek$ht_zskew,
-  c(0.01, 0.99),
-  na.rm = TRUE
-)
-
-df.creek.3d <- df.creek %>%
-  filter(
-    ht_zskew >= skew.limits[1],
-    ht_zskew <= skew.limits[2]
-  )
-
-canopy.combos.3d <- df.creek.3d %>%
-  count(
-    gap_bin,
-    ht_bin,
-    skew_bin,
-    name = 'n'
-  )
-
-summary(canopy.combos.3d$n)
-
-quantile(
-  canopy.combos.3d$n,
-  probs = c(
-    0,
-    0.05,
-    0.10,
-    0.25,
-    0.50,
-    0.75,
-    0.90,
-    0.95,
-    1
-  )
-)
-
-# run to determine what n to use
-canopy.combos.3d %>%
-  summarise(
-    total.obs = sum(n),
-    
-    obs20 = sum(n[n >= 20]),
-    obs50 = sum(n[n >= 50]),
-    obs100 = sum(n[n >= 100]),
-    obs200 = sum(n[n >= 200]),
-    
-    pct.obs20 = sum(n[n >= 20]) / sum(n) * 100,
-    pct.obs50 = sum(n[n >= 50]) / sum(n) * 100,
-    pct.obs100 = sum(n[n >= 100]) / sum(n) * 100,
-    pct.obs200 = sum(n[n >= 200]) / sum(n) * 100
-  )
-
-# in this case 50 is best
-supported.combos.3d <- canopy.combos.3d %>%
-  filter(n >= 50)
-
-creek.pred.canopy.3d <- purrr::pmap_dfr(
-  supported.combos.3d,
-  function(gap_bin, ht_bin, skew_bin, n) {
-    
-    # assign one canopy configuration to marginalization sample
-    newdata <- df.creek.marg %>%
-      mutate(
-        gap_percent = gap_bin,
-        ht_zmax = ht_bin,
-        ht_zskew = skew_bin
-      )
-    
-    # predict sqrt(SWE)
-    pred <- predict(
-      model.swe,
-      newdata = newdata,
-      type = 'response'
-    )
-    
-    # average after back-transformation
-    tibble(
-      gap_bin = gap_bin,
-      ht_bin = ht_bin,
-      skew_bin = skew_bin,
-      n = n,
-      pred.swe = mean(pred^2)
-    )
-  }
-)
-
-# --- find optimum ---
-optimum.3d <- creek.pred.canopy.3d %>%
-  slice_max(pred.swe, n = 1, with_ties = FALSE)
-
-threshold.95.3d <- max(
-  creek.pred.canopy.3d$pred.swe,
-  na.rm = TRUE
-) * 0.95
-
-optimum.95.3d <- creek.pred.canopy.3d %>%
-  filter(pred.swe >= threshold.95.3d)
-
-nrow(optimum.95.3d)
-
-optimum.95.3d %>%
-  arrange(desc(pred.swe)) %>%
-  head(20)
-
-# --- plot ---
-library(plotly)
-plot_ly(
-  data = creek.pred.canopy.3d,
-  x = ~gap_bin,
-  y = ~ht_bin,
-  z = ~skew_bin,
-  color = ~pred.swe,
-  colors = viridisLite::viridis(100),
-  type = 'scatter3d',
-  mode = 'markers',
-  marker = list(
-    size = 2,
-    opacity = 0.25
-  ),
-  text = ~paste0(
-    'Gap: ', gap_bin, '%',
-    '<br>Height: ', ht_bin, ' m',
-    '<br>Skew: ', round(skew_bin, 2),
-    '<br>Predicted SWE: ', round(pred.swe, 3), ' m',
-    '<br>n: ', n
-  ),
-  hoverinfo = 'text'
-) %>%
-  
-  add_trace(
-    data = optimum.95.3d,
-    x = ~gap_bin,
-    y = ~ht_bin,
-    z = ~skew_bin,
-    type = 'scatter3d',
-    mode = 'markers',
-    marker = list(
-      size = 4,
-      color = 'pink',
-      opacity = 0.8
-    ),
-    name = '≥95% maximum',
-    inherit = FALSE
-  ) %>%
-  
-  layout(
-    scene = list(
-      xaxis = list(title = 'Gap percent'),
-      yaxis = list(title = 'Maximum canopy height (m)'),
-      zaxis = list(title = 'Canopy height skewness')
-    )
-  )
-# ----- caldor -----
-# --- observed canopy combinations ---
-# bin canopy variables
-df.caldor <- df.caldor %>%
-  mutate(
-    # 2% gap bins
-    gap_bin = round(gap_percent / 2) * 2,
-    # 2 m height bins
-    ht_bin = round(ht_zmax / 2) * 2,
-    # 0.2 skew bins
-    skew_bin = round(ht_zskew / 0.2) * 0.2
-  )
-
-# because skew doesn't occur at all parts of its range:
-skew.limits <- quantile(
-  df.caldor$ht_zskew,
-  c(0.01, 0.99),
-  na.rm = TRUE
-)
-
-df.caldor.3d <- df.caldor %>%
-  filter(
-    ht_zskew >= skew.limits[1],
-    ht_zskew <= skew.limits[2]
-  )
-
-canopy.combos.3d <- df.caldor.3d %>%
-  count(
-    gap_bin,
-    ht_bin,
-    skew_bin,
-    name = 'n'
-  )
-
-summary(canopy.combos.3d$n)
-
-quantile(
-  canopy.combos.3d$n,
-  probs = c(
-    0,
-    0.05,
-    0.10,
-    0.25,
-    0.50,
-    0.75,
-    0.90,
-    0.95,
-    1
-  )
-)
-
-# run to determine what n to use
-canopy.combos.3d %>%
-  summarise(
-    total.obs = sum(n),
-    
-    obs20 = sum(n[n >= 20]),
-    obs50 = sum(n[n >= 50]),
-    obs100 = sum(n[n >= 100]),
-    obs200 = sum(n[n >= 200]),
-    
-    pct.obs20 = sum(n[n >= 20]) / sum(n) * 100,
-    pct.obs50 = sum(n[n >= 50]) / sum(n) * 100,
-    pct.obs100 = sum(n[n >= 100]) / sum(n) * 100,
-    pct.obs200 = sum(n[n >= 200]) / sum(n) * 100
-  )
-
-# in this case 50 is best
-supported.combos.3d <- canopy.combos.3d %>%
-  filter(n >= 50)
-
-caldor.pred.canopy.3d <- purrr::pmap_dfr(
-  supported.combos.3d,
-  function(gap_bin, ht_bin, skew_bin, n) {
-    
-    # assign one canopy configuration to marginalization sample
-    newdata <- df.caldor.marg %>%
-      mutate(
-        gap_percent = gap_bin,
-        ht_zmax = ht_bin,
-        ht_zskew = skew_bin
-      )
-    
-    # predict sqrt(SWE)
-    pred <- predict(
-      model.swe,
-      newdata = newdata,
-      type = 'response'
-    )
-    
-    # average after back-transformation
-    tibble(
-      gap_bin = gap_bin,
-      ht_bin = ht_bin,
-      skew_bin = skew_bin,
-      n = n,
-      pred.swe = mean(pred^2)
-    )
-  }
-)
-
-# --- find optimum ---
-optimum.3d <- caldor.pred.canopy.3d %>%
-  slice_max(pred.swe, n = 1, with_ties = FALSE)
-
-threshold.95.3d <- max(
-  caldor.pred.canopy.3d$pred.swe,
-  na.rm = TRUE
-) * 0.95
-
-optimum.95.3d <- caldor.pred.canopy.3d %>%
-  filter(pred.swe >= threshold.95.3d)
-
-nrow(optimum.95.3d)
-
-optimum.95.3d %>%
-  arrange(desc(pred.swe)) %>%
-  head(20)
-
-# --- plot ---
-library(plotly)
-plot_ly(
-  data = caldor.pred.canopy.3d,
-  x = ~gap_bin,
-  y = ~ht_bin,
-  z = ~skew_bin,
-  color = ~pred.swe,
-  colors = viridisLite::viridis(100),
-  type = 'scatter3d',
-  mode = 'markers',
-  marker = list(
-    size = 2,
-    opacity = 0.25
-  ),
-  text = ~paste0(
-    'Gap: ', gap_bin, '%',
-    '<br>Height: ', ht_bin, ' m',
-    '<br>Skew: ', round(skew_bin, 2),
-    '<br>Predicted SWE: ', round(pred.swe, 3), ' m',
-    '<br>n: ', n
-  ),
-  hoverinfo = 'text'
-) %>%
-  
-  add_trace(
-    data = optimum.95.3d,
-    x = ~gap_bin,
-    y = ~ht_bin,
-    z = ~skew_bin,
-    type = 'scatter3d',
-    mode = 'markers',
-    marker = list(
-      size = 4,
-      color = 'pink',
-      opacity = 0.8
-    ),
-    name = '≥95% maximum',
-    inherit = FALSE
-  ) %>%
-  
-  layout(
-    scene = list(
-      xaxis = list(title = 'Gap percent'),
-      yaxis = list(title = 'Maximum canopy height (m)'),
-      zaxis = list(title = 'Canopy height skewness')
-    )
-  )
-# ----- castle -----
-# --- observed canopy combinations ---
-# bin canopy variables
-df.castle <- df.castle %>%
-  mutate(
-    # 2% gap bins
-    gap_bin = round(gap_percent / 2) * 2,
-    # 2 m height bins
-    ht_bin = round(ht_zmax / 2) * 2,
-    # 0.2 skew bins
-    skew_bin = round(ht_zskew / 0.2) * 0.2
-  )
-
-# because skew doesn't occur at all parts of its range:
-skew.limits <- quantile(
-  df.castle$ht_zskew,
-  c(0.01, 0.99),
-  na.rm = TRUE
-)
-
-df.castle.3d <- df.castle %>%
-  filter(
-    ht_zskew >= skew.limits[1],
-    ht_zskew <= skew.limits[2]
-  )
-
-canopy.combos.3d <- df.castle.3d %>%
-  count(
-    gap_bin,
-    ht_bin,
-    skew_bin,
-    name = 'n'
-  )
-
-summary(canopy.combos.3d$n)
-
-quantile(
-  canopy.combos.3d$n,
-  probs = c(
-    0,
-    0.05,
-    0.10,
-    0.25,
-    0.50,
-    0.75,
-    0.90,
-    0.95,
-    1
-  )
-)
-
-# run to determine what n to use
-canopy.combos.3d %>%
-  summarise(
-    total.obs = sum(n),
-    
-    obs20 = sum(n[n >= 20]),
-    obs50 = sum(n[n >= 50]),
-    obs100 = sum(n[n >= 100]),
-    obs200 = sum(n[n >= 200]),
-    
-    pct.obs20 = sum(n[n >= 20]) / sum(n) * 100,
-    pct.obs50 = sum(n[n >= 50]) / sum(n) * 100,
-    pct.obs100 = sum(n[n >= 100]) / sum(n) * 100,
-    pct.obs200 = sum(n[n >= 200]) / sum(n) * 100
-  )
-
-# in this case 50 is best
-supported.combos.3d <- canopy.combos.3d %>%
-  filter(n >= 50)
-
-castle.pred.canopy.3d <- purrr::pmap_dfr(
-  supported.combos.3d,
-  function(gap_bin, ht_bin, skew_bin, n) {
-    
-    # assign one canopy configuration to marginalization sample
-    newdata <- df.castle.marg %>%
-      mutate(
-        gap_percent = gap_bin,
-        ht_zmax = ht_bin,
-        ht_zskew = skew_bin
-      )
-    
-    # predict sqrt(SWE)
-    pred <- predict(
-      model.swe,
-      newdata = newdata,
-      type = 'response'
-    )
-    
-    # average after back-transformation
-    tibble(
-      gap_bin = gap_bin,
-      ht_bin = ht_bin,
-      skew_bin = skew_bin,
-      n = n,
-      pred.swe = mean(pred^2)
-    )
-  }
-)
-
-# --- find optimum ---
-optimum.3d <- castle.pred.canopy.3d %>%
-  slice_max(pred.swe, n = 1, with_ties = FALSE)
-
-threshold.95.3d <- max(
-  castle.pred.canopy.3d$pred.swe,
-  na.rm = TRUE
-) * 0.95
-
-optimum.95.3d <- castle.pred.canopy.3d %>%
-  filter(pred.swe >= threshold.95.3d)
-
-nrow(optimum.95.3d)
-
-optimum.95.3d %>%
-  arrange(desc(pred.swe)) %>%
-  head(20)
-
-# --- plot ---
-library(plotly)
-plot_ly(
-  data = castle.pred.canopy.3d,
-  x = ~gap_bin,
-  y = ~ht_bin,
-  z = ~skew_bin,
-  color = ~pred.swe,
-  colors = viridisLite::viridis(100),
-  type = 'scatter3d',
-  mode = 'markers',
-  marker = list(
-    size = 2,
-    opacity = 0.25
-  ),
-  text = ~paste0(
-    'Gap: ', gap_bin, '%',
-    '<br>Height: ', ht_bin, ' m',
-    '<br>Skew: ', round(skew_bin, 2),
-    '<br>Predicted SWE: ', round(pred.swe, 3), ' m',
-    '<br>n: ', n
-  ),
-  hoverinfo = 'text'
-) %>%
-  
-  add_trace(
-    data = optimum.95.3d,
-    x = ~gap_bin,
-    y = ~ht_bin,
-    z = ~skew_bin,
-    type = 'scatter3d',
-    mode = 'markers',
-    marker = list(
-      size = 4,
-      color = 'pink',
-      opacity = 0.8
-    ),
-    name = '≥95% maximum',
-    inherit = FALSE
-  ) %>%
-  
-  layout(
-    scene = list(
-      xaxis = list(title = 'Gap percent'),
-      yaxis = list(title = 'Maximum canopy height (m)'),
-      zaxis = list(title = 'Canopy height skewness')
-    )
-  )
-# ----- combine -----
-creek.pred.canopy.3d <- creek.pred.canopy.3d %>%
-  mutate(
-    fire = 'Creek',
-    relative.swe = pred.swe / max(pred.swe, na.rm = TRUE)
-  )
-
-caldor.pred.canopy.3d <- caldor.pred.canopy.3d %>%
-  mutate(
-    fire = 'Caldor',
-    relative.swe = pred.swe / max(pred.swe, na.rm = TRUE)
-  )
-
-castle.pred.canopy.3d <- castle.pred.canopy.3d %>%
-  mutate(
-    fire = 'Castle',
-    relative.swe = pred.swe / max(pred.swe, na.rm = TRUE)
-  )
-
-# combine
-pred.3d.combined <- bind_rows(
-  creek.pred.canopy.3d,
-  caldor.pred.canopy.3d,
-  castle.pred.canopy.3d
-)
-
-# only canopy combos that occur in all 3 fires
-common.combos <- pred.3d.combined %>%
-  group_by(
-    gap_bin,
-    ht_bin,
-    skew_bin
-  ) %>%
-  filter(n_distinct(fire) == 3) %>%
-  ungroup()
-
-# check
-n_distinct(
-  interaction(
-    common.combos$gap_bin,
-    common.combos$ht_bin,
-    common.combos$skew_bin
-  )
-)
-
-# collapse the three fire predictions into one row per canopy configuration
-cross.fire <- common.combos %>%
-  group_by(
-    gap_bin,
-    ht_bin,
-    skew_bin
-  ) %>%
-  summarise(
-    mean.relative.swe = mean(relative.swe),
-    min.relative.swe = min(relative.swe),
-    max.relative.swe = max(relative.swe),
-    .groups = 'drop'
-  )
-
-# find the most consistently good canopy configuration
-best.common <- cross.fire %>%
-  slice_max(
-    min.relative.swe,
-    n = 1,
-    with_ties = FALSE
-  )
-
-best.common
 # ----------------------------------- ** BURN EFFECTS ** --------------------------------------------------
 # ----- set scale once -----
 burn.obs.size.scale <- scale_size_continuous(
@@ -2380,6 +1833,15 @@ burn.obs.size.scale <- scale_size_continuous(
   ),
   labels = scales::comma,
   range = c(1.5, 5)
+)
+
+# generate coefficient sims
+set.seed(61)
+
+beta.sim.burned <- MASS::mvrnorm(
+  n = 500,
+  mu = coef(model.swe.burned),
+  Sigma = vcov(model.swe.burned)
 )
 # --------------- Gap percent ---------------
 # --- supported gap range within each fire x burn class ---
@@ -2411,71 +1873,91 @@ gap.ranges.common <- gap.ranges.burn %>%
 burn.levels <- levels(df.50$burned)
 
 # --- predictions ---
-gap.burn.pred <- map_dfr(
-  levels(df.pred$fire),
-  function(fire.name) {
-    
-    # prediction sample for this fire
-    df.fire <- df.pred %>%
-      filter(fire == fire.name) %>%
-      droplevels()
-    
-    # shared supported gap range
-    fire.range <- gap.ranges.common %>%
-      filter(fire == fire.name)
-    
-    gap.seq <- seq(
-      fire.range$gap.low,
-      fire.range$gap.high,
-      length.out = 100
-    )
-    
-    map_dfr(
-      burn.levels,
-      function(burn.value) {
-        
-        map_dfr(
-          gap.seq,
-          function(gap.value) {
-            
-            newdata <- df.fire %>%
-              mutate(
-                gap_percent = gap.value,
-                burned = factor(
-                  burn.value,
-                  levels = levels(df.50$burned)
-                ),
-                fire_burned = interaction(
-                  fire,
-                  burned,
-                  sep = '_'
-                ),
-                fire_burned = factor(
-                  fire_burned,
-                  levels = levels(df.50$fire_burned)
-                )
-              )
-            
-            pred <- predict(
-              model.swe.burned,
-              newdata = newdata,
-              type = 'response'
-            )
-            
-            tibble(
-              fire = fire.name,
-              burned = burn.value,
-              gap_percent = gap.value,
-              
-              # back-transform first, then average
-              swe_peak = mean(pred^2)
-            )
-          }
-        )
-      }
-    )
-  }
-)
+# gap.burn.pred <- map_dfr(
+#   levels(df.pred$fire),
+#   function(fire.name) {
+#     
+#     # prediction sample for this fire
+#     df.fire <- df.pred %>%
+#       filter(fire == fire.name) %>%
+#       droplevels()
+#     
+#     # shared supported gap range
+#     fire.range <- gap.ranges.common %>%
+#       filter(fire == fire.name)
+#     
+#     gap.seq <- seq(
+#       fire.range$gap.low,
+#       fire.range$gap.high,
+#       length.out = 100
+#     )
+#     
+#     map_dfr(
+#       burn.levels,
+#       function(burn.value) {
+#         
+#         map_dfr(
+#           gap.seq,
+#           function(gap.value) {
+#             
+#             newdata <- df.fire %>%
+#               mutate(
+#                 gap_percent = gap.value,
+#                 burned = factor(
+#                   burn.value,
+#                   levels = levels(df.50$burned)
+#                 ),
+#                 fire_burned = interaction(
+#                   fire,
+#                   burned,
+#                   sep = '_'
+#                 ),
+#                 fire_burned = factor(
+#                   fire_burned,
+#                   levels = levels(df.50$fire_burned)
+#                 )
+#               )
+#             
+#             # central prediction
+#             pred <- predict(
+#               model.swe.burned,
+#               newdata = newdata,
+#               type = 'response'
+#             )
+#             
+#             fit <- mean(pred^2)
+#             
+#             # linear predictor matrix
+#             Xp <- predict(
+#               model.swe.burned,
+#               newdata = newdata,
+#               type = 'lpmatrix'
+#             )
+#             
+#             # predictions for simulated coefficients
+#             sim.sqrt.swe <- Xp %*% t(beta.sim.burned)
+#             
+#             # back-transform each observation, then average
+#             sim.swe <- colMeans(sim.sqrt.swe^2)
+#             
+#             tibble(
+#               fire = fire.name,
+#               burned = burn.value,
+#               gap_percent = gap.value,
+#               swe_peak = fit,
+#               lower = quantile(sim.swe, 0.025),
+#               upper = quantile(sim.swe, 0.975)
+#             
+#             )
+#           }
+#         )
+#       }
+#     )
+#   }
+# )
+# 
+# saveRDS(gap.burn.pred, 'data/processed/processed/rds/swe_gap_burn_marginalpredictions.rds')
+gap.burn.pred <- readRDS('data/processed/processed/rds/swe_gap_burn_marginalpredictions.rds')
 
 # --- observed density by fire x burned x gap bin ---
 gap.burn.density.0 <- df.50 %>%
@@ -2538,91 +2020,6 @@ gap.burn.density.plot <- gap.burn.density %>%
       fire,
       levels = fire.levels)) %>%
   filter(fire != 'Castle')
-# ----- summary results -----
-# --- summarize burned effect across gap percent ---
-
-gap.burn.summary <- gap.burn.pred %>%
-  select(
-    fire,
-    burned,
-    gap_percent,
-    swe_peak
-  ) %>%
-  pivot_wider(
-    names_from = burned,
-    values_from = swe_peak
-  ) %>%
-  mutate(
-    burn_difference = burned - unburned,
-    burn_difference_pct =
-      burn_difference / unburned * 100
-  ) %>%
-  group_by(fire) %>%
-  summarise(
-    gap_min = min(gap_percent),
-    gap_max = max(gap_percent),
-    
-    # burned - unburned difference across shared gap range
-    mean_burn_difference = mean(burn_difference),
-    min_burn_difference = min(burn_difference),
-    max_burn_difference = max(burn_difference),
-    
-    # percent difference relative to unburned
-    mean_burn_difference_pct = mean(burn_difference_pct),
-    min_burn_difference_pct = min(burn_difference_pct),
-    max_burn_difference_pct = max(burn_difference_pct),
-    
-    # difference at low and high ends of shared gap range
-    difference_at_gap_min =
-      burn_difference[which.min(gap_percent)],
-    difference_at_gap_max =
-      burn_difference[which.max(gap_percent)],
-    
-    .groups = 'drop'
-  ) %>%
-  filter(fire != 'Castle')
-
-print(gap.burn.summary, width = Inf)
-
-gap.burn.diff <- gap.burn.pred %>%
-  select(
-    fire,
-    burned,
-    gap_percent,
-    swe_peak
-  ) %>%
-  pivot_wider(
-    names_from = burned,
-    values_from = swe_peak
-  ) %>%
-  mutate(
-    burn_difference = burned - unburned,
-    burn_difference_pct =
-      burn_difference / unburned * 100
-  ) %>%
-  filter(fire != 'Castle')
-
-gap.burn.crossover <- gap.burn.diff %>%
-  group_by(fire) %>%
-  arrange(gap_percent) %>%
-  mutate(
-    next_diff = lead(burn_difference),
-    next_gap = lead(gap_percent)
-  ) %>%
-  filter(
-    burn_difference * next_diff <= 0,
-    !is.na(next_diff)
-  ) %>%
-  summarise(
-    crossover_gap =
-      gap_percent +
-      (0 - burn_difference) *
-      (next_gap - gap_percent) /
-      (next_diff - burn_difference),
-    .groups = 'drop'
-  )
-
-gap.burn.crossover
 # ----- plot -----
 p.gap.burn <- ggplot(
   gap.burn.pred.plot,
@@ -2632,6 +2029,15 @@ p.gap.burn <- ggplot(
     color = burned
   )
 ) +
+  geom_ribbon(
+    aes(
+      ymin = lower,
+      ymax = upper,
+      fill = burned
+    ),
+    alpha = 0.2,
+    color = NA
+  ) +
   geom_line(linewidth = 1) +
   
   geom_point(
@@ -2651,9 +2057,8 @@ p.gap.burn <- ggplot(
     nrow = 1
   ) +
   
-  scale_color_manual(
-    values = burn.cols
-  ) +
+  scale_color_manual(values = burn.cols) +
+  scale_fill_manual(values = burn.cols) +
   
   labs(
     x = 'Canopy gap (%)',
@@ -2674,6 +2079,7 @@ p.gap.burn <- ggplot(
   theme(
     legend.position = 'none'
   )
+
 
 
 # --------------- Zmax ---------------
@@ -2704,69 +2110,90 @@ ht.ranges.common <- ht.ranges.burn %>%
   )
 
 # ----- predictions -----
-ht.burn.pred <- map_dfr(
-  levels(df.pred$fire),
-  function(fire.name) {
-    
-    # prediction sample for this fire
-    df.fire <- df.pred %>%
-      filter(fire == fire.name) %>%
-      droplevels()
-    
-    # shared supported height range
-    fire.range <- ht.ranges.common %>%
-      filter(fire == fire.name)
-    
-    ht.seq <- seq(
-      fire.range$ht.low,
-      fire.range$ht.high,
-      length.out = 100
-    )
-    
-    map_dfr(
-      burn.levels,
-      function(burn.value) {
-        
-        map_dfr(
-          ht.seq,
-          function(ht.value) {
-            
-            newdata <- df.fire %>%
-              mutate(
-                ht_zmax = ht.value,
-                burned = factor(
-                  burn.value,
-                  levels = levels(df.50$burned)
-                ),
-                fire_burned = interaction(
-                  fire,
-                  burned,
-                  sep = '_'
-                ),
-                fire_burned = factor(
-                  fire_burned,
-                  levels = levels(df.50$fire_burned)
-                )
-              )
-            
-            pred <- predict(
-              model.swe.burned,
-              newdata = newdata,
-              type = 'response'
-            )
-            
-            tibble(
-              fire = fire.name,
-              burned = burn.value,
-              ht_zmax = ht.value,
-              swe_peak = mean(pred^2)
-            )
-          }
-        )
-      }
-    )
-  }
-)
+# ht.burn.pred <- map_dfr(
+#   levels(df.pred$fire),
+#   function(fire.name) {
+#     
+#     # prediction sample for this fire
+#     df.fire <- df.pred %>%
+#       filter(fire == fire.name) %>%
+#       droplevels()
+#     
+#     # shared supported height range
+#     fire.range <- ht.ranges.common %>%
+#       filter(fire == fire.name)
+#     
+#     ht.seq <- seq(
+#       fire.range$ht.low,
+#       fire.range$ht.high,
+#       length.out = 100
+#     )
+#     
+#     map_dfr(
+#       burn.levels,
+#       function(burn.value) {
+#         
+#         map_dfr(
+#           ht.seq,
+#           function(ht.value) {
+#             
+#             newdata <- df.fire %>%
+#               mutate(
+#                 ht_zmax = ht.value,
+#                 burned = factor(
+#                   burn.value,
+#                   levels = levels(df.50$burned)
+#                 ),
+#                 fire_burned = interaction(
+#                   fire,
+#                   burned,
+#                   sep = '_'
+#                 ),
+#                 fire_burned = factor(
+#                   fire_burned,
+#                   levels = levels(df.50$fire_burned)
+#                 )
+#               )
+#             
+#             # central prediction
+#             pred <- predict(
+#               model.swe.burned,
+#               newdata = newdata,
+#               type = 'response'
+#             )
+#             
+#             fit <- mean(pred^2)
+#             
+#             # linear predictor matrix
+#             Xp <- predict(
+#               model.swe.burned,
+#               newdata = newdata,
+#               type = 'lpmatrix'
+#             )
+#             
+#             # predictions for simulated coefficients
+#             sim.sqrt.swe <- Xp %*% t(beta.sim.burned)
+#             
+#             # back-transform each observation, then average
+#             sim.swe <- colMeans(sim.sqrt.swe^2)
+#             
+#             tibble(
+#               fire = fire.name,
+#               burned = burn.value,
+#               ht_zmax = ht.value,
+#               swe_peak = fit,
+#               lower = quantile(sim.swe, 0.025),
+#               upper = quantile(sim.swe, 0.975)
+#             )
+#           }
+#         )
+#       }
+#     )
+#   }
+# )
+# 
+# saveRDS(ht.burn.pred, 'data/processed/processed/rds/swe_ht_burn_marginalpredictions.rds')
+ht.burn.pred <- readRDS('data/processed/processed/rds/swe_ht_burn_marginalpredictions.rds')
 
 # restore correct order of fires
 ht.burn.pred <- ht.burn.pred %>%
@@ -2839,7 +2266,15 @@ p.ht.burn <- ggplot(
     color = burned
   )
 ) +
-  
+  geom_ribbon(
+    aes(
+      ymin = lower,
+      ymax = upper,
+      fill = burned
+    ),
+    alpha = 0.2,
+    color = NA
+  ) +
   geom_line(
     linewidth = 1
   ) +
@@ -2861,9 +2296,8 @@ p.ht.burn <- ggplot(
     nrow = 1
   ) +
   
-  scale_color_manual(
-    values = burn.cols
-  ) +
+  scale_color_manual(values = burn.cols) +
+  scale_fill_manual(values = burn.cols) +
   
   labs(
     x = 'Maximum canopy height (m)',
@@ -2887,6 +2321,55 @@ p.ht.burn <- ggplot(
 
 
 p.ht.burn
+# -------------- Summary Stats ------------
+# ----- summary results -----
+summarize_burn_differences <- function(data, predictor) {
+  
+  data %>%
+    select(fire, burned, all_of(predictor), swe_peak) %>%
+    pivot_wider(
+      names_from = burned,
+      values_from = swe_peak
+    ) %>%
+    mutate(
+      burn_difference_cm = (burned - unburned) * 100,
+      burn_difference_pct =
+        (burned - unburned) / unburned * 100
+    ) %>%
+    group_by(fire) %>%
+    arrange(.data[[predictor]], .by_group = TRUE) %>%
+    summarise(
+      predictor_min = min(.data[[predictor]]),
+      predictor_max = max(.data[[predictor]]),
+      
+      mean_difference_cm = mean(burn_difference_cm),
+      min_difference_cm = min(burn_difference_cm),
+      max_difference_cm = max(burn_difference_cm),
+      
+      mean_abs_difference_cm = mean(abs(burn_difference_cm)),
+      
+      difference_at_min_cm = first(burn_difference_cm),
+      difference_at_max_cm = last(burn_difference_cm),
+      
+      mean_difference_pct = mean(burn_difference_pct),
+      
+      .groups = 'drop'
+    )
+}
+
+gap.burn.summary <- summarize_burn_differences(
+  gap.burn.pred,
+  'gap_percent'
+) %>%
+  filter(fire != 'Castle')
+
+ht.burn.summary <- summarize_burn_differences(
+  ht.burn.pred,
+  'ht_zmax'
+)
+
+print(gap.burn.summary, width = Inf)
+print(ht.burn.summary, width = Inf)
 # -------------- Combined Plot ----------------
 library(patchwork)
 library(grid)
@@ -2913,8 +2396,16 @@ optimum.theme <- theme_classic() +
 
 gap.legend <- cowplot::get_legend(
   p.gap.burn +
-    guides(size = guide_legend()) +
-    theme(legend.position = 'right')
+    guides(
+      size = guide_legend(order = 1),
+      color = guide_legend(order = 2),
+      fill = guide_legend(order = 2)
+    ) +
+    theme(
+      legend.position = 'right',
+      legend.box = 'vertical',
+      legend.spacing.y = unit(0.5, 'cm')
+    )
 )
 
 # create spacer for where top castle panel would be and put legend there
@@ -2943,6 +2434,15 @@ canopy.burn.fig <- (
   )
 
 canopy.burn.fig
+
+ggsave(
+  'figures/swe_burn_marginaleffectplots.png',
+  plot = canopy.burn.fig,
+  width = 8,
+  height = 5,
+  units = 'in',
+  dpi = 300
+)
 
 # ==============================================================================
 # Observed Plots
@@ -3002,3 +2502,30 @@ ht.density %>%
   filter(fire == 'Creek') %>%
   arrange(ht_zmax) %>%
   print(n = Inf)
+
+
+# Overall observed SWE distribution
+summary(df.50$swe_peak)
+sd(df.50$swe_peak, na.rm = TRUE)
+
+# Relative RMSE
+0.253 / mean(df.50$swe_peak, na.rm = TRUE)
+
+cv.swe.summary %>%
+  rename_with(~ paste0(.x, '_simple'), -fire) %>%
+  left_join(
+    cv.swe.burned.summary %>%
+      rename_with(~ paste0(.x, '_burned'), -fire),
+    by = 'fire'
+  ) %>%
+  mutate(
+    RMSE_diff = RMSE_mean_burned - RMSE_mean_simple,
+    MAE_diff = MAE_mean_burned - MAE_mean_simple,
+    R2_diff = R2_mean_burned - R2_mean_simple
+  ) %>%
+  select(
+    fire,
+    RMSE_diff,
+    MAE_diff,
+    R2_diff
+  )

@@ -83,7 +83,7 @@ model.colors <- c(
   'Topography' = '#009ec4'
 )
 
-elev.colors <- c(
+elev.colors.fire <- c(
   'Caldor_< 1750 m' = '#3b435c',
   'Caldor_1750–2500 m' = '#868eaa',
   'Caldor_> 2500 m' = '#d8e1ff',
@@ -96,6 +96,13 @@ elev.colors <- c(
   'Creek_1750–2500 m' = '#e396b8',
   'Creek_> 2500 m' = '#ffd5e8'
 )
+
+elev.colors <- c(
+  '< 1750 m' = '#004c6d',
+  '1750–2500 m' = '#4291b5',
+  '> 2500 m' = '#7cdeff')
+  
+
 
 # ----- helper functions -----
 get.metrics <- function(fitted.model, model.name, fire.name) {
@@ -175,6 +182,11 @@ cv_bam_sdd <- function(formula, data, k_folds = 5) {
       )
     )
     
+    mae <- mean(
+      abs(obs - pred),
+      na.rm = TRUE
+    )
+    
     r2 <- cor(
       obs,
       pred,
@@ -186,6 +198,7 @@ cv_bam_sdd <- function(formula, data, k_folds = 5) {
       data.frame(
         fold = fold,
         RMSE = rmse,
+        MAE = mae,
         R2 = r2
       )
     )
@@ -205,6 +218,10 @@ cv_bam_sdd <- function(formula, data, k_folds = 5) {
             (obs - pred)^2,
             na.rm = TRUE
           )
+        ),
+        MAE = mean(
+          abs(obs - pred),
+          na.rm = TRUE
         ),
         R2 = cor(
           obs,
@@ -228,6 +245,8 @@ cv_bam_sdd <- function(formula, data, k_folds = 5) {
     summarize(
       RMSE_mean = mean(RMSE),
       RMSE_sd = sd(RMSE),
+      MAE_mean = mean(MAE),
+      MAE_sd = sd(MAE),
       R2_mean = mean(R2),
       R2_sd = sd(R2)
     )
@@ -255,68 +274,65 @@ df.500.balanced <- df.500.balanced.0 %>%
 
 
 # ----- models -----
-# model.sdd <- bam(sdd ~ wy * fire +
+# FINAL
+# model.sdd.mostrecentold <- bam(sdd ~ wy * fire +
 #                    s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) + 
-#                    s(ht_zmax, by = fire, k = 20) + s(gap_percent, by = fire, k = 20) + 
+#                    + s(gap_percent, k = 20) +
+#                    ti(gap_percent, elevation, k = c(10, 10)) +
 #                    s(swe_peak, k = 20),
 #                  data = df.500,
 #                  method = 'fREML',
 #                  discrete = TRUE)
 # 
-# model.sdd.combined <- bam(sdd ~ wy * fire + 
+# model.sdd.burned.mostrecentold <- bam(sdd ~ wy * fire + burned * fire +
 #                    s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) + 
-#                    s(ht_zmax, k = 20) + s(gap_percent, k = 20) +
-#                    s(swe_peak, k = 20),
-#                  data = df.500,
-#                  method = 'fREML',
-#                  discrete = TRUE)
-# 
-# model.sdd.burned <- bam(sdd ~ wy * fire + burned * fire +
-#                   s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) +
-#                   s(ht_zmax, by = fire_burned, k = 20) + s(gap_percent, by = fire_burned, k = 20) +
-#                   s(swe_peak, k = 20),
-#                 data = df.500,
-#                 method = 'fREML',
-#                 discrete = TRUE)
-# 
-# model.sdd.burned.simple <- bam(sdd ~ wy * fire + burned * fire +
-#                           s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) +
-#                           s(ht_zmax, by = fire, k = 20) + s(gap_percent, by = fire, k = 20) +
-#                           s(swe_peak, k = 20),
-#                         data = df.500,
-#                         method = 'fREML',
-#                         discrete = TRUE)
-
-# OLD
-# model.sdd.gapbyfire <- bam(sdd ~ wy * fire +
-#                    s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) +
-#                    s(gap_percent, by = fire, k = 20) +
+#                    + s(gap_percent, k = 20) +
 #                    ti(gap_percent, elevation, k = c(10, 10)) +
 #                    s(swe_peak, k = 20),
 #                  data = df.500,
 #                  method = 'fREML',
 #                  discrete = TRUE)
 
-# FINAL
-model.sdd <- bam(sdd ~ wy * fire +
-                   s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) + 
-                   + s(gap_percent, k = 20) +
-                   ti(gap_percent, elevation, k = c(10, 10)) +
-                   s(swe_peak, k = 20),
-                 data = df.500,
-                 method = 'fREML',
-                 discrete = TRUE)
+model.sdd <- bam(
+  sdd ~ wy * fire +
+    s(elevation, by = wy, k = 20) +
+    s(rad_dtm_accum, k = 20) +
+    s(aspect_sin, k = 20) +
+    s(tpi1200, k = 10) +
+    s(gap_percent, k = 20) +
+    s(swe_peak, k = 20) +
+    ti(gap_percent, elevation, k = c(10, 10)) +
+    ti(gap_percent, swe_peak, k = c(10, 10)) +
+    ti(elevation, swe_peak, k = c(10, 10)) +
+    ti(gap_percent, elevation, swe_peak,
+      k = c(5, 5, 5)
+    ),
+  data = df.500,
+  method = 'fREML',
+  discrete = TRUE
+)
 
-model.sdd.burned <- bam(sdd ~ wy * fire + burned * fire +
-                   s(elevation, by = wy, k = 20) + s(rad_dtm_accum, k = 20) + s(aspect_sin, k = 20) + s(tpi1200, k = 10) + 
-                   + s(gap_percent, k = 20) +
-                   ti(gap_percent, elevation, k = c(10, 10)) +
-                   s(swe_peak, k = 20),
-                 data = df.500,
-                 method = 'fREML',
-                 discrete = TRUE)
-
-
+model.sdd.burned <- bam(
+  sdd ~ wy * fire + burned * fire +
+    s(elevation, by = wy, k = 20) +
+    s(rad_dtm_accum, k = 20) +
+    s(aspect_sin, k = 20) +
+    s(tpi1200, k = 10) +
+    s(gap_percent, k = 20) +
+    s(swe_peak, k = 20) +
+    ti(gap_percent, elevation, k = c(10, 10)) +
+    ti(gap_percent, swe_peak, k = c(10, 10)) +
+    ti(elevation, swe_peak, k = c(10, 10)) +
+    ti(
+      gap_percent,
+      elevation,
+      swe_peak,
+      k = c(5, 5, 5)
+    ),
+  data = df.500,
+  method = 'fREML',
+  discrete = TRUE
+)
 
 # ==============================================================================
 # Model Evaluation/
@@ -333,6 +349,8 @@ cv.sdd.summary.byfire <- cv.sdd$fire.results %>%
   summarise(
     RMSE_mean = mean(RMSE),
     RMSE_sd = sd(RMSE),
+    MAE_mean = mean(MAE),
+    MAE_sd = sd(MAE),
     R2_mean = mean(R2),
     R2_sd = sd(R2),
     .groups = 'drop'
@@ -344,6 +362,8 @@ cv.sdd.summary.overall <- cv.sdd$fold.results %>%
     fire = 'Overall',
     RMSE_mean = mean(RMSE),
     RMSE_sd = sd(RMSE),
+    MAE_mean = mean(MAE),
+    MAE_sd = sd(MAE),
     R2_mean = mean(R2),
     R2_sd = sd(R2)
   )
@@ -357,46 +377,791 @@ cv.sdd.summary <- bind_rows(
 
 cv.sdd.summary
 
+cv.sdd.summary.display <- cv.sdd.summary %>%
+  mutate(
+    across(
+      where(is.numeric),
+      ~ round(.x, 2)
+    )
+  )
+
+cv.sdd.summary.display
+
 # --- burned model ---
-cv.sdd <- cv_bam_sdd(formula = formula(model.sdd.burned),
+cv.sdd.burned <- cv_bam_sdd(formula = formula(model.sdd.burned),
                  data = df.500,
                  k_folds = 5)
 
 # fire-specific summary
-cv.sdd.summary.byfire <- cv.sdd$fire.results %>%
+cv.sdd.burned.summary.byfire <- cv.sdd.burned$fire.results %>%
   group_by(fire) %>%
   summarise(
     RMSE_mean = mean(RMSE),
     RMSE_sd = sd(RMSE),
+    MAE_mean = mean(MAE),
+    MAE_sd = sd(MAE),
     R2_mean = mean(R2),
     R2_sd = sd(R2),
     .groups = 'drop'
   )
 
 # overall summary
-cv.sdd.summary.overall <- cv.sdd$fold.results %>%
+cv.sdd.burned.summary.overall <- cv.sdd.burned$fold.results %>%
   summarise(
     fire = 'Overall',
     RMSE_mean = mean(RMSE),
     RMSE_sd = sd(RMSE),
+    MAE_mean = mean(MAE),
+    MAE_sd = sd(MAE),
     R2_mean = mean(R2),
     R2_sd = sd(R2)
   )
 
 # combine
-cv.sdd.summary <- bind_rows(
-  cv.sdd.summary.overall,
-  cv.sdd.summary.byfire %>%
+cv.sdd.burned.summary <- bind_rows(
+  cv.sdd.burned.summary.overall,
+  cv.sdd.burned.summary.byfire %>%
     mutate(fire = as.character(fire))
 )
 
-cv.sdd.summary
+cv.sdd.burned.summary
+
+cv.sdd.burned.summary.display <- cv.sdd.burned.summary %>%
+  mutate(
+    across(
+      where(is.numeric),
+      ~ round(.x, 2)
+    )
+  )
+
+cv.sdd.burned.summary.display
 
 
 # ==============================================================================
-# Generate Predictions - Fire-specific
+# Generate Predictions 
 # ==============================================================================
-# ----------------------------------- ** MARGINAL EFFECT PLOTS ** ------------------------------------
+# ------------- Model Predictions with elev and SWE interactions **** NEWEST 10/6/26 *** -------------
+# ---------- Gap x elevation x SWE marginal predictions ----------
+# ----- make predictions -----
+# --- create elevation and SWE bands for determining representative values ---
+
+# global SWE tercile breaks
+
+# divide observed SWE into thirds
+swe.breaks <- quantile(
+  df.500$swe_peak,
+  probs = c(0, 1/3, 2/3, 1),
+  na.rm = TRUE
+)
+
+df.pred.bands <- df.500 %>%
+  mutate(
+    elev_band = cut(
+      elevation,
+      breaks = c(-Inf, 1750, 2500, Inf),
+      labels = c(
+        '< 1750 m',
+        '1750–2500 m',
+        '> 2500 m'
+      ),
+      right = FALSE
+    ),
+    
+    swe_level = cut(
+      swe_peak,
+      breaks = swe.breaks,
+      labels = c(
+        'Low SWE',
+        'Mid SWE',
+        'High SWE'
+      ),
+      include.lowest = TRUE
+    )
+  )
+
+
+# --- representative elevation values ---
+
+elev.values <- df.pred.bands %>%
+  group_by(elev_band) %>%
+  summarise(
+    elevation = median(
+      elevation,
+      na.rm = TRUE
+    ),
+    .groups = 'drop'
+  )
+
+
+# --- representative SWE values ---
+
+# median SWE within each third
+swe.values <- df.pred.bands %>%
+  group_by(swe_level) %>%
+  summarise(
+    swe_peak = median(
+      swe_peak,
+      na.rm = TRUE
+    ),
+    .groups = 'drop'
+  )
+
+
+elev.values
+swe.values
+
+# --- supported gap ranges within elevation x SWE conditions ---
+
+gap.ranges <- df.pred.bands %>%
+  group_by(
+    elev_band,
+    swe_level
+  ) %>%
+  summarise(
+    gap.low = quantile(
+      gap_percent,
+      0.01,
+      na.rm = TRUE
+    ),
+    gap.high = quantile(
+      gap_percent,
+      0.99,
+      na.rm = TRUE
+    ),
+    .groups = 'drop'
+  )
+
+# --- combine representative elevation and SWE values ---
+
+pred.values <- crossing(
+  elev.values,
+  swe.values
+) %>%
+  left_join(
+    gap.ranges,
+    by = c(
+      'elev_band',
+      'swe_level'
+    )
+  )
+
+pred.values
+
+# --- coefficient simulations ---
+
+set.seed(61)
+
+n.sim <- 500
+
+beta.sim <- MASS::mvrnorm(
+  n = n.sim,
+  mu = coef(model.sdd),
+  Sigma = vcov(model.sdd)
+)
+
+# --- marginal predictions ---
+
+# gap.elev.swe.pred <- map_dfr(
+#   seq_len(nrow(pred.values)),
+#   function(i) {
+#     
+#     elev.value <- pred.values$elevation[i]
+#     band.name <- pred.values$elev_band[i]
+#     
+#     swe.value <- pred.values$swe_peak[i]
+#     swe.name <- pred.values$swe_level[i]
+#     
+#     # observed gap range within this elevation x SWE condition
+#     gap.seq <- seq(
+#       pred.values$gap.low[i],
+#       pred.values$gap.high[i],
+#       length.out = 100
+#     )
+#     
+#     map_dfr(
+#       gap.seq,
+#       function(gap.value) {
+#         
+#         # set focal predictors for entire balanced prediction sample
+#         newdata <- df.pred %>%
+#           mutate(
+#             gap_percent = gap.value,
+#             elevation = elev.value,
+#             swe_peak = swe.value
+#           )
+#         
+#         # central prediction
+#         pred <- predict(
+#           model.sdd,
+#           newdata = newdata,
+#           type = 'response'
+#         )
+#         
+#         fit <- mean(
+#           pred,
+#           na.rm = TRUE
+#         )
+#         
+#         # linear predictor matrix
+#         Xp <- predict(
+#           model.sdd,
+#           newdata = newdata,
+#           type = 'lpmatrix'
+#         )
+#         
+#         # predictions from simulated coefficient sets
+#         sim.pred <- Xp %*% t(beta.sim)
+#         
+#         # marginal mean for each simulation
+#         sim.sdd <- colMeans(
+#           sim.pred,
+#           na.rm = TRUE
+#         )
+#         
+#         tibble(
+#           elev_band = band.name,
+#           elevation = elev.value,
+#           swe_level = swe.name,
+#           swe_peak = swe.value,
+#           gap_percent = gap.value,
+#           sdd = fit,
+#           lower = quantile(
+#             sim.sdd,
+#             0.025,
+#             na.rm = TRUE
+#           ),
+#           upper = quantile(
+#             sim.sdd,
+#             0.975,
+#             na.rm = TRUE
+#           )
+#         )
+#       }
+#     )
+#   }
+# )
+
+# saveRDS(gap.elev.swe.pred, 'data/processed/processed/rds/gap_elev_swe_predictions.rds')
+
+gap.elev.swe.pred <- readRDS('data/processed/processed/rds/gap_elev_swe_predictions.rds')
+# ----- summary stats -----
+
+gap.sdd.summary <- gap.elev.swe.pred %>%
+  group_by(
+    elev_band,
+    swe_level,
+    elevation,
+    swe_peak
+  ) %>%
+  arrange(gap_percent, .by_group = TRUE) %>%
+  summarise(
+    # supported gap range
+    gap_low = first(gap_percent),
+    gap_high = last(gap_percent),
+    
+    # predicted SDD at ends of supported gap range
+    sdd_low_gap = first(sdd),
+    sdd_high_gap = last(sdd),
+    
+    # net change from low to high gap
+    delta_sdd = sdd_high_gap - sdd_low_gap,
+    
+    # minimum predicted SDD along curve
+    min_sdd = min(sdd),
+    gap_at_min_sdd = gap_percent[which.min(sdd)],
+    
+    # maximum predicted SDD along curve
+    max_sdd = max(sdd),
+    gap_at_max_sdd = gap_percent[which.max(sdd)],
+    
+    # total variation across the fitted curve
+    sdd_range = max_sdd - min_sdd,
+    
+    .groups = 'drop'
+  )
+
+gap.sdd.summary <- gap.sdd.summary %>%
+  mutate(
+    across(
+      c(
+        elevation,
+        swe_peak,
+        gap_low,
+        gap_high,
+        sdd_low_gap,
+        sdd_high_gap,
+        delta_sdd,
+        min_sdd,
+        gap_at_min_sdd,
+        max_sdd,
+        gap_at_max_sdd,
+        sdd_range
+      ),
+      ~ round(.x, 1)
+    )
+  )
+
+print(
+  gap.sdd.summary,
+  n = Inf,
+  width = Inf
+)
+# ----- plot -----
+elev.colors <- c(
+  '< 1750 m' = '#004c6d',
+  '1750–2500 m' = '#4291b5',
+  '> 2500 m' = '#7cdeff'
+)
+
+elev.labels <- c(
+  '< 1750 m' = 'Low elevation',
+  '1750–2500 m' = 'Mid elevation',
+  '> 2500 m' = 'High elevation'
+)
+
+make_swe_plot <- function(data, swe.name) {
+  
+  data %>%
+    filter(swe_level == swe.name) %>%
+    ggplot(
+      aes(
+        x = gap_percent,
+        y = sdd,
+        color = elev_band,
+        fill = elev_band
+      )
+    ) +
+    geom_ribbon(
+      aes(
+        ymin = lower,
+        ymax = upper
+      ),
+      alpha = 0.15,
+      color = NA
+    ) +
+    geom_line(
+      linewidth = 1
+    ) +
+    scale_color_manual(
+      values = elev.colors,
+      labels = elev.labels,
+      name = 'Elevation',
+      guide = guide_legend(reverse = TRUE)
+    ) +
+    scale_fill_manual(
+      values = elev.colors,
+      guide = 'none'
+    ) +
+    labs(
+      x = 'Canopy gap (%)',
+      y = 'Predicted snow disappearance date (day of year)',
+      title = swe.name
+    ) +
+    theme_classic() +
+    theme(
+      plot.title = element_text(hjust = 0.5)
+    )
+}
+
+p.low <- make_swe_plot(gap.elev.swe.pred, 'Low SWE')
+p.mid <- make_swe_plot(gap.elev.swe.pred, 'Mid SWE')
+p.high <- make_swe_plot(gap.elev.swe.pred, 'High SWE')
+
+p.combined <- (p.low | p.mid | p.high) +
+  plot_layout(guides = 'collect') &
+  theme(
+    legend.position = 'right'
+  )
+
+p.combined
+
+ggsave(
+  'figures/sdd_gap_swe_elevation.png',
+  plot = p.combined,
+  width = 12,
+  height = 5,
+  units = 'in',
+  dpi = 300
+)
+# ---------- Gap x elevation x SWE predictions by burned status ----------
+# ----- make predictions -----
+# --- supported gap ranges within elevation x SWE x burned ---
+
+gap.ranges.burn <- df.pred.bands %>%
+  group_by(
+    elev_band,
+    swe_level,
+    burned
+  ) %>%
+  summarise(
+    gap.low = quantile(
+      gap_percent,
+      0.01,
+      na.rm = TRUE
+    ),
+    gap.high = quantile(
+      gap_percent,
+      0.99,
+      na.rm = TRUE
+    ),
+    .groups = 'drop'
+  )
+
+# --- common burned/unburned overlap ---
+
+gap.ranges.common <- gap.ranges.burn %>%
+  group_by(
+    elev_band,
+    swe_level
+  ) %>%
+  summarise(
+    gap.low = max(gap.low),
+    gap.high = min(gap.high),
+    .groups = 'drop'
+  )
+
+# --- combine representative elevation and SWE values ---
+
+pred.values.burn <- crossing(
+  elev.values,
+  swe.values
+) %>%
+  left_join(
+    gap.ranges.common,
+    by = c(
+      'elev_band',
+      'swe_level'
+    )
+  )
+
+set.seed(61)
+
+n.sim <- 500
+
+beta.sim.burn <- MASS::mvrnorm(
+  n = n.sim,
+  mu = coef(model.sdd.burned),
+  Sigma = vcov(model.sdd.burned)
+)
+
+burn.levels <- levels(df.500$burned)
+
+# gap.elev.swe.burn.pred <- map_dfr(
+#   seq_len(nrow(pred.values.burn)),
+#   function(i) {
+#     
+#     elev.value <- pred.values.burn$elevation[i]
+#     band.name <- pred.values.burn$elev_band[i]
+#     
+#     swe.value <- pred.values.burn$swe_peak[i]
+#     swe.name <- pred.values.burn$swe_level[i]
+#     
+#     gap.seq <- seq(
+#       pred.values.burn$gap.low[i],
+#       pred.values.burn$gap.high[i],
+#       length.out = 100
+#     )
+#     
+#     map_dfr(
+#       burn.levels,
+#       function(burn.value) {
+#         
+#         map_dfr(
+#           gap.seq,
+#           function(gap.value) {
+#             
+#             newdata <- df.pred %>%
+#               mutate(
+#                 gap_percent = gap.value,
+#                 elevation = elev.value,
+#                 swe_peak = swe.value,
+#                 burned = factor(
+#                   burn.value,
+#                   levels = levels(df.500$burned)
+#                 )
+#               )
+#             
+#             # central prediction
+#             pred <- predict(
+#               model.sdd.burned,
+#               newdata = newdata,
+#               type = 'response'
+#             )
+#             
+#             fit <- mean(
+#               pred,
+#               na.rm = TRUE
+#             )
+#             
+#             # linear predictor matrix
+#             Xp <- predict(
+#               model.sdd.burned,
+#               newdata = newdata,
+#               type = 'lpmatrix'
+#             )
+#             
+#             # simulated predictions
+#             sim.pred <- Xp %*% t(beta.sim.burn)
+#             
+#             sim.sdd <- colMeans(
+#               sim.pred,
+#               na.rm = TRUE
+#             )
+#             
+#             tibble(
+#               elev_band = band.name,
+#               elevation = elev.value,
+#               swe_level = swe.name,
+#               swe_peak = swe.value,
+#               burned = burn.value,
+#               gap_percent = gap.value,
+#               sdd = fit,
+#               lower = quantile(
+#                 sim.sdd,
+#                 0.025,
+#                 na.rm = TRUE
+#               ),
+#               upper = quantile(
+#                 sim.sdd,
+#                 0.975,
+#                 na.rm = TRUE
+#               )
+#             )
+#           }
+#         )
+#       }
+#     )
+#   }
+# )
+# 
+# saveRDS(gap.elev.swe.burn.pred, 'data/processed/processed/rds/gap_elev_swe_burn_predictions.rds')
+
+gap.elev.swe.burn.pred <- readRDS('data/processed/processed/rds/gap_elev_swe_burn_predictions.rds')
+
+# ----- summary stats -----
+# ----- fire-specific burned effects -----
+
+b <- coef(model.sdd.burned)
+V <- vcov(model.sdd.burned)
+
+
+# --- gap effect summaries from burned-status model ---
+
+gap.sdd.burn.summary <- gap.elev.swe.burn.pred %>%
+  group_by(
+    elev_band,
+    swe_level,
+    burned,
+    elevation,
+    swe_peak
+  ) %>%
+  arrange(
+    gap_percent,
+    .by_group = TRUE
+  ) %>%
+  summarise(
+    gap_low = first(gap_percent),
+    gap_high = last(gap_percent),
+    
+    sdd_low_gap = first(sdd),
+    sdd_high_gap = last(sdd),
+    
+    delta_sdd = sdd_high_gap - sdd_low_gap,
+    
+    min_sdd = min(sdd),
+    gap_at_min_sdd = gap_percent[which.min(sdd)],
+    
+    max_sdd = max(sdd),
+    gap_at_max_sdd = gap_percent[which.max(sdd)],
+    
+    sdd_range = max_sdd - min_sdd,
+    
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    across(
+      c(
+        elevation,
+        swe_peak,
+        gap_low,
+        gap_high,
+        sdd_low_gap,
+        sdd_high_gap,
+        delta_sdd,
+        min_sdd,
+        gap_at_min_sdd,
+        max_sdd,
+        gap_at_max_sdd,
+        sdd_range
+      ),
+      ~ round(.x, 1)
+    )
+  )
+
+print(
+  gap.sdd.burn.summary,
+  n = Inf,
+  width = Inf
+)
+
+
+# --- function for linear combinations of model coefficients ---
+
+get_contrast <- function(weights) {
+  
+  L <- rep(0, length(b))
+  names(L) <- names(b)
+  
+  L[names(weights)] <- weights
+  
+  estimate <- sum(L * b)
+  
+  se <- sqrt(
+    as.numeric(
+      t(L) %*% V %*% L
+    )
+  )
+  
+  tibble(
+    estimate = estimate,
+    SE = se,
+    lower = estimate - 1.96 * se,
+    upper = estimate + 1.96 * se
+  )
+}
+
+
+# --- fire-specific burned vs unburned differences ---
+
+burn.effect.fire <- bind_rows(
+  
+  Caldor = get_contrast(
+    c(
+      'burnedburned' = 1
+    )
+  ),
+  
+  Castle = get_contrast(
+    c(
+      'burnedburned' = 1,
+      'fireCastle:burnedburned' = 1
+    )
+  ),
+  
+  Creek = get_contrast(
+    c(
+      'burnedburned' = 1,
+      'fireCreek:burnedburned' = 1
+    )
+  ),
+  
+  .id = 'fire'
+) %>%
+  mutate(
+    across(
+      c(
+        estimate,
+        SE,
+        lower,
+        upper
+      ),
+      ~ round(.x, 2)
+    )
+  )
+
+burn.effect.fire
+
+# ----- plot -----
+burn.cols <- c(
+  'unburned' = '#00868B',
+  'burned' = '#EE2C2C'
+)
+
+make_swe_burn_plot <- function(data, swe.name) {
+  
+  data %>%
+    filter(swe_level == swe.name) %>%
+    ggplot(
+      aes(
+        x = gap_percent,
+        y = sdd,
+        color = burned,
+        fill = burned
+      )
+    ) +
+    geom_ribbon(
+      aes(
+        ymin = lower,
+        ymax = upper
+      ),
+      alpha = 0.12,
+      color = NA
+    ) +
+    geom_line(
+      linewidth = 1
+    ) +
+    facet_wrap(
+      ~ elev_band,
+      nrow = 1
+    ) +
+    scale_color_manual(
+      values = burn.cols,
+      name = NULL
+    ) +
+    scale_fill_manual(
+      values = burn.cols,
+      guide = 'none'
+    ) +
+    labs(
+      x = 'Canopy gap (%)',
+      y = 'Predicted snow disappearance date (day of year)',
+      title = swe.name
+    ) +
+    theme_classic() +
+    theme(
+      plot.title = element_text(hjust = 0.5)
+    )
+}
+
+p.low.burn <- make_swe_burn_plot(
+  gap.elev.swe.burn.pred,
+  'Low SWE'
+)
+
+p.mid.burn <- make_swe_burn_plot(
+  gap.elev.swe.burn.pred,
+  'Mid SWE'
+)
+
+p.high.burn <- make_swe_burn_plot(
+  gap.elev.swe.burn.pred,
+  'High SWE'
+)
+
+# --- combine ---
+p.burn.combined <- (
+  p.low.burn |
+    p.mid.burn |
+    p.high.burn
+) +
+  plot_layout(
+    guides = 'collect'
+  ) &
+  theme(
+    legend.position = 'right'
+  )
+
+p.burn.combined
+
+ggsave(
+  'figures/sdd_gap_swe_elevation_burn.png',
+  plot = p.burn.combined,
+  width = 12,
+  height = 5,
+  units = 'in',
+  dpi = 300
+)
+# ----------------------------------- ** MARGINAL EFFECT PLOTS ---------------------------------
 # --------------- predictions using by=fire model ---------------
 # --------------- gap percent ----------------
 set.seed(61)
@@ -503,7 +1268,7 @@ gap.pred.combined <- map_dfr(
         mutate(gap_percent = gap.value)
       
       pred <- predict(
-        model.sdd.combined,
+        model.sdd,
         newdata = newdata,
         type = 'response'
       )
@@ -845,7 +1610,7 @@ canopy.fig.final
 
 
 # 
-# ------------------------------- adding elev --------------
+# ------------------------------- adding elev ** USE THIS? ** --------------
 # --- elevation groups ----------------
 df.elev <- df.500 %>%
   mutate(
@@ -1007,7 +1772,7 @@ gap.elev.pred.combined <- map_dfr(
           )
         
         pred <- predict(
-          model.sdd.combined,
+          model.sdd,
           newdata = newdata,
           type = 'response'
         )
@@ -1206,7 +1971,7 @@ canopy.fig.final <- y.title + canopy.fig +
   )
 
 canopy.fig.final
-# ------------------------ UPDATED MODEL * USE THIS ONE * ------------------
+# ------------------------ Some version of updated model ------------------
 # model:
   # gap_percent is combined for all fires
   # removed ht_zmax
@@ -1444,6 +2209,8 @@ gap.elev.pred <- map_dfr(
     })
   }
 )
+
+
 # ----------------------------------- ** BURN EFFECTS ** ------------------------------------
 # ---------- ** Predicted SDD across realistic canopy structure ** --------------
 # Burned vs unburned within each fire

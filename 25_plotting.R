@@ -2,7 +2,7 @@ packages <- c('dplyr', 'ggplot2',  'sf', 'rnaturalearth', 'rnaturalearthdata', '
 install.packages(setdiff(packages, rownames(installed.packages())))
 lapply(packages, library, character.only = T)
 
-# ----- figure of something? -----
+# ------------------------- figure of something? -----
 # --- HUCs ---
 HUC.caldor <- st_read('data/processed/processed/shp/mapping/HUC_caldor.shp')
 HUC.creek <- st_read('data/processed/processed/shp/mapping/HUC_creek.shp')
@@ -263,7 +263,7 @@ ggsave(
 
 
 
-# ----- HUC study area boundary -----
+# ------------------------- HUC study area boundary -----
 
 # Read data
 castle <- st_read('data/raw/fire_info/shp/castle_fire_perimeter.shp', quiet = TRUE)
@@ -417,7 +417,7 @@ ggsave(
   dpi = 300
 )
 
-# ----- now same but cropping to elev -----
+# ------------------------- now same but cropping to elev -----
 
 # Read fire perimeters
 castle <- st_read('data/raw/fire_info/shp/castle_fire_perimeter.shp', quiet = TRUE)
@@ -564,3 +564,83 @@ ggsave(
   height = 5,
   dpi = 300
 )
+
+# ------------------------- Gap Percent Visualization -----------------------------
+fire <- 'caldor'
+
+r <- rast(paste0('data/processed/processed/tif/50m/', fire, '/', fire, '_canopy_metrics_50m.tif'))
+gap <- r[[6]]
+names(gap) <- 'gap_percent'
+  
+dem <- rast(paste0('data/processed/processed/tif/50m/', fire, '/', fire, '_nasadem_50m.tif'))
+
+
+# check alignment
+compareGeom(gap, dem)
+
+# build dataframe of candidate 50m pixels 
+cand <- tibble(
+  cell = 1:ncell(gap),
+  gap_percent = values(gap)[,1],
+  elevation   = values(dem)[,1]
+) %>%
+  filter(!is.na(gap_percent), !is.na(elevation)) %>%
+  mutate(
+    elev_class = case_when(
+      elevation < 1750 ~ "Low elevation",
+      elevation > 2500 ~ "High elevation",
+      TRUE ~ NA_character_
+    ),
+    gap_class = case_when(
+      between(gap_percent, .22, .28) ~ "25% gap",
+      between(gap_percent, .47, .53) ~ "50% gap",
+      between(gap_percent, .72, .78) ~ "75% gap",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(elev_class), !is.na(gap_class))
+
+# pick best candidate (closed to target gap percent)
+set.seed(61)
+
+cand_best <- cand %>%
+  mutate(
+    gap_target = case_when(
+      gap_class == "25% gap" ~ 25,
+      gap_class == "50% gap" ~ 50,
+      gap_class == "75% gap" ~ 75
+    ),
+    dist_to_target = abs(gap_percent - gap_target)
+  ) %>%
+  group_by(elev_class, gap_class) %>%
+  slice_min(order_by = dist_to_target, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+# get coordinates and make 50m polygons
+xy <- xyFromCell(gap, cand_best$cell)
+
+cand_best <- bind_cols(cand_best, as.data.frame(xy))
+
+# raster with selected cells only
+sel_rast <- gap
+values(sel_rast) <- NA
+sel_rast[cand_best$cell] <- cand_best$gap_percent
+
+# convert selected cells to polygons
+sel_polys <- as.polygons(sel_rast, na.rm = TRUE, aggregate = FALSE)
+
+# attach attributes
+sel_polys$cell <- cand_best$cell
+sel_polys$gap_percent <- cand_best$gap_percent
+sel_polys$elevation <- cand_best$elevation
+sel_polys$elev_class <- cand_best$elev_class
+sel_polys$gap_class <- cand_best$gap_class
+
+# for caldor
+chm <- rast(paste0('data/processed/processed/tif/1m/', fire, '/', fire, '_chm_1m_32610.tif'))
+# this won't work for Creek since that has a vrt instead
+
+# for castle
+chm_files <- list.files('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/castle/75m/castle_chm_32611', pattern = '\\.tif$', full.names = TRUE)
+vrt(chm_files, 'data/processed/processed/tif/1m/castle/75m', overwrite = TRUE)
+chm <- rast("path/to/chm_tiles.vrt")
