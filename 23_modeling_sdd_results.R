@@ -740,7 +740,7 @@ make_swe_plot <- function(data, swe.name) {
       color = NA
     ) +
     geom_line(
-      linewidth = 1
+      linewidth = 0.5
     ) +
     scale_color_manual(
       values = elev.colors,
@@ -757,15 +757,33 @@ make_swe_plot <- function(data, swe.name) {
       y = 'Predicted snow disappearance date (day of year)',
       title = swe.name
     ) +
-    theme_classic() +
+    theme_classic(
+      base_family = 'Times New Roman',
+      base_size = 10
+    ) +
     theme(
-      plot.title = element_text(hjust = 0.5)
+      plot.title = element_text(
+        size = 12,
+        face = 'bold',
+        hjust = 0.5
+      ),
+      axis.title = element_text(size = 10),
+      axis.text = element_text(
+        size = 10,
+        color = 'black'
+      ),
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 10)
     )
 }
+
+# ----- create plots -----
 
 p.low <- make_swe_plot(gap.elev.swe.pred, 'Low SWE')
 p.mid <- make_swe_plot(gap.elev.swe.pred, 'Mid SWE')
 p.high <- make_swe_plot(gap.elev.swe.pred, 'High SWE')
+
+# ----- combine -----
 
 p.combined <- (p.low | p.mid | p.high) +
   plot_layout(guides = 'collect') &
@@ -775,13 +793,17 @@ p.combined <- (p.low | p.mid | p.high) +
 
 p.combined
 
+# ----- save -----
+
 ggsave(
   'figures/sdd_gap_swe_elevation.png',
   plot = p.combined,
-  width = 12,
-  height = 5,
-  units = 'in',
-  dpi = 300
+  width = 180,
+  height = 80,
+  units = 'mm',
+  dpi = 300,
+  bg = 'white',
+  device = ragg::agg_png
 )
 # ---------- Gap x elevation x SWE predictions by burned status ----------
 # ----- make predictions -----
@@ -1098,7 +1120,7 @@ make_swe_burn_plot <- function(data, swe.name) {
       color = NA
     ) +
     geom_line(
-      linewidth = 1
+      linewidth = .5
     ) +
     facet_wrap(
       ~ elev_band,
@@ -1117,50 +1139,106 @@ make_swe_burn_plot <- function(data, swe.name) {
       y = 'Predicted snow disappearance date (day of year)',
       title = swe.name
     ) +
-    theme_classic() +
+    scale_x_continuous(
+      limits = c(0, 100),
+      breaks = seq(20, 100, by = 20)
+    ) +
+    theme_classic(
+      base_family = 'Times New Roman',
+      base_size = 10
+    ) +
     theme(
-      plot.title = element_text(hjust = 0.5)
+      plot.title = element_text(
+        size = 12,
+        face = 'bold',
+        hjust = 0.5
+      ),
+      strip.background = element_blank(),
+      strip.text = element_text(
+        size = 10,
+        face = 'bold'
+      ),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(
+        size = 10,
+        color = 'black'
+      ),
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 10)
     )
 }
 
+# ----- create plots -----
 p.low.burn <- make_swe_burn_plot(
   gap.elev.swe.burn.pred,
   'Low SWE'
-)
+) +
+  labs(x = NULL, y = NULL) +
+  coord_cartesian(ylim = c(165, 225))
 
 p.mid.burn <- make_swe_burn_plot(
   gap.elev.swe.burn.pred,
   'Mid SWE'
-)
+) +
+  labs(x = NULL, y = NULL) +
+  coord_cartesian(ylim = c(185, 235))
 
 p.high.burn <- make_swe_burn_plot(
   gap.elev.swe.burn.pred,
   'High SWE'
+) +
+  labs(y = NULL) +
+  coord_cartesian(ylim = c(195, 260))
+# ----- shared y-axis title -----
+
+y.title <- wrap_elements(
+  full = textGrob(
+    'Predicted snow disappearance date (day of year)',
+    rot = 90,
+    gp = gpar(
+      fontsize = 12,
+      fontfamily = 'Times New Roman'
+    )
+  )
 )
 
-# --- combine ---
-p.burn.combined <- (
-  p.low.burn |
-    p.mid.burn |
+# ----- combine -----
+p.plots <- (
+  p.low.burn /
+    p.mid.burn /
     p.high.burn
 ) +
   plot_layout(
     guides = 'collect'
   ) &
   theme(
-    legend.position = 'right'
+    legend.position = 'none'
+  )
+
+# add shared y-axis title
+p.burn.combined <- (
+  y.title | p.plots
+) +
+  plot_layout(
+    widths = c(0.07, 1)
   )
 
 p.burn.combined
+# ----- save -----
 
 ggsave(
   'figures/sdd_gap_swe_elevation_burn.png',
   plot = p.burn.combined,
-  width = 12,
-  height = 5,
-  units = 'in',
-  dpi = 300
+  width = 180,
+  height = 180,
+  units = 'mm',
+  dpi = 300,
+  bg = 'white',
+  device = ragg::agg_png
 )
+
+
+# ------- **** I'm pretty sure I don't use anything below so delete? **** -------
 # ----------------------------------- ** MARGINAL EFFECT PLOTS ---------------------------------
 # --------------- predictions using by=fire model ---------------
 # --------------- gap percent ----------------

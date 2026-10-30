@@ -2110,21 +2110,42 @@ p.stage1.combined <-
      coord_cartesian(ylim = c(0, 0.9))) +
   plot_layout(heights = c(1, 0.12, 1)) &
   theme(
+    text = element_text(
+      family = 'Times New Roman'
+    ),
     plot.title = element_text(
+      family = 'Times New Roman',
       face = 'bold',
-      size = 11,
+      size = 12,
       hjust = 0
+    ),
+    axis.title = element_text(
+      size = 10
+    ),
+    axis.text = element_text(
+      size = 10,
+      color = 'black'
+    ),
+    legend.title = element_text(
+      size = 10
+    ),
+    legend.text = element_text(
+      size = 10
     )
   )
 
 p.stage1.combined
 
+# save
 ggsave(
   'figures/stage1_results_boxplots.png',
-  p.stage1.combined,
-  width = 10,
-  height = 7.5,
-  dpi = 300
+  plot = p.stage1.combined,
+  width = 180,
+  height = 150,
+  units = 'mm',
+  dpi = 300,
+  bg = 'white',
+  device = ragg::agg_png
 )
 
 

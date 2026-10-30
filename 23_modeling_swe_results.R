@@ -939,21 +939,35 @@ saveRDS(
   'data/plot_data/swe_marginal_effects.rds'
 )
 # ------------------ combined plot -------------------
+# ------------------ combined plot -------------------
 library(patchwork)
 library(grid)
 
-# --- common theme ---
+# ----- common theme -----
 
-optimum.theme <- theme_classic() +
+optimum.theme <- theme_classic(
+  base_family = 'Times New Roman',
+  base_size = 10
+) +
   theme(
+    plot.title = element_text(
+      size = 12,
+      face = 'bold',
+      hjust = 0.5
+    ),
     strip.background = element_blank(),
     strip.text = element_text(
-      face = 'bold',
-      size = 10
+      size = 12,
+      face = 'bold'
     ),
     axis.title.x = element_text(size = 10),
-    axis.title.y = element_text(size = 11),
-    axis.text = element_text(size = 9),
+    axis.title.y = element_text(size = 10),
+    axis.text = element_text(
+      size = 10,
+      color = 'black'
+    ),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 10),
     plot.margin = margin(
       t = 5,
       r = 5,
@@ -962,13 +976,19 @@ optimum.theme <- theme_classic() +
     )
   )
 
+# ----- extract legend with updated formatting -----
+
 gap.legend <- cowplot::get_legend(
   p.gap.opt +
     guides(size = guide_legend()) +
-    theme(legend.position = 'right')
+    optimum.theme +
+    theme(
+      legend.position = 'right'
+    )
 )
 
-# create spacer for where top castle panel would be and put legend there
+# ----- create top row -----
+
 gap.row <- (
   p.gap.opt |
     wrap_elements(gap.legend)
@@ -978,7 +998,7 @@ gap.row <- (
     guides = 'keep'
   )
 
-
+# ----- combine plots -----
 
 canopy.optimum.fig <- (
   gap.row /
@@ -999,7 +1019,7 @@ ggsave(
   'figures/swe_marginaleffectplots.png',
   plot = canopy.optimum.fig,
   width = 180,
-  height = 150,
+  height = 120,
   units = 'mm',
   dpi = 300,
   bg = 'white'
@@ -2173,18 +2193,35 @@ print(ht.burn.summary, width = Inf)
 library(patchwork)
 library(grid)
 
-# --- common theme ---
+# -------------- Combined Plot ----------------
+library(patchwork)
+library(grid)
 
-optimum.theme <- theme_classic() +
+# ----- common theme -----
+
+optimum.theme <- theme_classic(
+  base_family = 'Times New Roman',
+  base_size = 10
+) +
   theme(
+    plot.title = element_text(
+      size = 12,
+      face = 'bold',
+      hjust = 0.5
+    ),
     strip.background = element_blank(),
     strip.text = element_text(
-      face = 'bold',
-      size = 10
+      size = 12,
+      face = 'bold'
     ),
     axis.title.x = element_text(size = 10),
-    axis.title.y = element_text(size = 11),
-    axis.text = element_text(size = 9),
+    axis.title.y = element_text(size = 10),
+    axis.text = element_text(
+      size = 10,
+      color = 'black'
+    ),
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 10),
     plot.margin = margin(
       t = 5,
       r = 5,
@@ -2193,13 +2230,16 @@ optimum.theme <- theme_classic() +
     )
   )
 
+# ----- extract legend with updated formatting -----
+
 gap.legend <- cowplot::get_legend(
   p.gap.burn +
     guides(
       size = guide_legend(order = 1),
       color = guide_legend(order = 2),
-      fill = guide_legend(order = 2)
+      fill = 'none'
     ) +
+    optimum.theme +
     theme(
       legend.position = 'right',
       legend.box = 'vertical',
@@ -2207,7 +2247,8 @@ gap.legend <- cowplot::get_legend(
     )
 )
 
-# create spacer for where top castle panel would be and put legend there
+# ----- create top row -----
+
 gap.row <- (
   p.gap.burn |
     wrap_elements(gap.legend)
@@ -2217,7 +2258,7 @@ gap.row <- (
     guides = 'keep'
   )
 
-
+# ----- combine plots -----
 
 canopy.burn.fig <- (
   gap.row /
@@ -2234,13 +2275,17 @@ canopy.burn.fig <- (
 
 canopy.burn.fig
 
+# ----- save -----
+
 ggsave(
   'figures/swe_burn_marginaleffectplots.png',
   plot = canopy.burn.fig,
-  width = 8,
-  height = 5,
-  units = 'in',
-  dpi = 300
+  width = 180,
+  height = 120,
+  units = 'mm',
+  dpi = 300,
+  bg = 'white',
+  device = ragg::agg_png
 )
 
 # ==============================================================================
