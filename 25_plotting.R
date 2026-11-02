@@ -597,6 +597,14 @@ ggsave(
 
 
 # ------------------------- Gap Percent Visualization -----------------------------
+# ----- setup -----
+library(terra)
+library(dplyr)
+library(ggplot2)
+library(maptiles)
+library(viridisLite)
+library(tidyverse)
+
 fire <- 'caldor'
 
 r <- rast(paste0('data/processed/processed/tif/50m/', fire, '/', fire, '_canopy_metrics_50m.tif'))
@@ -615,7 +623,9 @@ if (fire == 'caldor') {
   chm <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/castle/75m/castle_chm_32611.vrt')
   
 } else if (fire == 'creek') {
-  chm <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek/creek_chm_32611/creek_chm_1m_32611.vrt')}
+  chm_files <- list.files('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek/creek_chm_32611', pattern = '\\.tif$', full.names = TRUE)
+  vrt(chm_files, 'J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek/creek_chm_32611.vrt', overwrite = TRUE)
+  chm <- rast('J:/Fire_Snow/fireandice/data/processed/processed/tif/1m/creek/creek_chm_32611.vrt')}
 
 
 
@@ -659,9 +669,6 @@ cand.sample <- cand %>%
   slice_min(dist_to_target, n = 30, with_ties = FALSE) %>%
   ungroup()
 
-library(terra)
-library(dplyr)
-library(purrr)
 
 # Make sure the CHM is loaded using your existing fire-specific code
 
@@ -721,6 +728,72 @@ cand.best %>%
     gap_difference
   )
 
+# ----- alternative  candidates for 75% high elev -----
+
+cand.alternatives <- cand.sample %>%
+  filter(
+    elev_class == 'High elevation',
+    gap_class == '75% gap'
+  ) %>%
+  arrange(gap_difference)
+
+cand.alternatives %>%
+  select(
+    cell,
+    elevation,
+    raster_gap_pct,
+    chm_gap_pct,
+    gap_difference
+  ) %>%
+  print(n = 30)
+
+# select second candidate
+new.candidate <- cand.alternatives %>%
+  slice(3)
+
+new.candidate
+
+cand.best <- cand.best %>%
+  filter(
+    !(elev_class == 'High elevation' &
+        gap_class == '75% gap')
+  ) %>%
+  bind_rows(new.candidate) %>%
+  arrange(elev_class, gap_class)
+
+# ----- alternative low elevation 50% gap candidates -----
+
+cand.alternatives <- cand.sample %>%
+  filter(
+    elev_class == 'Low elevation',
+    gap_class == '50% gap'
+  ) %>%
+  arrange(gap_difference)
+
+cand.alternatives %>%
+  select(
+    cell,
+    elevation,
+    raster_gap_pct,
+    chm_gap_pct,
+    gap_difference
+  ) %>%
+  print(n = 30)
+
+# select alternative candidate (e.g., third best)
+new.candidate <- cand.alternatives %>%
+  slice(4)
+
+new.candidate
+
+# replace only the low elevation 50% gap pixel
+cand.best <- cand.best %>%
+  filter(
+    !(elev_class == 'Low elevation' &
+        gap_class == '50% gap')
+  ) %>%
+  bind_rows(new.candidate) %>%
+  arrange(elev_class, gap_class)
 
 # ----- plot -----
 plot.df <- map_dfr(seq_len(nrow(cand.best)), function(i) {
@@ -777,7 +850,7 @@ plot.df <- plot.df %>%
     )
   )
 
-p <- ggplot(plot.df, aes(x, y, fill = canopy_class)) +
+ggplot(plot.df, aes(x, y, fill = canopy_class)) +
   geom_raster() +
   facet_grid(elev_class ~ gap_class) +
   coord_equal(
@@ -802,16 +875,7 @@ p <- ggplot(plot.df, aes(x, y, fill = canopy_class)) +
     legend.position = 'bottom'
   )
 
-# save plot
-ggsave(
-  filename = paste0('figures/', fire, '_gap_percent_examples.png'),
-  plot = p,
-  width = 10,
-  height = 7,
-  units = 'in',
-  dpi = 300,
-  bg = 'white'
-)
+
 
 # ----- now add CHM -----
 
@@ -892,12 +956,7 @@ p.chm <- ggplot(chm.df, aes(x, y, fill = height)) +
 p.chm
 
 # combine
-library(terra)
-library(dplyr)
-library(purrr)
-library(ggplot2)
-library(maptiles)
-library(viridisLite)
+
 
 # figure setup
 
@@ -912,8 +971,72 @@ height_to_color <- function(h) {
   chm.colors[idx]
 }
 
-# extract imagery and CHM for selected pixels
+# select first candidate pixel
+cell_id <- cand.best$cell[1]
 
+xy <- terra::xyFromCell(gap, cell_id)
+half_res <- terra::res(gap) / 2
+
+p <- terra::as.polygons(
+  terra::ext(
+    xy[1, 1] - half_res[1],
+    xy[1, 1] + half_res[1],
+    xy[1, 2] - half_res[2],
+    xy[1, 2] + half_res[2]
+  ),
+  crs = terra::crs(gap)
+)
+
+
+# --- 2022 NAIP imagery ---
+
+get_naip <- function(p, year = 2022) {
+  
+  # get CRS and extent of selected pixel
+  epsg <- terra::crs(p, describe = TRUE)$code
+  e <- terra::ext(p)
+  
+  bbox <- paste(
+    e$xmin, e$ymin, e$xmax, e$ymax,
+    sep = ','
+  )
+  
+  # USDA NAIP ImageServer
+  service <- paste0(
+    'https://imagery.geoplatform.gov/iipp/rest/services/',
+    'NAIP/NAIP', year, '_CONUS/ImageServer/exportImage'
+  )
+  
+  url <- paste0(
+    service,
+    '?f=image',
+    '&bbox=', bbox,
+    '&bboxSR=', epsg,
+    '&imageSR=', epsg,
+    '&size=100,100',
+    '&format=png32'
+  )
+  
+  # download imagery
+  tmp <- tempfile(fileext = '.png')
+  
+  download.file(
+    url,
+    tmp,
+    mode = 'wb',
+    quiet = TRUE
+  )
+  
+  # assign spatial extent and CRS
+  img <- terra::rast(tmp)
+  
+  terra::ext(img) <- e
+  terra::crs(img) <- terra::crs(p)
+  
+  return(img)
+}
+
+# --- plot ---
 plot.list <- map(seq_len(nrow(cand.best)), function(i) {
   
   cell_id <- cand.best$cell[i]
@@ -1171,24 +1294,596 @@ plot_gap_examples <- function(elev) {
 p.low <- plot_gap_examples('Low elevation')
 p.high <- plot_gap_examples('High elevation')
 
+
 ggsave(
-  filename = paste0('figures/', fire, '_gap_chm_naip_examples_low_elev.png'),
+  filename = paste0('figures/', fire, '_gap_chm_examples_low_elev.png'),
   plot = p.low,
   width = 100,
   height = 100,
   units = 'mm',
   dpi = 300,
-  bg = 'white'
+  bg = 'white',
+  device = ragg::agg_png
 )
 
 ggsave(
-  filename = paste0('figures/', fire, '_gap_chm_naip_examples_high_elev.png'),
+  filename = paste0('figures/', fire, '_gap_chm_examples_high_elev.png'),
   plot = p.high,
   width = 100,
   height = 100,
+  units = 'mm',
+  dpi = 300,
+  bg = 'white',
+  device = ragg::agg_png
+)
+
+
+
+
+# --------------------- distribution plots ----------------------------
+# ----- setup -----
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(ragg)
+
+# get dataframe
+dir <- 'data/processed/processed/rds/' 
+df.50.raw <- readRDS(file.path(dir, 'df_50m_raw.rds'))
+fire.levels <- c('Caldor', 'Creek', 'Castle')
+# years common to all fires
+common.years <- df.50.raw %>%
+  filter(fire != 'dixie') %>%
+  distinct(fire, wy) %>%
+  count(wy) %>%
+  filter(n == 3) %>%   # 3 remaining fires
+  pull(wy)
+
+# remove dixie fire and non-common years
+df.50 <- df.50.raw %>%
+  filter(
+    fire != 'dixie',
+    wy %in% common.years) %>%
+  mutate(
+    fire = recode(
+      fire,
+      'caldor' = 'Caldor',
+      'creek' = 'Creek'
+    ),
+    fire = factor(
+      fire,
+      levels = fire.levels
+    ),
+    fire_burned = interaction(
+      fire,
+      burned,
+      sep = '_'
+    )
+  ) %>%
+  droplevels()
+
+elev.colors <- c(
+  '< 1750 m' = '#004c6d',
+  '1750–2500 m' = '#4291b5',
+  '> 2500 m' = '#7cdeff'
+)
+
+# create new df
+df.dist <- df.50 %>%
+  select(fire, x, y, cbibc, gap_percent, ht_zmax, elevation) %>%
+  distinct() %>%
+  mutate(
+    severity = case_when(
+      cbibc == 0 ~ 'Unburned',
+      cbibc > 0 & cbibc < 1.25 ~ 'Low',
+      cbibc >= 1.25 & cbibc < 2.25 ~ 'Moderate',
+      cbibc >= 2.25 ~ 'High',
+      TRUE ~ NA_character_
+    ),
+    severity = factor(
+      severity,
+      levels = c('Unburned', 'Low', 'Moderate', 'High')
+    ),
+    elev.band = case_when(
+      elevation < 1750 ~ '< 1750 m',
+      elevation >= 1750 & elevation <= 2500 ~ '1750–2500 m',
+      elevation > 2500 ~ '> 2500 m'
+    ),
+    elev.band = factor(
+      elev.band,
+      levels = names(elev.colors)
+    )
+  ) %>%
+  filter(!is.na(severity))
+
+windowsFonts(
+  Times = windowsFont('TT Times New Roman')
+)
+
+
+
+# ----- severity distributions -----
+# --- gap.severity ---
+p.gap.severity <- ggplot(df.dist, aes(x = severity, y = gap_percent, fill = severity)) +
+  geom_violin(
+    alpha = 0.8,
+    trim = TRUE,
+    linewidth = 0.3
+  ) +
+  geom_boxplot(
+    width = 0.12,
+    fill = 'white',
+    outlier.shape = NA,
+    linewidth = 0.3
+  ) +
+  facet_wrap(~fire) +
+  scale_fill_manual(
+    values = c(
+      'Unburned' = 'lightgrey',
+      'Low' = '#7CAE00',
+      'Moderate' = '#E68613',
+      'High' = 'brown3'
+    )
+  ) +
+  labs(
+    x = 'Fire severity',
+    y = 'Canopy gap (%)'
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    strip.text = element_text(size = 12, face = 'bold'),
+    legend.position = 'none',
+    text = element_text(family = 'Times'),
+    strip.background = element_blank(),
+  )
+
+p.gap.severity
+
+
+# --- ht.severity ---
+p.ht.severity <- ggplot(df.dist, aes(x = severity, y = ht_zmax, fill = severity)) +
+  geom_violin(
+    alpha = 0.8,
+    trim = TRUE,
+    linewidth = 0.3
+  ) +
+  geom_boxplot(
+    width = 0.12,
+    fill = 'white',
+    outlier.shape = NA,
+    linewidth = 0.3
+  ) +
+  facet_wrap(~fire) +
+  scale_fill_manual(
+    values = c(
+      'Unburned' = 'lightgrey',
+      'Low' = '#7CAE00',
+      'Moderate' = '#E68613',
+      'High' = 'brown3'
+    )
+  ) +
+  labs(
+    x = 'Fire severity',
+    y = 'Maximum canopy height (m)'
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 12),
+    strip.text = element_text(size = 12, face = 'bold'),
+    legend.position = 'none',
+    text = element_text(family = 'Times'),
+    strip.background = element_blank()
+  )
+
+p.ht.severity
+
+# --- combine ---
+p.severity <- (
+  p.gap.severity +
+    labs(x = NULL)
+) /
+  p.ht.severity +
+  plot_annotation(
+    tag_levels = 'A',
+    tag_suffix = ')'
+  )
+
+p.severity
+
+
+# --- save ---
+p.severity.save <- p.severity &
+  theme(
+    text = element_text(family = 'Times New Roman'),
+    plot.tag = element_text(
+      family = 'Times New Roman',
+      size = 12,
+      face = 'bold'
+    ),
+    axis.title.y = element_text(
+      margin = margin(l = 12))
+  )
+
+ggsave(
+  filename = 'figures/appendix_severity_distributions.png',
+  plot = p.severity.save,
+  device = ragg::agg_png,
+  width = 180,
+  height = 150,
+  units = 'mm',
+  dpi = 300,
+  bg = 'white'
+)
+
+# ----- elevation distributions -----
+# --- gap.elev ---
+p.gap.elev <- ggplot(
+  df.dist,
+  aes(x = elev.band, y = gap_percent, fill = elev.band)
+) +
+  geom_violin(
+    alpha = 0.8,
+    trim = TRUE, 
+    linewidth = 0.3
+  ) +
+  scale_fill_manual(values = elev.colors) +
+  geom_boxplot(
+    width = 0.12,
+    fill = 'white',
+    outlier.shape = NA, 
+    linewidth = 0.3
+  ) +
+  facet_wrap(~fire) +
+  labs(
+    x = 'Elevation band',
+    y = 'Canopy gap (%)'
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    strip.text = element_text(size = 12, face = 'bold'),
+    strip.background = element_blank(),
+    legend.position = 'none',
+    text = element_text(family = 'Times')
+  )
+
+p.gap.elev
+
+
+
+# --- ht.elev distribution ---
+p.ht.elev <- ggplot(
+  df.dist,
+  aes(x = elev.band, y = ht_zmax, fill = elev.band)
+) +
+  geom_violin(
+    alpha = 0.8,
+    trim = TRUE, 
+    linewidth = 0.3
+  ) +
+  scale_fill_manual(values = elev.colors) +
+  geom_boxplot(
+    width = 0.12,
+    fill = 'white',
+    outlier.shape = NA, 
+    linewidth = 0.3
+  ) +
+  facet_wrap(~fire) +
+  labs(
+    x = 'Elevation band',
+    y = 'Max height (m)'
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    strip.text = element_text(size = 12, face = 'bold'),
+    strip.background = element_blank(),
+    legend.position = 'none',
+    text = element_text(family = 'Times')
+  )
+
+p.ht.elev
+
+
+# --- cbi.elev ---
+
+p.cbi.elev <- ggplot(
+  df.dist %>% filter(cbibc > 0),
+  aes(x = elev.band, y = cbibc, fill = elev.band)
+) +
+  geom_violin(
+    alpha = 0.8,
+    trim = TRUE, 
+    linewidth = 0.3
+  ) +
+  geom_boxplot(
+    width = 0.12,
+    fill = 'white',
+    outlier.shape = NA, 
+    linewidth = 0.3
+  ) +
+  facet_wrap(~fire) +
+  scale_fill_manual(values = elev.colors) +
+  labs(
+    x = 'Elevation band',
+    y = 'Fire severity (bias-corrected CBI)'
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 12),
+    strip.text = element_text(size = 12, face = 'bold'),
+    strip.background = element_blank(),
+    legend.position = 'none',
+    text = element_text(family = 'Times')
+  )
+
+p.cbi.elev
+
+# --- combine ---
+p.elevation <- (
+  p.gap.elev +
+    labs(x = NULL)
+) /
+  (
+    p.ht.elev +
+      labs(x = NULL)
+  ) /
+  p.cbi.elev +
+  plot_annotation(
+    tag_levels = 'A',
+    tag_suffix = ')'
+  )
+
+p.elevation
+
+
+# --- save ---
+p.elevation.save <- p.elevation &
+  theme(
+    text = element_text(family = 'Times New Roman'),
+    plot.tag = element_text(
+      family = 'Times New Roman',
+      size = 12,
+      face = 'bold'
+    ),
+    axis.title.y = element_text(
+      margin = margin(l = 12))
+  )
+
+ggsave(
+  filename = 'figures/appendix_elevation_distributions.png',
+  plot = p.elevation.save,
+  device = ragg::agg_png,
+  width = 180,
+  height = 225,
   units = 'mm',
   dpi = 300,
   bg = 'white'
 )
 
 
+# ----------------------- correlation plots ----------------------------
+# ----- setup -----
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+
+# --- 50m ---
+dir <- 'data/processed/processed/rds/' 
+df.50.raw <- readRDS(file.path(dir, 'df_50m_raw.rds'))
+fire.levels <- c('Caldor', 'Creek', 'Castle')
+# years common to all fires
+common.years <- df.50.raw %>%
+  filter(fire != 'dixie') %>%
+  distinct(fire, wy) %>%
+  count(wy) %>%
+  filter(n == 3) %>%   # 3 remaining fires
+  pull(wy)
+
+# remove dixie fire and non-common years
+df.50 <- df.50.raw %>%
+  filter(
+    fire != 'dixie',
+    wy %in% common.years) %>%
+  mutate(
+    fire = recode(
+      fire,
+      'caldor' = 'Caldor',
+      'creek' = 'Creek'
+    ),
+    fire = factor(
+      fire,
+      levels = fire.levels
+    ),
+    fire_burned = interaction(
+      fire,
+      burned,
+      sep = '_'
+    )
+  ) %>%
+  droplevels()
+
+
+# --- 500m ---
+dir <- 'data/processed/processed/rds/' 
+
+df.500.raw <- readRDS(file.path(dir, 'df_500m_raw.rds'))
+
+# years common to all fires
+common.years <- df.500.raw %>%
+  filter(fire != 'dixie') %>%
+  distinct(fire, wy) %>%
+  count(wy) %>%
+  filter(n == 3) %>%   # 3 remaining fires
+  pull(wy)
+
+# remove dixie fire and non-common years
+df.500 <- df.500.raw %>%
+  filter(
+    fire != 'dixie',
+    wy %in% common.years) %>%
+  mutate(
+    fire = recode(
+      fire,
+      'caldor' = 'Caldor',
+      'creek' = 'Creek'),
+    fire_burned = interaction(fire, burned, sep = '_')
+  ) %>%
+  droplevels()
+
+
+# ----- calculate correlations -----
+# Stage 2 SWE
+vars.swe <- c(
+  'elevation',
+  'rad_dtm_accum',
+  'slope',
+  'aspect_sin',
+  'tpi150',
+  'tpi2010',
+  'gap_percent',
+  'ht_zmax'
+)
+
+# Stage 2 SDD
+vars.sdd <- c(
+  'elevation',
+  'rad_dtm_accum',
+  'aspect_sin',
+  'tpi1200',
+  'gap_percent',
+  'swe_peak'
+)
+
+# Calculate correlations
+cor.swe <- df.50 %>%
+  select(all_of(vars.swe)) %>%
+  cor(method = 'pearson', use = 'complete.obs')
+
+cor.sdd <- df.500 %>%
+  select(all_of(vars.sdd)) %>%
+  cor(method = 'pearson', use = 'complete.obs')
+
+# ----- plot -----
+
+# SWE labels
+labels.swe <- c(
+  'Elevation',
+  'Accumulation-season radiation',
+  'Slope',
+  'Eastness',
+  'TPI 150 m',
+  'TPI 2,010 m',
+  'Canopy gap (%)',
+  'Maximum canopy height'
+)
+
+# SDD labels
+labels.sdd <- c(
+  'Elevation',
+  'Accumulation-season radiation',
+  'Eastness',
+  'TPI 1,200 m',
+  'Canopy gap (%)',
+  'Peak SWE'
+)
+
+# Rename rows and columns
+dimnames(cor.swe) <- list(labels.swe, labels.swe)
+dimnames(cor.sdd) <- list(labels.sdd, labels.sdd)
+
+
+
+# Colorblind-friendly diverging palette
+cor.cols <- colorRampPalette(
+  c('#2166AC', 'white', '#B2182B')
+)(200)
+
+
+
+# Plotting function
+plot.cor <- function(cor.mat, title = NULL) {
+  par(family = "serif")
+  corrplot(
+    cor.mat,
+    method = 'color',
+    type = 'lower',
+    order = 'original',
+    diag = FALSE,
+    col = cor.cols,
+    col.lim = c(-1, 1),
+    addCoef.col = 'black',
+    number.cex = 0.8,      # numbers in boxes
+    number.digits = 2,
+    tl.col = 'black',
+    tl.cex = 1,        # variable labels
+    tl.srt = 45,
+    cl.cex = 0.8,           # numbers in axis labels
+    mar = c(0, 0, 0, 0)
+  )
+  
+  # Add left-aligned panel label
+  if (!is.null(title)) {
+    title(
+      main = title,
+      adj = 0,
+      line = 0.5,
+      font.main = 2,
+      cex.main = 1.2
+    )
+  }
+}
+
+
+# export stacked
+png(
+  filename = 'figures/appendix_correlations_stacked.png',
+  width = 7,
+  height = 8.75,
+  units = 'in',
+  res = 300,
+  type = 'windows'
+)
+
+par(mfrow = c(2, 1),
+    ps = 10,
+    oma = c(0, 0, 0, 0),
+    mgp = c(0, 0, 0))
+
+plot.cor(cor.swe, title = 'A)')
+plot.cor(cor.sdd, title = 'B)')
+
+dev.off()
+
+# export side by side
+png(
+  filename = 'figures/appendix_correlations_byside.png',
+  width = 16,
+  height = 7,
+  units = 'in',
+  res = 300,
+  type = 'windows'
+)
+
+par(mfrow = c(1, 2))
+
+plot.cor(cor.swe)
+plot.cor(cor.sdd)
+
+dev.off()

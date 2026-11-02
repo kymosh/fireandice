@@ -939,7 +939,6 @@ saveRDS(
   'data/plot_data/swe_marginal_effects.rds'
 )
 # ------------------ combined plot -------------------
-# ------------------ combined plot -------------------
 library(patchwork)
 library(grid)
 
